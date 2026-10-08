@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<routes>
+
+    <vType id="car"
+           vClass="passenger"
+           accel="2.6"
+           decel="4.5"
+           sigma="0.5"
+           length="5.0"/>
+
+    <!-- ===================================================== -->
+    <!-- CENTRAL SIGNALIZED INTERSECTION                       -->
+    <!-- ===================================================== -->
+
+    <!-- East -> West -->
+    <route id="east_west"
+           edges="713369663#1 713369663#1.469 713369663#2-AddedOnRampEdge 713369663#2 133794033"/>
+
+    <!-- East -> South -->
+    <route id="east_south"
+           edges="713369663#1 713369663#1.469 713369663#2-AddedOnRampEdge 713369663#2 569790080"/>
+
+    <!-- South -> West -->
+    <route id="south_west"
+           edges="539502456#5 539502456#6 539502456#7 539502456#8 569790079#0 133794033"/>
+
+    <!-- West -> East -->
+    <route id="west_east"
+           edges="133793906#0 133793906#0-AddedOffRampEdge 133793906#0-AddedOffRampEdge.8 133793906#0-AddedOffRampEdge.26 133793906#2 382508030#1"/>
+
+    <!-- West -> North -->
+    <route id="west_north"
+           edges="133793906#0 133793906#0-AddedOffRampEdge 133793906#0-AddedOffRampEdge.8 133793906#0-AddedOffRampEdge.26 133793906#2 569790079#2"/>
+
+    <!-- North -> East -->
+    <route id="north_east"
+           edges="586185409#6.147 133973525#0 133973525#0-AddedOffRampEdge 133973525#1 133973525#1.51 569788806 382508030#1"/>
+
+
+    <!-- ===================================================== -->
+    <!-- FREE-FLOW / SLIP MOVEMENTS                            -->
+    <!-- ===================================================== -->
+
+    <!-- South -> East bypass -->
+    <route id="south_east_bypass"
+           edges="539502456#5 539502456#6 539502456#7 539502456#8 133973513 382508031#1 382508031#2 382508031#3 382508031#3.148"/>
+
+    <!-- West -> South slip -->
+    <route id="west_south_slip"
+           edges="133793906#0 133793906#0-AddedOffRampEdge 133793906#0-AddedOffRampEdge.8 133793906#0-AddedOffRampEdge.26 133973488#0 133973488#1 133973488#1.22 539502453#0"/>
+
+    <!-- North -> West slip -->
+    <route id="north_west_slip"
+           edges="586185409#6.147 133973525#0 133973525#0-AddedOffRampEdge 133973525#1 133973525#1.51 1311808806 133793923#0-AddedOnRampEdge 133793923#0-AddedOnRampEdge.45 133793923#0-AddedOnRampEdge.57 133793923#0-AddedOnRampEdge.80 133793923#0"/>
+
+
+    <!-- ===================================================== -->
+    <!-- WEST-SIDE U-TURNS                                     -->
+    <!-- ===================================================== -->
+
+    <route id="west_uturn_1"
+           edges="133793906#0 133793906#0-AddedOffRampEdge E5 133793923#0-AddedOnRampEdge.57 133793923#0-AddedOnRampEdge.80 133793923#0 133793732#1"/>
+
+    <route id="west_uturn_2"
+           edges="133794033 133793923#0-AddedOnRampEdge E4 133793906#0-AddedOffRampEdge.26 133793906#2 382508030#1"/>
+
+
+    <!-- ===================================================== -->
+    <!-- EAST-SIDE RAMPS                                       -->
+    <!-- ===================================================== -->
+
+    <!-- Incoming on-ramp -> East approach -> West -->
+    <route id="east_onramp"
+           edges="E1 E2 713369663#1.469 713369663#2-AddedOnRampEdge 713369663#2 133794033"/>
+
+    <!-- Through intersection -> East outgoing off-ramp -->
+    <route id="east_offramp"
+           edges="133793906#0 133793906#0-AddedOffRampEdge 133793906#0-AddedOffRampEdge.8 133793906#0-AddedOffRampEdge.26 133793906#2 382508030#1 382508030#2 382508030#2.160 E0 382508031#3.148"/>
+
+    <!-- East outgoing road continues instead of taking off-ramp -->
+    <route id="east_continue"
+           edges="133793906#0 133793906#0-AddedOffRampEdge 133793906#0-AddedOffRampEdge.8 133793906#0-AddedOffRampEdge.26 133793906#2 382508030#1 382508030#2 382508030#2.160 382508030#2.227 382508030#2-AddedOffRampEdge"/>
+
+
+    <!-- ===================================================== -->
+    <!-- UNDERGROUND MAIN ROAD / TUNNEL                        -->
+    <!-- ===================================================== -->
+
+    <!-- Tunnel direction 1 -->
+    <route id="tunnel_direction_1"
+           edges="569788807 569788809 994922063#0 994922063#0.364 994922063#0-AddedOffRampEdge"/>
+
+    <!-- Tunnel direction 2 -->
+    <route id="tunnel_direction_2"
+           edges="994922064#1.708 994922064#2-AddedOnRampEdge 994922064#2-AddedOnRampEdge.48 994922064#2"/>
+
+    <!-- Ramp joining the main underground road -->
+    <route id="tunnel_onramp"
+           edges="E3 1243581695 994922064#2-AddedOnRampEdge 994922064#2-AddedOnRampEdge.48 994922064#2"/>
+
+           <!-- Additional movement through edge 569790078 -->
+    <route id="movement_569790078"
+           edges="E3 539502456#5 539502456#6 539502456#7 569790078 539502453#0 539502453#0.52 539502453#1 539502453#2"/>
+
+    <!-- Additional movement through edge 569790077 -->
+    <route id="movement_569790077"
+           edges="586185409#6.147 133973525#0 133973525#0-AddedOffRampEdge 569790077 133973520#2 133973520#3 133973520#3.34 133973520#4 221413238#0"/>
+       <!-- ===================================================== -->
+    <!-- FLOWS - ORDERED BY BEGIN TIME                         -->
+    <!-- ===================================================== -->
+
+    <!-- BEGIN = 0 -->
+
+    <flow id="flow_east_west"
+          type="car" route="east_west"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_east_south"
+          type="car" route="east_south"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_south_west"
+          type="car" route="south_west"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_west_east"
+          type="car" route="west_east"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_west_north"
+          type="car" route="west_north"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_north_east"
+          type="car" route="north_east"
+          begin="0" end="360" number="25"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_south_east_bypass"
+          type="car" route="south_east_bypass"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_west_south_slip"
+          type="car" route="west_south_slip"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_north_west_slip"
+          type="car" route="north_west_slip"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_east_onramp"
+          type="car" route="east_onramp"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_east_offramp"
+          type="car" route="east_offramp"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_east_continue"
+          type="car" route="east_continue"
+          begin="0" end="360" number="12"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_tunnel_direction_1"
+          type="car" route="tunnel_direction_1"
+          begin="0" end="360" number="40"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_tunnel_direction_2"
+          type="car" route="tunnel_direction_2"
+          begin="0" end="360" number="40"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_tunnel_onramp"
+          type="car" route="tunnel_onramp"
+          begin="0" end="360" number="15"
+          departLane="best" departPos="random_free"/>
+
+
+    <!-- BEGIN = 30 -->
+
+    <flow id="flow_west_uturn_1"
+          type="car" route="west_uturn_1"
+          begin="30" end="330" number="8"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_west_uturn_2"
+          type="car" route="west_uturn_2"
+          begin="30" end="330" number="8"
+          departLane="best" departPos="random_free"/>
+
+       <flow id="flow_569790078"
+          type="car" route="movement_569790078"
+          begin="30" end="330" number="8"
+          departLane="best" departPos="random_free"/>
+
+    <flow id="flow_569790077"
+          type="car" route="movement_569790077"
+          begin="30" end="330" number="8"
+          departLane="best" departPos="random_free"/>
+
+</routes>
