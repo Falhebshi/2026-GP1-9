@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration>
+
+    <input>
+        <net-file value="../data/processed/road_network/jaadah_study_area.net.xml"/>
+        <route-files value="scenarios/stress_test_routes.rou.xml"/>
+    </input>
+
+    <time>
+        <begin value="0"/>
+        <end value="600"/>
+    </time>
+
+</configuration>
