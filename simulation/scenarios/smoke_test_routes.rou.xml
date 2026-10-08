@@ -1,0 +1,39 @@
+<routes>
+
+    <vType id="car"
+           vClass="passenger"
+           accel="2.6"
+           decel="4.5"
+           sigma="0.5"
+           length="5.0"/>
+
+    <vehicle id="east_to_west" type="car" depart="0">
+        <route edges="713369663#2 133794033"/>
+    </vehicle>
+
+    <vehicle id="east_to_south" type="car" depart="10">
+        <route edges="713369663#2 569790080"/>
+    </vehicle>
+    
+
+    <vehicle id="south_to_west" type="car" depart="20">
+        <route edges="569790079#0 133794033"/>
+    </vehicle>
+
+    <vehicle id="west_to_east" type="car" depart="30">
+        <route edges="133793906#2 382508030#1"/>
+    </vehicle>
+
+    <vehicle id="west_to_north" type="car" depart="40">
+        <route edges="133793906#2 569790079#2"/>
+    </vehicle>
+
+    <vehicle id="north_to_east" type="car" depart="50">
+        <route edges="569788806 382508030#1"/>
+    </vehicle>
+
+     <vehicle id="east_to_south2" type="car" depart="50">
+        <route edges="713369663#2-AddedOnRampEdge 713369663#2 569790080"/>
+    </vehicle>
+
+</routes>
