@@ -1,111 +1,196 @@
+/* ==========================================================================
+   Jaadah theme  (frontend/src/index.css)
+
+   Every color, size and font in the app is defined here, once.
+   In components, always write var(--name). Never type a hex code elsewhere.
+
+   The file has four parts:
+     1. Palette   the raw colors from the palette sheet
+     2. Roles     what each color is USED for (use these in components)
+     3. Sizes     fonts, spacing, corners, layout
+     4. Base      default look of the page, headings, links, form controls
+   ========================================================================== */
+
+/* Font. The designs look like Inter. Delete this line if you pick another. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color-scheme: light;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* ---- 1. PALETTE (straight from the palette sheet) ---------------------- */
+  --navy: #171c4a;      /* Midnight Navy */
+  --indigo: #35206f;    /* Jaadah Indigo */
+  --blue: #2864a8;      /* Road Blue */
+  --teal: #2f9db5;      /* Signal Teal */
+  --lavender: #e9e4f5;  /* Soft Lavender */
+  --cloud: #f7f9fc;     /* Cloud White */
+  --white: #ffffff;
+  --green: #2e8b70;     /* Success Green */
+  --amber: #e5a33d;     /* Alert Amber */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* ---- 2. ROLES (use these in components) -------------------------------- */
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Backgrounds */
+  --color-bg: var(--cloud);              /* the page behind everything */
+  --color-surface: var(--white);         /* cards, nav bar, panels, inputs */
+  --color-surface-muted: var(--lavender);/* inner detail boxes, chart tracks */
+  --color-border: #dddfec;               /* card and input outlines, dividers */
+
+  /* Text */
+  --color-text: var(--navy);             /* headings, values, body text */
+  --color-text-muted: #5b6185;           /* labels, captions, "vs previous" */
+  --color-text-on-dark: var(--white);    /* text on a filled button or badge */
+
+  /* Actions: things you click */
+  --color-action: var(--blue);           /* links, primary buttons */
+  --color-action-hover: #1f518b;
+
+  /* Selected: the thing that is currently active */
+  --color-selected: var(--indigo);       /* active tab underline, active
+                                            segmented button, selected card
+                                            border, count badge */
+  --color-selected-bg: #f4f1fa;          /* background of a selected card */
+
+  /* Status */
+  --color-success: var(--green);
+  --color-success-bg: #e3f2ec;
+  --color-warning: var(--amber);         /* fills and icons only */
+  --color-warning-bg: #fbeed6;
+  --color-warning-text: #8a5a10;         /* amber is too pale to read as text */
+  --color-danger: #c8473f;               /* NOT in the palette sheet, see note */
+  --color-danger-bg: #f9e4e2;
+
+  /* Congestion (map roads, legend, heatmap toggle) */
+  --congestion-low: var(--color-success);
+  --congestion-moderate: var(--color-warning);
+  --congestion-high: var(--color-danger);
+  --congestion-none: #c9ccda;            /* no data / unclassified */
+
+  /* Charts */
+  --chart-1: var(--blue);                /* main series (trend line, bars) */
+  --chart-2: var(--teal);                /* second series (e.g. weekends) */
+  --chart-fill: #eef0fa;                 /* area under a line */
+  --chart-track: #dce6f2;                /* empty part of a progress bar */
+  --chart-grid: #e6e8f2;                 /* grid lines */
+
+  /* Low-to-high scale (Congestion by Hour and Day heatmap) */
+  --scale-1: #dce6f2;
+  --scale-2: #a8c8e8;
+  --scale-3: #6a9fd4;
+  --scale-4: var(--blue);
+  --scale-5: #1b3f86;
+
+  /* Level of Service A to F, light to dark */
+  --los-a: var(--lavender);
+  --los-b: #c9c1ea;
+  --los-c: #7fc3d6;
+  --los-d: var(--teal);
+  --los-e: var(--blue);
+  --los-f: var(--navy);
+
+  /* ---- 3. SIZES ---------------------------------------------------------- */
+
+  --font: "Inter", system-ui, "Segoe UI", sans-serif;
+
+  --text-xs: 12px;    /* captions, chart labels */
+  --text-sm: 14px;    /* body text, nav links, table cells */
+  --text-md: 16px;    /* card titles */
+  --text-lg: 20px;    /* brand name in the nav bar */
+  --text-xl: 24px;    /* KPI values */
+  --text-2xl: 32px;   /* page titles */
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  --radius-sm: 4px;     /* buttons, inputs, heatmap cells */
+  --radius: 6px;        /* cards and panels */
+  --radius-pill: 999px; /* badges and status pills */
+
+  --shadow-float: 0 2px 8px rgba(23, 28, 74, 0.12); /* panels floating on the map */
+
+  --nav-height: 64px;
+  --page-padding: 32px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+/* ---- 4. BASE ------------------------------------------------------------- */
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
-  margin: 0;
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+body {
+  font-family: var(--font);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
+
+h1,
+h2,
+h3,
+h4,
 p {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+h1 {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+h2 {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+h3 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+a {
+  color: var(--color-action);
+}
+
+a:hover {
+  color: var(--color-action-hover);
+}
+
+/* Form controls don't inherit the page font unless told to */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Visible outline when moving around with the keyboard */
+:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* Wrapper for the content of every page */
+.page {
+  padding: var(--page-padding);
 }

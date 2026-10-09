@@ -1,0 +1,56 @@
+/* The white bar across the top of every page */
+.nav-bar {
+  height: var(--nav-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* brand on the left, links on the right */
+  padding: 0 var(--page-padding);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.nav-brand {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.nav-brand:hover {
+  color: var(--color-text);
+}
+
+.nav-links {
+  display: flex;
+  gap: var(--space-xl);
+  height: 100%;
+}
+
+/* One link. Also used by the Log out button, so it resets button styling. */
+.nav-link {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  /* A see-through line top and bottom keeps the text centered and reserves
+     space, so nothing jumps when the bottom line turns indigo. */
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* sit the underline on the bar's bottom edge */
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  color: var(--color-action);
+}
+
+/* React Router adds the "active" class to the link of the current page */
+.nav-link.active {
+  font-weight: 600;
+  border-bottom-color: var(--color-selected);
+}
