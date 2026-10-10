@@ -1,0 +1,30 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+}
+
+/* For panels placed on top of the map */
+.card-floating {
+  box-shadow: var(--shadow-float);
+}
+
+/* Title on the left, action on the right */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.card-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* Keeps the action on the right even when there is no title */
+.card-action {
+  margin-left: auto;
+}

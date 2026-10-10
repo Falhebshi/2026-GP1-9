@@ -1,0 +1,56 @@
+/* Label and button row, side by side */
+.segmented-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.segmented-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* The outlined box around the buttons */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+/* One button */
+.segmented-option {
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.segmented-option:hover:not(.active) {
+  background: var(--color-selected-bg);
+}
+
+.segmented-option.active {
+  background: var(--color-selected);
+  color: var(--color-text-on-dark);
+}
+
+/* Sizes. With the box's padding and border, "md" is 40px tall and "sm" is
+   28px tall, the same as Button and Select, so they line up in a row. */
+.segmented-md .segmented-option {
+  height: 32px;
+  padding: 0 var(--space-md);
+  font-size: var(--text-sm);
+}
+
+.segmented-sm .segmented-option {
+  height: 20px;
+  padding: 0 var(--space-sm);
+  font-size: var(--text-xs);
+}
