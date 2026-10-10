@@ -44,9 +44,9 @@ Print individual vehicle states:
 python simulation/scripts/run_simulation.py --verbose
 ```
 
-### Validation Results
+### Test Results
 
-The runner was tested with both validation scenarios provided with the finalized SUMO network.
+The runner was tested with both test scenarios provided with the finalized SUMO network.
 
 | Scenario | Vehicles Processed | Maximum Active | Final Simulation Time |
 |---|---:|---:|---:|
@@ -57,7 +57,7 @@ Both simulations completed successfully with no vehicles remaining.
 
 ### Current Stopping Behavior
 
-For the current finite validation scenarios, the runner continues stepping while SUMO reports vehicles that are either active or still expected to enter.
+For the current finite test scenarios, the runner continues stepping while SUMO reports vehicles that are either active or still expected to enter.
 
 This means the simulation does not stop as soon as the last vehicle enters. Vehicles already in the network are allowed to complete their routes, allowing remaining queues to clear before the simulation ends.
 

@@ -15,12 +15,10 @@ DEFAULT_CONFIG = (
 )
 
 
-def print_vehicle_states(simulation_time):
-    """Print basic live state for every vehicle currently in SUMO."""
+def print_vehicle_states(simulation_time: float) -> None:
+    """Print the current state of every active vehicle."""
 
-    vehicle_ids = traci.vehicle.getIDList()
-
-    for vehicle_id in vehicle_ids:
+    for vehicle_id in traci.vehicle.getIDList():
         speed = traci.vehicle.getSpeed(vehicle_id)
         position = traci.vehicle.getPosition(vehicle_id)
 
@@ -32,13 +30,18 @@ def print_vehicle_states(simulation_time):
         )
 
 
-def run_simulation(config_path=DEFAULT_CONFIG, verbose=False):
+def run_simulation(
+    config_path: Path = DEFAULT_CONFIG,
+    verbose: bool = False,
+) -> None:
     """Run a finite SUMO simulation through TraCI until all traffic clears."""
 
-    config_path = Path(config_path)
+    config_path = Path(config_path).expanduser().resolve()
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"SUMO config not found: {config_path}")
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"SUMO configuration file not found: {config_path}"
+        )
 
     sumo_command = [
         "sumo",
@@ -54,40 +57,39 @@ def run_simulation(config_path=DEFAULT_CONFIG, verbose=False):
     max_active_vehicles = 0
 
     try:
-        # For finite validation scenarios, continue until:
-        # 1. no more vehicles are scheduled to enter, and
-        # 2. all vehicles already in the network have reached their destinations.
+        # Continue until no vehicles are expected to enter or remain
+        # in the simulation.
         while traci.simulation.getMinExpectedNumber() > 0:
             traci.simulationStep()
             steps += 1
 
             simulation_time = traci.simulation.getTime()
-            vehicle_ids = traci.vehicle.getIDList()
+            active_vehicle_count = len(traci.vehicle.getIDList())
 
             max_active_vehicles = max(
                 max_active_vehicles,
-                len(vehicle_ids),
+                active_vehicle_count,
             )
 
             if verbose:
                 print_vehicle_states(simulation_time)
 
         final_time = traci.simulation.getTime()
+        vehicles_remaining = traci.simulation.getMinExpectedNumber()
 
         print("\nSimulation completed successfully.")
         print(f"Final simulation time: {final_time:.1f} s")
         print(f"Steps executed: {steps}")
         print(f"Maximum active vehicles: {max_active_vehicles}")
-        print(
-            "Vehicles remaining: "
-            f"{traci.simulation.getMinExpectedNumber()}"
-        )
+        print(f"Vehicles remaining: {vehicles_remaining}")
 
     finally:
         traci.close()
 
 
-if __name__ == "__main__":
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     parser = argparse.ArgumentParser(
         description="Run a finite SUMO simulation through TraCI."
     )
@@ -102,12 +104,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Print live state for every active vehicle at every simulation step.",
+        help=(
+            "Print the state of every active vehicle "
+            "at every simulation step."
+        ),
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Run the command-line simulation."""
+
+    args = parse_args()
 
     run_simulation(
         config_path=args.config,
         verbose=args.verbose,
     )
+
+
+if __name__ == "__main__":
+    main()
