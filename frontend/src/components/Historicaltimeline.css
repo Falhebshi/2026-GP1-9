@@ -1,0 +1,252 @@
+/* Colors of the three congestion levels. The same variables color the map,
+   so a color always means the same thing on the whole page. */
+.timeline-level-low {
+  background: var(--congestion-low);
+}
+
+.timeline-level-moderate {
+  background: var(--congestion-moderate);
+}
+
+.timeline-level-high {
+  background: var(--congestion-high);
+}
+
+.timeline-level-none {
+  background: var(--congestion-none);
+}
+
+/* Legend in the card header: Low ■ ■ ■ High congestion */
+.timeline-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.timeline-legend span:first-child {
+  margin-right: var(--space-xs);
+}
+
+.timeline-legend span:last-child {
+  margin-left: var(--space-xs);
+}
+
+.timeline-swatch {
+  flex-shrink: 0;
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* Optional controls above the bars (whatever the page puts inside) */
+.timeline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+/* Bars, slider and hour labels. All three use the same columns, one per
+   bar, so they always line up. */
+.timeline-plot {
+  --bars-height: 40px; /* how tall the bars area is: change this one number */
+  --knob: 16px;
+  container-type: inline-size; /* lets the hour labels react to the width */
+}
+
+.timeline-bars,
+.timeline-axis {
+  display: grid;
+  grid-template-columns: repeat(var(--count), minmax(0, 1fr));
+}
+
+.timeline-bars {
+  position: relative; /* the tooltip is placed inside this box */
+  height: var(--bars-height);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+/* One column. It is as tall as the plot so a short bar is still easy to
+   point at and click. */
+.timeline-column {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.timeline-column:hover {
+  background: var(--color-selected-bg);
+}
+
+.timeline-column.selected {
+  background: var(--color-surface-muted);
+}
+
+/* A thin line where a new day starts */
+.timeline-column.day-start {
+  box-shadow: inset 1px 0 0 var(--color-border);
+}
+
+/* The bar itself: thin, with space on both sides */
+.timeline-bar {
+  width: 60%;
+  min-width: 2px;
+  max-width: 8px;
+  min-height: 3px; /* a value of 0 is still visible */
+  border-radius: 2px 2px 0 0;
+}
+
+/* The slider. Its line is see-through, so the knob rides on the bottom
+   edge of the bars. The margins pull it in by half a column on each side,
+   which puts the knob exactly under the middle of the selected bar. */
+.timeline-slider {
+  --inset: calc(50% / var(--count) - var(--knob) / 2);
+  appearance: none;
+  display: block;
+  position: relative;
+  width: calc(100% - 2 * var(--inset));
+  height: var(--knob);
+  margin: calc(var(--knob) / -2 - 0.5px) var(--inset) 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.timeline-slider:focus-visible {
+  outline: none; /* the knob gets the outline instead, see below */
+}
+
+/* The knob has to be styled twice: once for Chrome, Edge and Safari
+   (-webkit-) and once for Firefox (-moz-). */
+.timeline-slider::-webkit-slider-runnable-track {
+  height: var(--knob);
+  background: transparent;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.timeline-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.timeline-slider::-moz-range-track {
+  height: var(--knob);
+  background: transparent;
+}
+
+.timeline-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.timeline-slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* Hour labels */
+.timeline-axis {
+  margin-top: 2px;
+}
+
+/* A label is wider than its column, so it is centered and allowed to
+   stick out equally on both sides */
+.timeline-tick {
+  grid-row: 1;
+  display: flex;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums; /* every digit the same width */
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.timeline-tick.day-start {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* When the card is narrow there is no room for a label every hour:
+   show every 2 hours, then every 4 */
+@container (max-width: 1100px) {
+  .timeline-tick:not(.every-2) {
+    display: none;
+  }
+}
+
+@container (max-width: 520px) {
+  .timeline-tick:not(.every-4) {
+    display: none;
+  }
+}
+
+/* Tooltip above the bar the mouse is over.
+   --x (set by the component) is the middle of that bar, --y its height.
+   clamp() stops the tooltip from sticking out past either end, and max()
+   keeps it clear of the neighboring bars when its own bar is short. */
+.timeline-tooltip {
+  --half: 84px; /* half of the tooltip's width */
+  position: absolute;
+  z-index: 2;
+  left: clamp(var(--half), var(--x), calc(100% - var(--half)));
+  bottom: calc(max(var(--y), 30%) + var(--space-sm));
+  width: calc(var(--half) * 2);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px var(--space-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none; /* the mouse reaches the bars through it */
+}
+
+.timeline-tooltip-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+}
+
+/* The line under the plot: what is being shown, and the Latest button */
+.timeline-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-md);
+  min-height: 28px; /* room for the button, so nothing jumps when it appears */
+  margin-top: var(--space-xs);
+}
+
+.timeline-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+}
