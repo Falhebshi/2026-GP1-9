@@ -1,8 +1,12 @@
 import { useState } from 'react'
+import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
+import InfoList from '../components/InfoList'
+import KpiTile from '../components/KpiTile'
+import LocationInfoCard from '../components/LocationInfoCard'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import './ComponentPreview.css'
@@ -41,6 +45,95 @@ const speedOptions = [
   { value: '5', label: 'x5' },
   { value: '10', label: 'x10' },
   { value: '20', label: 'x20' },
+]
+
+// Example rows for the InfoList examples (fake data)
+const locationItems = [
+  { label: 'Name', value: 'Intersection A' },
+  { label: 'Area', value: 'Al Olaya' },
+  { label: 'Approaches', value: '4 approaches' },
+  { label: 'Signal type', value: 'Adaptive signal' },
+]
+
+const alertDetailItems = [
+  { label: 'Location', value: 'North approach' },
+  { label: 'When', value: 'Weekdays, 07:30-09:00' },
+  { label: 'How often', value: '4 of 5 days' },
+  { label: 'Status', value: <Badge variant="warning">Active</Badge> },
+]
+
+const incompleteItems = [
+  { label: 'Name', value: 'Intersection B' },
+  { label: 'Approaches', value: 3 },
+  { label: 'Signal type' }, // no value: shows "Unavailable"
+]
+
+// Example intersections for the LocationInfoCard examples (fake data)
+const fullIntersection = {
+  name: 'Intersection A',
+  area: 'Al Olaya',
+  approaches: 4,
+  signalType: 'Adaptive signal',
+}
+
+const partialIntersection = {
+  name: 'Intersection B',
+  approaches: 3,
+}
+
+// Example alerts for the AlertList examples (fake data)
+
+// Simple alerts, as on Current Traffic: a subtitle, no details to open
+const activeAlerts = [
+  {
+    id: 'a1',
+    title: 'Queue spillback',
+    subtitle: 'North approach · 2 min ago',
+    interventionsTo: '/recommendations',
+  },
+  {
+    id: 'a2',
+    title: 'Low average speed',
+    subtitle: 'East approach · 7 min ago',
+    interventionsTo: '/recommendations',
+  },
+  {
+    id: 'a3',
+    title: 'High V/C ratio',
+    subtitle: 'West approach · 11 min ago',
+    // no interventionsTo: this alert shows no link
+  },
+]
+
+// Alerts with details, as on Patterns & Trends: click one to open it
+const recurringAlerts = [
+  {
+    id: 'r1',
+    title: 'Recurring queue buildup',
+    details: alertDetailItems,
+    interventionsTo: '/recommendations',
+  },
+  {
+    id: 'r2',
+    title: 'Low average speed',
+    details: [
+      { label: 'Location', value: 'East approach' },
+      { label: 'When', value: 'Weekdays, 16:00-18:00' },
+      { label: 'How often', value: '3 of 5 days' },
+      { label: 'Status', value: <Badge variant="warning">Active</Badge> },
+    ],
+    interventionsTo: '/recommendations',
+  },
+  {
+    id: 'r3',
+    title: 'High V/C ratio',
+    details: [
+      { label: 'Location', value: 'West approach' },
+      { label: 'When', value: 'Weekends, 20:00-22:00' },
+      { label: 'How often', value: '2 of 2 days' },
+      { label: 'Status', value: <Badge variant="success">Resolved</Badge> },
+    ],
+  },
 ]
 
 // A page for trying out the shared components. It is not part of the real
@@ -224,12 +317,128 @@ function ComponentPreview() {
           <Button
             variant="secondary"
             onClick={() => {
-             setPeriod('30')
-             setDayType('all')
+              setPeriod('30')
+              setDayType('all')
             }}
           >
             Reset
           </Button>
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>KpiTile</h2>
+
+        {/* Inline layout inside a card, as on Current Traffic */}
+        <div className="preview-row preview-row-top">
+          <Card title="Current KPIs" className="preview-card-wide">
+            <div className="preview-kpi-grid">
+              <KpiTile label="Control Delay" value={46} unit="s" change={4} changeTone="bad" />
+              <KpiTile label="Queue Length" value={128} unit="m" change={12} changeTone="bad" />
+              <KpiTile label="Avg Speed" value={24} unit="km/h" change={-6} changeTone="bad" />
+              <KpiTile label="Throughput" value={1842} unit="veh/h" change={3} changeTone="good" />
+              <KpiTile label="V/C Ratio" value={0.91} change={0.04} changeUnit="" changeTone="bad" />
+              <KpiTile label="Level of Service" />
+            </div>
+          </Card>
+        </div>
+
+        {/* Stacked layout, as on Patterns & Trends */}
+        <div className="preview-row preview-row-top">
+          <KpiTile
+            layout="stacked"
+            label="Avg Control Delay"
+            value={46}
+            unit="s"
+            change={-5}
+            changeNote="vs previous"
+            changeTone="good"
+            className="preview-tile"
+          />
+          <KpiTile
+            layout="stacked"
+            label="Avg Speed"
+            value={24}
+            unit="km/h"
+            change={-5}
+            changeNote="vs previous"
+            changeTone="bad"
+            className="preview-tile"
+          />
+          <KpiTile
+            layout="stacked"
+            label="Peak Congestion Hour"
+            value="07:45"
+            className="preview-tile"
+          />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>InfoList</h2>
+        <div className="preview-row preview-row-top">
+          <Card title="Location & General Information" className="preview-card">
+            <InfoList items={locationItems} />
+          </Card>
+
+          <Card title="A value can be a component" className="preview-card">
+            <InfoList items={alertDetailItems} />
+          </Card>
+
+          <Card title="A missing value" className="preview-card">
+            <InfoList items={incompleteItems} />
+          </Card>
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>LocationInfoCard</h2>
+        <div className="preview-row preview-row-top">
+          {/* All data present, floating as it would be on the map */}
+          <LocationInfoCard
+            intersection={fullIntersection}
+            floating
+            className="preview-card"
+          />
+
+          {/* Some fields missing */}
+          <LocationInfoCard
+            intersection={partialIntersection}
+            className="preview-card"
+          />
+
+          {/* No intersection at all, e.g. while the data is still loading */}
+          <LocationInfoCard className="preview-card" />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>AlertList</h2>
+        <div className="preview-row preview-row-top">
+          <AlertList
+            title="Active Alerts"
+            alerts={activeAlerts}
+            className="preview-card-wide"
+          />
+
+          <AlertList
+            title="Recurring Problem Alerts"
+            alerts={recurringAlerts}
+            className="preview-card-wide"
+          />
+
+          <AlertList
+            title="Forecast Alerts"
+            alerts={[]}
+            emptyMessage="No upcoming traffic problems are currently predicted."
+            className="preview-card-wide"
+          />
+
+          <AlertList
+            title="Active Alerts"
+            error="Abnormal traffic detection is not responding."
+            className="preview-card-wide"
+          />
         </div>
       </section>
     </>

@@ -1,0 +1,31 @@
+.info-list {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+}
+
+/* One row: label pushed left, value pushed right */
+.info-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.info-label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.info-value {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: right;
+}
+
+.info-unavailable {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
