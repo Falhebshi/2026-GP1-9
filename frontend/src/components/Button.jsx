@@ -4,9 +4,9 @@ import './Button.css'
 //
 //   variant   "primary" (filled, the main action)  or  "secondary" (outlined)
 //   size      "md" (normal)  or  "sm" (small, e.g. Latest / Live)
-//
-// Anything else you pass (onClick, disabled, type="submit" ...) is handed
-// straight to the real <button>.
+//   children  Whatever you put between the opening and closing tags
+// ...props    Anything else you pass (onClick, disabled, type="submit" ...) is handed
+//             straight to the real <button>.
 function Button({
   variant = 'primary',
   size = 'md',
