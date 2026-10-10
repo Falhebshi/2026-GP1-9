@@ -22,6 +22,22 @@
   width: 320px;
 }
 
+.preview-card-wide {
+  width: 480px;
+}
+
+/* A single KPI tile on its own */
+.preview-tile {
+  width: 220px;
+}
+
+/* Two columns of KPI tiles, as in the Current KPIs panel */
+.preview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
 /* Small grey line under an example, e.g. to show its current value */
 .preview-note {
   margin-top: var(--space-md);
