@@ -26,6 +26,17 @@
   width: 480px;
 }
 
+/* As wide as the page, for components that fill a whole row */
+.preview-full {
+  width: 100%;
+}
+
+/* Two side by side, sharing the row equally */
+.preview-half {
+  flex: 1;
+  min-width: 320px;
+}
+
 /* A single KPI tile on its own */
 .preview-tile {
   width: 220px;
@@ -43,4 +54,25 @@
   margin-top: var(--space-md);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+
+/* The same grey text, for use inside a row */
+.preview-value {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* The fake traffic drawn inside the SimulationViewport examples */
+.demo-traffic {
+  width: 100%;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.demo-road {
+  fill: var(--color-border);
+}
+
+.demo-car {
+  fill: var(--color-action);
 }
