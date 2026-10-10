@@ -1,0 +1,30 @@
+/* One block per component on the preview page */
+.preview-section {
+  margin-top: var(--space-xl);
+}
+
+/* The examples, side by side */
+.preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+/* Line examples up by their top edge instead of their middle */
+.preview-row-top {
+  align-items: flex-start;
+}
+
+/* Gives an example a fixed width, the way a page layout would */
+.preview-card {
+  width: 320px;
+}
+
+/* Small grey line under an example, e.g. to show its current value */
+.preview-note {
+  margin-top: var(--space-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}

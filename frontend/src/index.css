@@ -35,6 +35,7 @@
   --color-surface: var(--white);         /* cards, nav bar, panels, inputs */
   --color-surface-muted: var(--lavender);/* inner detail boxes, chart tracks */
   --color-border: #dddfec;               /* card and input outlines, dividers */
+  --color-border-strong: #c5c8dc; 
 
   /* Text */
   --color-text: var(--navy);             /* headings, values, body text */
@@ -54,11 +55,13 @@
   /* Status */
   --color-success: var(--green);
   --color-success-bg: #e3f2ec;
+  --color-success-text: #1f6b55;
   --color-warning: var(--amber);         /* fills and icons only */
   --color-warning-bg: #fbeed6;
-  --color-warning-text: #8a5a10;         /* amber is too pale to read as text */
-  --color-danger: #c8473f;               /* NOT in the palette sheet, see note */
+  --color-warning-text: #8a5a10;         
+  --color-danger: #c8473f;              
   --color-danger-bg: #f9e4e2;
+  --color-danger-text: #9e2f28;
 
   /* Congestion (map roads, legend, heatmap toggle) */
   --congestion-low: var(--color-success);
@@ -123,11 +126,9 @@
   box-sizing: border-box;
 }
 
-html,
 body,
 #root {
-  height: 100%;
-  margin: 0;
+  min-height: 100vh;
 }
 
 body {
@@ -137,6 +138,7 @@ body {
   color: var(--color-text);
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
+  margin: 0;
 }
 
 h1,
