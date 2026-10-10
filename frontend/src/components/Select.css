@@ -1,0 +1,134 @@
+/* Label and dropdown, side by side */
+.select-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.select-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Wrapper that lets us draw our own arrow on top of the dropdown */
+.select-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 1;
+}
+
+/* The arrow: a small square with two borders, rotated into a "v" */
+.select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none; /* clicks pass through to the dropdown */
+}
+
+.select {
+  appearance: none; /* hide the browser's own arrow and styling */
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.select:hover {
+  border-color: var(--color-action);
+}
+
+/* Sizes. The right padding leaves room for the arrow. */
+.select-md {
+  height: 40px;
+  padding: 0 32px 0 12px;
+  font-size: var(--text-sm);
+}
+
+.select-sm {
+  height: 28px;
+  padding: 0 28px 0 8px;
+  font-size: var(--text-xs);
+}
+
+@supports (appearance: base-select) {
+  /* Switch the dropdown and its list into the styleable mode */
+  .select,
+  .select::picker(select) {
+    appearance: base-select;
+  }
+ 
+  .select {
+    display: inline-flex;
+    align-items: center;
+  }
+ 
+  /* Hide the browser's arrow: we already draw our own */
+  .select::picker-icon {
+    display: none;
+  }
+ 
+  /* While the list is open: highlight the box and flip our arrow */
+  .select:open {
+    border-color: var(--color-action);
+  }
+ 
+  .select-wrap:has(.select:open)::after {
+    transform: translateY(-30%) rotate(-135deg);
+  }
+ 
+  /* The panel that holds the options */
+  .select::picker(select) {
+    margin-top: var(--space-xs);
+    padding: var(--space-xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-float);
+  }
+ 
+  /* One option */
+  .select option {
+    padding: var(--space-sm) 12px;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+ 
+  .select-sm option {
+    font-size: var(--text-xs);
+  }
+ 
+  /* The option under the mouse, or reached with the arrow keys */
+  .select option:hover,
+  .select option:focus-visible {
+    background: var(--color-selected-bg);
+  }
+ 
+  /* The option that is currently chosen */
+  .select option:checked {
+    background: var(--color-surface-muted);
+    font-weight: 600;
+  }
+ 
+  /* Hide the tick mark: the background already shows which one is chosen */
+  .select option::checkmark {
+    display: none;
+  }
+ 
+  /* The placeholder row ("Select intersection") cannot be picked */
+  .select option:disabled {
+    color: var(--color-text-muted);
+    cursor: default;
+  }
+}
