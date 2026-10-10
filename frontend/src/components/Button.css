@@ -1,0 +1,52 @@
+/* Shared by every button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm); /* space between text and an icon, if there is one */
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+/* Sizes */
+.btn-md {
+  height: 40px;
+  padding: 0 var(--space-md);
+  font-size: var(--text-sm);
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 var(--space-sm);
+  font-size: var(--text-xs);
+}
+
+/* Primary: filled, for the main action on a page */
+.btn-primary {
+  background: var(--color-action);
+  color: var(--color-text-on-dark);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-action-hover);
+}
+
+/* Secondary: outlined, for everything else */
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-action);
+  color: var(--color-action);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
