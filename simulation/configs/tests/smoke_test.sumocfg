@@ -3,8 +3,8 @@
 <configuration>
 
     <input>
-        <net-file value="../data/processed/road_network/jaadah_study_area.net.xml"/>
-        <route-files value="scenarios/smoke_test_routes.rou.xml"/>
+        <net-file value="../../../data/processed/road_network/jaadah_study_area.net.xml"/>
+        <route-files value="../../scenarios/tests/smoke_test_routes.rou.xml"/>
     </input>
 
     <time>
