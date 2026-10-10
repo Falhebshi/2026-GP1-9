@@ -1,0 +1,182 @@
+/* The whole bar: button, slider, time and speed in one row */
+.playback-bar {
+  --knob: 16px;
+  display: flex;
+  flex-wrap: wrap; /* on a narrow page the speed control drops to a new line */
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  /* A <fieldset> comes with a border and spacing of its own: remove them */
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* The mark labels sit above the line, so leave room for them */
+.playback-bar.has-marks {
+  padding-top: 12px;
+}
+
+/* ...and keep the line long enough that the labels do not run into each
+   other. When the page is too narrow, the speed control moves to a new line. */
+.playback-bar.has-marks .playback-track {
+  min-width: 320px;
+}
+
+.playback-bar:disabled {
+  opacity: 0.5;
+}
+
+.playback-bar:disabled * {
+  cursor: not-allowed;
+}
+
+/* Same width for "Play" and "Pause", so the slider does not shift */
+.playback-toggle {
+  min-width: 104px;
+}
+
+/* The slider area. Everything inside is placed with the same formula:
+   half a knob in from each end, because that is how far the knob's
+   middle can travel. */
+.playback-track {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  height: var(--knob);
+}
+
+/* The line: filled from the beginning up to the knob */
+.playback-rail {
+  --progress-at: calc(var(--progress) * 100%);
+  position: absolute;
+  top: calc(50% - 2px);
+  left: calc(var(--knob) / 2);
+  right: calc(var(--knob) / 2);
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-selected) 0 var(--progress-at),
+    var(--color-border-strong) var(--progress-at) 100%
+  );
+}
+
+/* One mark. --at (set by the component) is its place along the line. */
+.playback-mark {
+  position: absolute;
+  top: 0;
+  left: calc(var(--knob) / 2 + var(--at) * (100% - var(--knob)));
+  height: 100%;
+  pointer-events: none; /* dragging the knob works through the dots */
+}
+
+.playback-mark-dot {
+  position: absolute;
+  top: calc(50% - 6px);
+  left: -6px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-border-strong);
+}
+
+.playback-mark-dot.passed {
+  background: var(--color-selected);
+}
+
+.playback-mark-label {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 0;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: auto; /* the label can be clicked, the dot cannot */
+}
+
+.playback-mark-label:hover:not(:disabled) {
+  background: var(--color-selected-bg);
+  color: var(--color-text);
+}
+
+.playback-mark-label.active {
+  background: var(--color-selected);
+  color: var(--color-text-on-dark);
+  font-weight: 600;
+}
+
+/* The slider itself. Its own line is see-through: the rail above draws
+   the line, and the slider only adds the knob on top of it. */
+.playback-slider {
+  appearance: none;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--knob);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.playback-slider:focus-visible {
+  outline: none; /* the knob gets the outline instead, see below */
+}
+
+/* The knob is styled twice: once for Chrome, Edge and Safari (-webkit-)
+   and once for Firefox (-moz-). */
+.playback-slider::-webkit-slider-runnable-track {
+  height: var(--knob);
+  background: transparent;
+}
+
+.playback-slider::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.playback-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.playback-slider::-moz-range-track {
+  height: var(--knob);
+  background: transparent;
+}
+
+.playback-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.playback-slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* "12:34 / 30:00" */
+.playback-time {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums; /* digits keep their width as they change */
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
