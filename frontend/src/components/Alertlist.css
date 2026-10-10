@@ -1,0 +1,92 @@
+.alert-list {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One alert */
+.alert-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* The alert that is open. The shadow thickens the outline to 2px without
+   changing the item's size, so nothing shifts when it opens. */
+.alert-item.open {
+  background: var(--color-selected-bg);
+  border-color: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+/* Title on the left, "View interventions" on the right */
+.alert-header {
+  display: flex;
+  flex-wrap: wrap; /* the link drops to the next line in a narrow card */
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-md);
+  padding: var(--space-sm) 12px;
+}
+
+/* The clickable part of an alert that has details */
+.alert-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: left;
+}
+
+/* Small arrow: points right when closed, down when open */
+.alert-chevron {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.alert-item.open .alert-chevron {
+  transform: rotate(45deg);
+}
+
+.alert-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-title {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.alert-subtitle {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-link {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The lavender box with the alert's details */
+.alert-details {
+  margin: 0 12px 12px;
+  padding: var(--space-sm) 12px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-sm);
+}
