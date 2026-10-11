@@ -1,0 +1,112 @@
+/* The whole component: title, box and bottom strip inside one outline */
+.viewport {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden; /* keeps the map inside the rounded corners */
+}
+
+.viewport-header {
+  padding: var(--space-sm) 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* The box the simulation is shown in. The floating panels are placed
+   relative to it. */
+.viewport-stage {
+  position: relative;
+  background: var(--color-bg);
+}
+
+/* Whatever the page puts inside fills the whole box */
+.viewport-content {
+  position: absolute;
+  inset: 0;
+  display: grid;
+}
+
+.viewport-content > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* An <iframe> has a fixed size unless told otherwise */
+.viewport-content > iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Empty frame: a faint grid with a short message in the middle */
+.viewport-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  background-image:
+    linear-gradient(var(--chart-grid) 1px, transparent 1px),
+    linear-gradient(to right, var(--chart-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.viewport-placeholder-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Error message, centered in the box */
+.viewport-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+}
+
+/* Floating panel in the top left corner */
+.viewport-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  max-width: calc(100% - 24px);
+}
+
+/* Time and badge in the top right corner */
+.viewport-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.viewport-status-label {
+  color: var(--color-text-muted);
+}
+
+.viewport-status-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums; /* digits keep their width as they change */
+}
+
+/* Strip along the bottom, e.g. for the PlaybackBar */
+.viewport-footer {
+  padding: var(--space-sm) 12px;
+  border-top: 1px solid var(--color-border);
+}
