@@ -1,2 +1,4 @@
 traci==1.27.0
 sumolib==1.27.0
+pydantic==2.13.5
+pytest==9.1.1
