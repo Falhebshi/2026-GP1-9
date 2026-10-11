@@ -18,8 +18,6 @@ class VehicleType(str, Enum):
     """Initial vehicle categories exposed by Jaadah."""
 
     CAR = "car"
-    BUS = "bus"
-    TRUCK = "truck"
 
 
 # ============================================================
