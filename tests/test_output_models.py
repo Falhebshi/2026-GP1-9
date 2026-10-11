@@ -386,15 +386,7 @@ def test_invalid_heading_is_rejected(heading):
         )
 
 
-@pytest.mark.parametrize(
-    "vehicle_type",
-    [
-        VehicleType.CAR,
-        VehicleType.BUS,
-        VehicleType.TRUCK,
-    ],
-)
-def test_all_supported_vehicle_types(vehicle_type):
+def test_supported_vehicle_type():
     state = VehicleState(
         vehicle_id="veh_001",
         scenario_id="SCN_001",
@@ -407,14 +399,22 @@ def test_all_supported_vehicle_types(vehicle_type):
         latitude=24.74,
         speed_mps=10,
         heading_deg=90,
-        vehicle_type=vehicle_type,
+        vehicle_type=VehicleType.CAR,
         sumo_edge_id="edge_001",
     )
 
-    assert state.vehicle_type == vehicle_type
+    assert state.vehicle_type == VehicleType.CAR
 
 
-def test_invalid_vehicle_type_is_rejected():
+@pytest.mark.parametrize(
+    "vehicle_type",
+    [
+        "bus",
+        "truck",
+        "motorcycle",
+    ],
+)
+def test_unsupported_vehicle_types_are_rejected(vehicle_type):
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
@@ -428,10 +428,9 @@ def test_invalid_vehicle_type_is_rejected():
             latitude=24.74,
             speed_mps=10,
             heading_deg=90,
-            vehicle_type="motorcycle",
+            vehicle_type=vehicle_type,
             sumo_edge_id="edge_001",
         )
-
 
 @pytest.mark.parametrize(
     ("field", "value"),

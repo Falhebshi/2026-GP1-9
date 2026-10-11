@@ -548,15 +548,13 @@ The list must contain at least one valid lane ID and cannot contain duplicate ID
 
 ## 4.4 Vehicle Type Enum
 
-The initial standardized vehicle categories are:
+The current standardized vehicle category is:
 
 ```text
 car
-bus
-truck
 ```
 
-These application-level categories allow downstream components to work with stable vehicle classes rather than depending directly on arbitrary SUMO vehicle-type identifiers.
+This application-level category allows downstream components to work with a stable vehicle classification rather than depending directly on arbitrary SUMO vehicle-type identifiers.
 
 ---
 
