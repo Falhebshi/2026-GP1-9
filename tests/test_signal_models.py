@@ -216,7 +216,6 @@ def test_signal_phase_extra_field_is_rejected():
             raw_sumo_state="GGrr",
         )
 
-
 # ============================================================
 # SIGNAL PROGRAM TESTS
 # ============================================================
@@ -230,7 +229,6 @@ def test_valid_signal_program():
         cycle_length_s=120,
         phases=make_120_second_phases(),
         source=SignalProgramSource.BASELINE_MODEL,
-        sumo_tls_id="TLS_001",
     )
 
     assert program.cycle_length_s == 120
@@ -247,13 +245,11 @@ def test_signal_program_ids_are_trimmed():
         cycle_length_s=120,
         phases=make_120_second_phases(),
         source=SignalProgramSource.BASELINE_MODEL,
-        sumo_tls_id="  TLS_001  ",
     )
 
     assert program.signal_program_id == "PROGRAM_001"
     assert program.scenario_id == "SCN_001"
     assert program.intersection_id == "INT_001"
-    assert program.sumo_tls_id == "TLS_001"
 
 
 @pytest.mark.parametrize(
@@ -262,7 +258,6 @@ def test_signal_program_ids_are_trimmed():
         "signal_program_id",
         "scenario_id",
         "intersection_id",
-        "sumo_tls_id",
     ],
 )
 def test_blank_signal_program_ids_are_rejected(field):
@@ -274,7 +269,6 @@ def test_blank_signal_program_ids_are_rejected(field):
         "cycle_length_s": 120,
         "phases": make_120_second_phases(),
         "source": SignalProgramSource.BASELINE_MODEL,
-        "sumo_tls_id": "TLS_001",
     }
 
     data[field] = "   "
@@ -299,7 +293,6 @@ def test_empty_phase_list_is_rejected():
             cycle_length_s=120,
             phases=[],
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -329,7 +322,6 @@ def test_duplicate_phase_ids_are_rejected():
             cycle_length_s=90,
             phases=phases,
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -359,7 +351,6 @@ def test_duplicate_sequence_orders_are_rejected():
             cycle_length_s=90,
             phases=phases,
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -376,7 +367,6 @@ def test_cycle_length_must_match_phase_total():
             cycle_length_s=118,
             phases=make_120_second_phases(),
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -389,7 +379,6 @@ def test_small_floating_point_difference_is_allowed():
         cycle_length_s=120.0000001,
         phases=make_120_second_phases(),
         source=SignalProgramSource.BASELINE_MODEL,
-        sumo_tls_id="TLS_001",
     )
 
     assert program.cycle_length_s == 120.0000001
@@ -415,7 +404,6 @@ def test_invalid_cycle_length_is_rejected(cycle_length):
             cycle_length_s=cycle_length,
             phases=make_120_second_phases(),
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -429,7 +417,6 @@ def test_invalid_control_type_is_rejected():
             cycle_length_s=120,
             phases=make_120_second_phases(),
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
         )
 
 
@@ -443,6 +430,19 @@ def test_invalid_signal_program_source_is_rejected():
             cycle_length_s=120,
             phases=make_120_second_phases(),
             source="unknown",
+        )
+
+
+def test_sumo_tls_id_is_rejected_from_canonical_signal_program():
+    with pytest.raises(ValidationError):
+        SignalProgram(
+            signal_program_id="PROGRAM_001",
+            scenario_id="SCN_001",
+            intersection_id="INT_001",
+            control_type=SignalControlType.FIXED_TIME,
+            cycle_length_s=120,
+            phases=make_120_second_phases(),
+            source=SignalProgramSource.BASELINE_MODEL,
             sumo_tls_id="TLS_001",
         )
 
@@ -457,11 +457,10 @@ def test_signal_program_extra_field_is_rejected():
             cycle_length_s=120,
             phases=make_120_second_phases(),
             source=SignalProgramSource.BASELINE_MODEL,
-            sumo_tls_id="TLS_001",
             raw_tls_state="GGrr",
         )
 
-
+        
 # ============================================================
 # MOVEMENT SIGNAL STATE TESTS
 # ============================================================

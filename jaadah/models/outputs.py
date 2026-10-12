@@ -150,6 +150,9 @@ class EdgeTrafficState(BaseModel):
     """
     Aggregate traffic measurements for one SUMO edge over an interval.
 
+    Density is represented in vehicles per kilometre (veh/km),
+    consistent with SUMO edgeData output.
+
     These are simulation measurements, not final application KPIs.
     """
 
@@ -179,8 +182,7 @@ class EdgeTrafficState(BaseModel):
         ge=0,
     )
 
-    density: float = Field(ge=0)
-
+    density_veh_per_km: float = Field(ge=0)
     time_loss_s: float | None = Field(
         default=None,
         ge=0,

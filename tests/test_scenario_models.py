@@ -379,6 +379,123 @@ def test_blank_simulation_run_strings_are_rejected(field):
     ):
         SimulationRun(**data)
 
+def test_pending_run_can_have_no_started_at():
+    run = SimulationRun(
+        run_id="RUN_PENDING",
+        scenario_id="SCN_001",
+        random_seed=42,
+        network_version="network-v1",
+        sumo_version="1.27.1",
+        step_length_s=0.5,
+        started_at=None,
+        status=SimulationRunStatus.PENDING,
+    )
+
+    assert run.started_at is None
+    assert run.status == SimulationRunStatus.PENDING
+
+
+def test_failed_run_can_have_no_started_at():
+    run = SimulationRun(
+        run_id="RUN_FAILED",
+        scenario_id="SCN_001",
+        random_seed=42,
+        network_version="network-v1",
+        sumo_version="1.27.1",
+        step_length_s=0.5,
+        started_at=None,
+        status=SimulationRunStatus.FAILED,
+    )
+
+    assert run.started_at is None
+    assert run.status == SimulationRunStatus.FAILED
+
+
+def test_running_run_requires_started_at():
+    with pytest.raises(
+        ValidationError,
+        match="started_at is required for running and completed runs",
+    ):
+        SimulationRun(
+            run_id="RUN_RUNNING",
+            scenario_id="SCN_001",
+            random_seed=42,
+            network_version="network-v1",
+            sumo_version="1.27.1",
+            step_length_s=0.5,
+            started_at=None,
+            status=SimulationRunStatus.RUNNING,
+        )
+
+
+def test_completed_run_requires_started_at():
+    with pytest.raises(
+        ValidationError,
+        match="started_at is required for running and completed runs",
+    ):
+        SimulationRun(
+            run_id="RUN_COMPLETED",
+            scenario_id="SCN_001",
+            random_seed=42,
+            network_version="network-v1",
+            sumo_version="1.27.1",
+            step_length_s=0.5,
+            started_at=None,
+            status=SimulationRunStatus.COMPLETED,
+        )
+
+
+def test_completed_run_with_started_at_is_valid():
+    started_at = datetime(
+        2026,
+        10,
+        10,
+        12,
+        0,
+        tzinfo=RIYADH,
+    )
+
+    run = SimulationRun(
+        run_id="RUN_COMPLETED",
+        scenario_id="SCN_001",
+        random_seed=42,
+        network_version="network-v1",
+        sumo_version="1.27.1",
+        step_length_s=0.5,
+        started_at=started_at,
+        status=SimulationRunStatus.COMPLETED,
+    )
+
+    assert run.started_at == started_at
+    assert run.status == SimulationRunStatus.COMPLETED
+
+
+def test_failed_run_can_have_started_at():
+    started_at = datetime(
+        2026,
+        10,
+        10,
+        12,
+        0,
+        tzinfo=RIYADH,
+    )
+
+    run = SimulationRun(
+        run_id="RUN_FAILED",
+        scenario_id="SCN_001",
+        random_seed=42,
+        network_version="network-v1",
+        sumo_version="1.27.1",
+        step_length_s=0.5,
+        started_at=started_at,
+        status=SimulationRunStatus.FAILED,
+    )
+
+    assert run.started_at == started_at
+    assert run.status == SimulationRunStatus.FAILED
+
+
+
 
 def test_simulation_run_strings_are_trimmed():
     run = SimulationRun(
@@ -591,6 +708,9 @@ def test_simulation_run_extra_field_is_rejected():
             status=SimulationRunStatus.RUNNING,
             vehicle_count=100,
         )
+
+
+
 
 
 # ============================================================
