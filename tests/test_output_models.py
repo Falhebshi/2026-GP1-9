@@ -508,7 +508,7 @@ def test_valid_edge_traffic_state():
         vehicles_left=95,
         average_speed_mps=12.5,
         travel_time_s=45,
-        density=20,
+        density_veh_per_km=20,
         time_loss_s=8.5,
         sampled_seconds=900,
     )
@@ -531,7 +531,7 @@ def test_valid_edge_state_without_segment_mapping():
         ),
         vehicles_entered=100,
         vehicles_left=95,
-        density=20,
+        density_veh_per_km=20,
         sampled_seconds=900,
     )
 
@@ -562,7 +562,7 @@ def test_blank_required_edge_ids_are_rejected(field):
         ),
         "vehicles_entered": 100,
         "vehicles_left": 95,
-        "density": 20,
+        "density_veh_per_km": 20,
         "sampled_seconds": 900,
     }
 
@@ -593,7 +593,7 @@ def test_blank_segment_id_is_rejected():
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
         )
 
@@ -612,7 +612,7 @@ def test_edge_ids_are_trimmed():
         ),
         vehicles_entered=100,
         vehicles_left=95,
-        density=20,
+        density_veh_per_km=20,
         sampled_seconds=900,
     )
 
@@ -639,7 +639,7 @@ def test_edge_interval_equal_times_are_rejected():
             interval_end=timestamp,
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
         )
 
@@ -661,7 +661,7 @@ def test_edge_interval_end_before_start_is_rejected():
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
         )
 
@@ -681,7 +681,7 @@ def test_naive_edge_timestamp_is_rejected():
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
         )
 
@@ -703,7 +703,7 @@ def test_non_riyadh_edge_timestamp_is_rejected():
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
         )
 
@@ -728,7 +728,7 @@ def test_negative_edge_vehicle_counts_are_rejected(field):
         ),
         "vehicles_entered": 100,
         "vehicles_left": 95,
-        "density": 20,
+        "density_veh_per_km": 20,
         "sampled_seconds": 900,
     }
 
@@ -758,7 +758,7 @@ def test_boolean_edge_vehicle_counts_are_rejected(field):
         ),
         "vehicles_entered": 100,
         "vehicles_left": 95,
-        "density": 20,
+        "density_veh_per_km": 20,
         "sampled_seconds": 900,
     }
 
@@ -776,7 +776,7 @@ def test_boolean_edge_vehicle_counts_are_rejected(field):
     [
         ("average_speed_mps", -1),
         ("travel_time_s", -1),
-        ("density", -1),
+        ("density_veh_per_km", -1),
         ("time_loss_s", -1),
         ("sampled_seconds", 0),
         ("sampled_seconds", -1),
@@ -798,7 +798,7 @@ def test_invalid_edge_measurements_are_rejected(
         ),
         "vehicles_entered": 100,
         "vehicles_left": 95,
-        "density": 20,
+        "density_veh_per_km": 20,
         "sampled_seconds": 900,
     }
 
@@ -830,7 +830,7 @@ def test_non_finite_edge_measurements_are_rejected(value):
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=value,
+            density_veh_per_km=value,
             sampled_seconds=900,
         )
 
@@ -849,7 +849,7 @@ def test_edge_state_extra_field_is_rejected():
             ),
             vehicles_entered=100,
             vehicles_left=95,
-            density=20,
+            density_veh_per_km=20,
             sampled_seconds=900,
             kpi_score=0.9,
         )

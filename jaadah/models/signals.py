@@ -124,6 +124,10 @@ class SignalProgram(BaseModel):
 
     The model exposes engineering-level phase information while the
     raw SUMO traffic-light representation remains an adapter concern.
+
+    Jaadah currently models signal phases as sequential, non-overlapping
+    phases. Concurrent or overlapping phase execution is not represented
+    by this canonical model.
     """
 
     model_config = ConfigDict(
@@ -143,13 +147,10 @@ class SignalProgram(BaseModel):
 
     source: SignalProgramSource
 
-    sumo_tls_id: str
-
     @field_validator(
         "signal_program_id",
         "scenario_id",
         "intersection_id",
-        "sumo_tls_id",
     )
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
@@ -198,7 +199,7 @@ class SignalProgram(BaseModel):
     def validate_cycle_length(self) -> "SignalProgram":
         """
         Require the declared cycle length to match the total duration
-        of all phases in the signal program.
+        of all sequential phases in the signal program.
         """
 
         total_phase_time = sum(

@@ -203,7 +203,7 @@ class SimulationRun(BaseModel):
 
     step_length_s: float = Field(gt=0)
 
-    started_at: datetime
+    started_at: datetime | None = None
 
     status: SimulationRunStatus
 
@@ -258,14 +258,14 @@ class SimulationRun(BaseModel):
     @classmethod
     def validate_started_at_timezone(
         cls,
-        value: datetime,
-    ) -> datetime:
+        value: datetime | None,
+    ) -> datetime | None:
         """
-        Require execution timestamps to include timezone information.
-
-        Execution metadata may be represented in any explicit timezone;
-        unlike scenario data-time, it is not restricted to UTC+03.
+        Require execution timestamps to include timezone information
+        when a start timestamp exists.
         """
+        if value is None:
+            return None
 
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError(
@@ -273,6 +273,19 @@ class SimulationRun(BaseModel):
             )
 
         return value
+
+    @model_validator(mode="after")
+    def validate_started_at(self) -> "SimulationRun":
+        if self.status in {
+            SimulationRunStatus.RUNNING,
+            SimulationRunStatus.COMPLETED,
+        }:
+            if self.started_at is None:
+                raise ValueError(
+                    "started_at is required for running and completed runs"
+                )
+
+        return self
 
 
 # ============================================================
