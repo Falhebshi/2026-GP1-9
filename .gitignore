@@ -10,3 +10,7 @@ venv/
 
 .DS_Store
 Thumbs.db
+
+# RCRC sample data - publication permission pending
+/data/raw/rcrc_sample/
+/data/processed/rcrc_sample/
