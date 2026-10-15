@@ -392,3 +392,134 @@ class ApproachTrafficState(BaseModel):
             )
 
         return self
+
+# ============================================================
+# VEHICLE DELAY RECORD
+# ============================================================
+
+class VehicleDelayRecord(BaseModel):
+    """
+    One simulated vehicle's passage through the delay zone of one
+    movement, in one simulation run.
+
+    The delay zone runs from a fixed distance before the stop line to
+    the point after the intersection where the vehicle is back to
+    speed. Records are produced by the simulation pipeline from SUMO
+    vehicle position output; only complete passages are recorded.
+
+    zone_entry_time is when the vehicle arrived: its delay is counted
+    in the interval it arrived in.
+    stop_line_time is when the vehicle got through the signal: it is
+    counted as served (throughput) in the interval it crossed the
+    stop line.
+
+    free_flow_travel_time_s is how long the vehicle would have taken
+    through the same zone with no traffic and no signal. How it is
+    obtained (one free-flow speed, or a free-flow speed per lane along
+    the path) is decided by the simulation pipeline. Time loss is the
+    difference between the actual and the free-flow travel time.
+
+    These are simulation measurements, not final application KPIs.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    scenario_id: str
+    run_id: str
+    vehicle_id: str
+
+    intersection_id: str
+    approach_id: str
+    movement_id: str
+
+    zone_entry_time: datetime
+    stop_line_time: datetime
+    zone_exit_time: datetime
+
+    zone_distance_m: float = Field(gt=0)
+    free_flow_travel_time_s: float = Field(gt=0)
+
+    @field_validator(
+        "scenario_id",
+        "run_id",
+        "vehicle_id",
+        "intersection_id",
+        "approach_id",
+        "movement_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator(
+        "zone_entry_time",
+        "stop_line_time",
+        "zone_exit_time",
+    )
+    @classmethod
+    def validate_timezone(
+        cls,
+        value: datetime,
+    ) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "timestamp must include timezone information"
+            )
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError(
+                "timestamp must use Riyadh time (UTC+03:00)"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_passage_times(self) -> "VehicleDelayRecord":
+        if self.zone_exit_time <= self.zone_entry_time:
+            raise ValueError(
+                "zone_exit_time must be later than zone_entry_time"
+            )
+
+        if not (
+            self.zone_entry_time
+            <= self.stop_line_time
+            <= self.zone_exit_time
+        ):
+            raise ValueError(
+                "stop_line_time must be between "
+                "zone_entry_time and zone_exit_time"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_free_flow_travel_time(self) -> "VehicleDelayRecord":
+        if self.free_flow_travel_time_s > self.zone_travel_time_s:
+            raise ValueError(
+                "free_flow_travel_time_s cannot exceed the time "
+                "spent in the zone (time loss would be negative)"
+            )
+
+        return self
+
+    @property
+    def zone_travel_time_s(self) -> float:
+        """Seconds the vehicle spent inside the delay zone."""
+
+        return (
+            self.zone_exit_time - self.zone_entry_time
+        ).total_seconds()
+
+    @property
+    def time_loss_s(self) -> float:
+        """Seconds lost compared with free-flow travel through the zone."""
+
+        return self.zone_travel_time_s - self.free_flow_travel_time_s
