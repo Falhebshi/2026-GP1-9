@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<configuration>
+    <input>
+        <net-file value="../../../data/processed/road_network/jaadah_study_area.net.xml" />
+        <route-files value="../../scenarios/tests/stress_test_v2.rou.xml" />
+    </input>
+    <time>
+        <begin value="0" />
+        <end value="600" />
+        <step-length value="0.2" />
+    </time>
+    <processing>
+        <lanechange.duration value="2" />
+    </processing>
+    <output>
+        <lanechange-output value="../../outputs/tests/stress_test_v2/stress_test_v2_lanechanges.xml" />
+        <collision-output value="../../outputs/tests/stress_test_v2/stress_test_v2_collisions.xml" />
+        <tripinfo-output value="../../outputs/tests/stress_test_v2/stress_test_v2_tripinfo.xml" />
+        <summary-output value="../../outputs/tests/stress_test_v2/stress_test_v2_summary.xml" />
+        <statistic-output value="../../outputs/tests/stress_test_v2/stress_test_v2_statistics.xml" />
+    </output>
+    <report>
+        <log value="../../outputs/tests/stress_test_v2/stress_test_v2.log" />
+        <no-warnings value="false" />
+        <no-step-log value="true" />
+    </report>
+    <random_number>
+        <seed value="42" />
+    </random_number>
+</configuration>
