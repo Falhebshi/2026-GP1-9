@@ -523,3 +523,125 @@ class VehicleDelayRecord(BaseModel):
         """Seconds lost compared with free-flow travel through the zone."""
 
         return self.zone_travel_time_s - self.free_flow_travel_time_s
+
+
+# ============================================================
+# CYCLE QUEUE RECORD
+# ============================================================
+
+class CycleQueueRecord(BaseModel):
+    """
+    Queue measurements for one lane over one signal cycle, in one
+    simulation run.
+
+    Produced by the simulation pipeline from a lane-area detector
+    whose output period is one signal cycle, aligned with the cycle
+    start. The lane is identified by its Jaadah lane index; the
+    movements it serves come from the matching ApproachLane, so a
+    shared lane's queue applies to all of its movements.
+
+    These are simulation measurements, not final application KPIs.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    scenario_id: str
+    run_id: str
+
+    intersection_id: str
+    approach_id: str
+    lane_index: int = Field(ge=1)
+
+    cycle_start: datetime
+    cycle_end: datetime
+
+    max_queue_length_m: float = Field(ge=0)
+    max_queue_vehicles: int = Field(ge=0)
+
+    mean_halting_duration_s: float = Field(ge=0)
+    max_halting_duration_s: float = Field(ge=0)
+
+    @field_validator(
+        "scenario_id",
+        "run_id",
+        "intersection_id",
+        "approach_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator(
+        "cycle_start",
+        "cycle_end",
+    )
+    @classmethod
+    def validate_timezone(
+        cls,
+        value: datetime,
+    ) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "timestamp must include timezone information"
+            )
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError(
+                "timestamp must use Riyadh time (UTC+03:00)"
+            )
+
+        return value
+
+    @field_validator(
+        "lane_index",
+        "max_queue_vehicles",
+        mode="before",
+    )
+    @classmethod
+    def validate_integers(cls, value):
+        if isinstance(value, bool):
+            raise ValueError(
+                "value must be an integer, not a boolean"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_cycle(self) -> "CycleQueueRecord":
+        if self.cycle_end <= self.cycle_start:
+            raise ValueError(
+                "cycle_end must be later than cycle_start"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_halting_durations(self) -> "CycleQueueRecord":
+        if self.mean_halting_duration_s > self.max_halting_duration_s:
+            raise ValueError(
+                "mean_halting_duration_s cannot exceed "
+                "max_halting_duration_s"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_queue_units_agree(self) -> "CycleQueueRecord":
+        has_queue_m = self.max_queue_length_m > 0
+        has_queue_veh = self.max_queue_vehicles > 0
+
+        if has_queue_m != has_queue_veh:
+            raise ValueError(
+                "max_queue_length_m and max_queue_vehicles must both "
+                "be zero or both be greater than zero"
+            )
+
+        return self
