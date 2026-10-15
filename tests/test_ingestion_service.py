@@ -3,7 +3,7 @@ from datetime import datetime
 import httpx2
 import pytest
 
-from jaadah.ingestion.service import ingest_synthetic_observations
+from backend.ingestion.service import ingest_synthetic_observations
 
 
 class FakeSyntheticTrafficClient:

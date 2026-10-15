@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from jaadah.ingestion.adapter import adapt_synthetic_record
+from backend.ingestion.adapter import adapt_synthetic_record
 from jaadah.models.traffic import TrafficObservationSource
 
 

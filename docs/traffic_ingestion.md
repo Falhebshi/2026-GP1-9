@@ -112,7 +112,7 @@ This preserves the distinction between source observations and information later
 The HTTP client is implemented in:
 
 ```text
-jaadah/ingestion/client.py
+backend/ingestion/client.py
 ```
 
 `SyntheticTrafficClient` communicates with the standalone synthetic traffic source through its HTTP API.
@@ -186,7 +186,7 @@ Similarly, connection failures propagate to the caller rather than being interpr
 The source adapter is implemented in:
 
 ```text
-jaadah/ingestion/adapter.py
+backend/ingestion/adapter.py
 ```
 
 The adapter converts one synthetic-source record into a canonical Jaadah `TrafficObservation`.
@@ -364,7 +364,7 @@ Keeping these responsibilities separate avoids duplicating generic Jaadah valida
 The ingestion service is implemented in:
 
 ```text
-jaadah/ingestion/service.py
+backend/ingestion/service.py
 ```
 
 The service coordinates the HTTP client and source adapter.

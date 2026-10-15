@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from jaadah.ingestion.adapter import adapt_synthetic_record
-from jaadah.ingestion.client import SyntheticTrafficClient
+from backend.ingestion.adapter import adapt_synthetic_record
+from backend.ingestion.client import SyntheticTrafficClient
 from jaadah.models.traffic import TrafficObservation
 
 

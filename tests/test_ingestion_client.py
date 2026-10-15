@@ -3,7 +3,7 @@ from datetime import datetime
 import httpx2
 import pytest
 
-from jaadah.ingestion.client import SyntheticTrafficClient
+from backend.ingestion.client import SyntheticTrafficClient
 
 
 def make_response(
