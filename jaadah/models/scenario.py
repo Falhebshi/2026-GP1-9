@@ -328,3 +328,145 @@ class SimulationConfig(BaseModel):
             )
 
         return value
+
+# ============================================================
+# REPLICATION PAIR
+# ============================================================
+
+class ReplicationPair(BaseModel):
+    """
+    One matched pair in a replicated experiment: a baseline run and
+    an intervention run that must have used the same random seed.
+
+    The seed itself is not stored here. SimulationRun owns the seed;
+    the replication runner confirms that both runs of a pair used the
+    same one.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    baseline_run_id: str
+    intervention_run_id: str
+
+    @field_validator(
+        "baseline_run_id",
+        "intervention_run_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        """Reject empty or whitespace-only run IDs."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_distinct_runs(self) -> "ReplicationPair":
+        """A pair compares two different runs."""
+
+        if self.baseline_run_id == self.intervention_run_id:
+            raise ValueError(
+                "baseline_run_id and intervention_run_id "
+                "must be different runs"
+            )
+
+        return self
+
+
+# ============================================================
+# REPLICATION SET
+# ============================================================
+
+class ReplicationSet(BaseModel):
+    """
+    A replicated experiment comparing an intervention scenario with
+    its baseline using matched random seeds (common random numbers).
+
+    Each pair references a baseline run and an intervention run that
+    used the same seed, so differences between them come from the
+    intervention rather than from random variation.
+
+    Random seeds are owned by SimulationRun and are not repeated here.
+    The replication runner, which has the SimulationRun and Scenario
+    objects, confirms that both runs of each pair used the same seed,
+    that each pair used a different seed, and that each run belongs
+    to the stated scenario. This model checks only its own structure.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    replication_set_id: str
+
+    baseline_scenario_id: str
+    intervention_scenario_id: str
+
+    pairs: list[ReplicationPair]
+
+    @field_validator(
+        "replication_set_id",
+        "baseline_scenario_id",
+        "intervention_scenario_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        """Reject empty or whitespace-only identifiers."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_replication_set(self) -> "ReplicationSet":
+        """Validate the scenarios, pair count and run IDs."""
+
+        if self.baseline_scenario_id == self.intervention_scenario_id:
+            raise ValueError(
+                "baseline and intervention scenarios must be different"
+            )
+
+        if len(self.pairs) < 2:
+            raise ValueError(
+                "a replication set needs at least two pairs "
+                "(a standard deviation needs two values)"
+            )
+
+        run_ids = []
+
+        for pair in self.pairs:
+            run_ids.append(pair.baseline_run_id)
+            run_ids.append(pair.intervention_run_id)
+
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError(
+                "each run may appear only once in a replication set"
+            )
+
+        return self
+
+    @property
+    def replication_count(self) -> int:
+        """Number of matched pairs in the experiment."""
+
+        return len(self.pairs)
+
+    @property
+    def baseline_run_ids(self) -> list[str]:
+        """Baseline run IDs, in pair order."""
+
+        return [pair.baseline_run_id for pair in self.pairs]
+
+    @property
+    def intervention_run_ids(self) -> list[str]:
+        """Intervention run IDs, in pair order."""
+
+        return [pair.intervention_run_id for pair in self.pairs]
