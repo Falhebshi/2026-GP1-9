@@ -269,6 +269,11 @@ class ApproachLane(BaseModel):
     """
     One lane of a Jaadah approach and the movements it serves.
 
+    lane_id is the lane's stable Jaadah identity (e.g. LANE_E_2). It
+    keeps its meaning if the layout changes; the mapping layer links
+    it to SUMO lane IDs. approach_id and lane_index are facts about
+    the lane, not its identity.
+
     lane_index counts from the median: 1 is the lane closest to the
     median. This is a Jaadah index; the mapping layer converts it to
     SUMO lane IDs (SUMO counts from the kerb, starting at 0).
@@ -288,6 +293,7 @@ class ApproachLane(BaseModel):
         allow_inf_nan=False,
     )
 
+    lane_id: str
     approach_id: str
 
     lane_index: int = Field(ge=1)
@@ -300,10 +306,13 @@ class ApproachLane(BaseModel):
         gt=0,
     )
 
-    @field_validator("approach_id")
+    @field_validator(
+        "lane_id",
+        "approach_id",
+    )
     @classmethod
-    def validate_approach_id(cls, value: str) -> str:
-        """Reject an empty or whitespace-only approach ID."""
+    def validate_required_ids(cls, value: str) -> str:
+        """Reject empty or whitespace-only identifiers."""
 
         value = value.strip()
 

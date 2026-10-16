@@ -13,15 +13,14 @@ CYCLE_START = datetime(2026, 10, 14, 8, 0, 0, tzinfo=RIYADH)
 
 def valid_queue_data(**overrides):
     """
-    A valid 120 s cycle on East lane 2: the longest queue was 48 m
+    A valid 120 s cycle on lane LANE_E_2: the longest queue was 48 m
     (7 vehicles); halted vehicles stood still 35 s on average and
     62 s at most.
     """
 
     data = {
         "run_id": "RUN_1",
-        "approach_id": "APP_E",
-        "lane_index": 2,
+        "lane_id": "LANE_E_2",
         "cycle_start": CYCLE_START,
         "cycle_end": CYCLE_START + timedelta(seconds=120),
         "max_queue_length_m": 48.0,
@@ -40,7 +39,7 @@ def valid_queue_data(**overrides):
 def test_valid_record():
     record = CycleQueueRecord(**valid_queue_data())
 
-    assert record.lane_index == 2
+    assert record.lane_id == "LANE_E_2"
     assert record.max_queue_vehicles == 7
 
 
@@ -79,9 +78,9 @@ def test_equal_mean_and_max_halting_is_allowed():
 
 
 def test_ids_are_stripped():
-    record = CycleQueueRecord(**valid_queue_data(approach_id=" APP_E "))
+    record = CycleQueueRecord(**valid_queue_data(lane_id=" LANE_E_2 "))
 
-    assert record.approach_id == "APP_E"
+    assert record.lane_id == "LANE_E_2"
 
 
 # ============================================================
@@ -90,7 +89,7 @@ def test_ids_are_stripped():
 
 @pytest.mark.parametrize(
     "field",
-    ["run_id", "approach_id"],
+    ["run_id", "lane_id"],
 )
 @pytest.mark.parametrize("bad_value", ["", "   "])
 def test_empty_ids_rejected(field, bad_value):
@@ -100,22 +99,18 @@ def test_empty_ids_rejected(field, bad_value):
 
 @pytest.mark.parametrize(
     "field, value",
-    [("scenario_id", "SCN_BASE"), ("intersection_id", "INT_01")],
+    [
+        ("scenario_id", "SCN_BASE"),
+        ("intersection_id", "INT_01"),
+        ("approach_id", "APP_E"),
+        ("lane_index", 2),
+    ],
 )
 def test_parent_ids_are_not_fields(field, value):
-    """Rule (a): parents are looked up through run_id and approach_id."""
+    """Rule (a): the lane's facts are looked up through lane_id."""
 
     with pytest.raises(ValidationError):
         CycleQueueRecord(**valid_queue_data(**{field: value}))
-
-
-@pytest.mark.parametrize(
-    "bad_value",
-    [0, -1, True, 1.5],
-)
-def test_invalid_lane_index_rejected(bad_value):
-    with pytest.raises(ValidationError):
-        CycleQueueRecord(**valid_queue_data(lane_index=bad_value))
 
 
 def test_movement_id_is_not_a_field():

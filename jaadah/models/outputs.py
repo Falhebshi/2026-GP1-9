@@ -535,14 +535,13 @@ class CycleQueueRecord(BaseModel):
 
     Produced by the simulation pipeline from a lane-area detector
     whose output period is one signal cycle, aligned with the cycle
-    start. The lane is identified by its Jaadah lane index; the
-    movements it serves come from the matching ApproachLane, so a
-    shared lane's queue applies to all of its movements.
+    start. The lane is identified by its Jaadah lane_id; its approach,
+    position and the movements it serves come from the matching
+    ApproachLane.
 
     Only the most specific identifiers are stored: the scenario is
-    found through run_id (SimulationRun) and the intersection through
-    approach_id (Approach). Together, approach_id and lane_index
-    identify the lane.
+    found through run_id (SimulationRun), and the approach and
+    intersection through lane_id (ApproachLane, then Approach).
 
     These are simulation measurements, not final application KPIs.
     """
@@ -553,9 +552,7 @@ class CycleQueueRecord(BaseModel):
     )
 
     run_id: str
-
-    approach_id: str
-    lane_index: int = Field(ge=1)
+    lane_id: str
 
     cycle_start: datetime
     cycle_end: datetime
@@ -568,7 +565,7 @@ class CycleQueueRecord(BaseModel):
 
     @field_validator(
         "run_id",
-        "approach_id",
+        "lane_id",
     )
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
@@ -601,7 +598,6 @@ class CycleQueueRecord(BaseModel):
         return value
 
     @field_validator(
-        "lane_index",
         "max_queue_vehicles",
         mode="before",
     )
