@@ -158,6 +158,13 @@ class KpiResult(BaseModel):
     When run_ids holds more than one run (a replicated experiment),
     value is the mean across the runs and standard_deviation is
     the spread between them.
+
+    The element is identified by exactly one ID, matching the level:
+    movement_id, approach_id or intersection_id. Its parents (e.g. the
+    approach of a movement) are looked up in the network models, not
+    repeated here. scenario_id is always stored: the result belongs
+    to a scenario, while run_ids only lists the executions it
+    summarizes.
     """
 
     model_config = ConfigDict(
@@ -168,7 +175,7 @@ class KpiResult(BaseModel):
     kpi: KpiName
     level: KpiLevel
 
-    intersection_id: str
+    intersection_id: str | None = None
     approach_id: str | None = None
     movement_id: str | None = None
 
@@ -196,10 +203,7 @@ class KpiResult(BaseModel):
         ge=0,
     )
 
-    @field_validator(
-        "intersection_id",
-        "scenario_id",
-    )
+    @field_validator("scenario_id")
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
         value = value.strip()
@@ -210,6 +214,7 @@ class KpiResult(BaseModel):
         return value
 
     @field_validator(
+        "intersection_id",
         "approach_id",
         "movement_id",
         "reason",
@@ -298,29 +303,25 @@ class KpiResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_level_ids(self) -> "KpiResult":
-        if self.level == KpiLevel.MOVEMENT:
-            if self.approach_id is None or self.movement_id is None:
-                raise ValueError(
-                    "movement-level results require "
-                    "approach_id and movement_id"
-                )
+        ids = {
+            KpiLevel.MOVEMENT: self.movement_id,
+            KpiLevel.APPROACH: self.approach_id,
+            KpiLevel.INTERSECTION: self.intersection_id,
+        }
 
-        elif self.level == KpiLevel.APPROACH:
-            if self.approach_id is None:
-                raise ValueError(
-                    "approach-level results require approach_id"
-                )
-
-            if self.movement_id is not None:
-                raise ValueError(
-                    "approach-level results must not have movement_id"
-                )
-
-        elif self.approach_id is not None or self.movement_id is not None:
+        if ids[self.level] is None:
             raise ValueError(
-                "intersection-level results must not have "
-                "approach_id or movement_id"
+                f"{self.level.value}-level results require "
+                f"{self.level.value}_id"
             )
+
+        for level, element_id in ids.items():
+            if level != self.level and element_id is not None:
+                raise ValueError(
+                    f"{self.level.value}-level results must not have "
+                    f"{level.value}_id (parents are looked up, "
+                    "not repeated)"
+                )
 
         return self
 

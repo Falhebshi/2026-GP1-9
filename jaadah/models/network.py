@@ -212,7 +212,7 @@ class MovementControl(str, Enum):
     """
 
     SIGNALIZED = "signalized"
-    UNCONTROLLED = "uncontrolled_slip_lane"
+    UNCONTROLLED = "uncontrolled"
 
 
 # ============================================================
@@ -223,8 +223,20 @@ class MovementAttributes(BaseModel):
     """
     Jaadah-level facts about one movement that the KPI engine needs.
 
-    Kept separate from Movement so that Movement remains a pure
-    identity. SUMO edges and lanes are handled by mapping data.
+    Scope: only movements included in the KPI analysis of the
+    case-study intersection receive MovementAttributes (the through,
+    left and right-turn movements at its stop lines, including
+    uncontrolled right-turn slip lanes). Other movements in the
+    simulated network (ramps, tunnel paths, slips and U-turns
+    elsewhere) remain canonical Movements without attributes and
+    have no KPIs.
+
+    Only the movement_id is stored; the movement's intersection and
+    approach are owned by Movement. A movement that has
+    MovementAttributes must have Movement.approach_id set, because
+    its results roll up to an approach. That cross-model rule is
+    checked where Movement and MovementAttributes are combined, not
+    in this model.
     """
 
     model_config = ConfigDict(
@@ -232,20 +244,14 @@ class MovementAttributes(BaseModel):
     )
 
     movement_id: str
-    intersection_id: str
-    approach_id: str
 
     movement_type: MovementType
     control: MovementControl
 
-    @field_validator(
-        "movement_id",
-        "intersection_id",
-        "approach_id",
-    )
+    @field_validator("movement_id")
     @classmethod
-    def validate_required_ids(cls, value: str) -> str:
-        """Reject empty or whitespace-only identifiers."""
+    def validate_movement_id(cls, value: str) -> str:
+        """Reject an empty or whitespace-only movement ID."""
 
         value = value.strip()
 
@@ -270,6 +276,8 @@ class ApproachLane(BaseModel):
     A lane shared by several movements (e.g. through and left) lists
     all of them in served_movement_ids.
 
+    Only approach_id is stored; the intersection is owned by Approach.
+
     storage_length_m is the queue storage available in this lane,
     measured back from the stop line. It is optional: when it is not
     known, the queue storage ratio is reported as unavailable.
@@ -280,7 +288,6 @@ class ApproachLane(BaseModel):
         allow_inf_nan=False,
     )
 
-    intersection_id: str
     approach_id: str
 
     lane_index: int = Field(ge=1)
@@ -293,13 +300,10 @@ class ApproachLane(BaseModel):
         gt=0,
     )
 
-    @field_validator(
-        "intersection_id",
-        "approach_id",
-    )
+    @field_validator("approach_id")
     @classmethod
-    def validate_required_ids(cls, value: str) -> str:
-        """Reject empty or whitespace-only identifiers."""
+    def validate_approach_id(cls, value: str) -> str:
+        """Reject an empty or whitespace-only approach ID."""
 
         value = value.strip()
 

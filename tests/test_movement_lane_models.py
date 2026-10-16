@@ -18,8 +18,6 @@ def valid_movement_data(**overrides):
 
     data = {
         "movement_id": "MOV_E_T",
-        "intersection_id": "INT_01",
-        "approach_id": "APP_E",
         "movement_type": "through",
         "control": "signalized",
     }
@@ -39,7 +37,7 @@ def test_uncontrolled_right_turn():
         **valid_movement_data(
             movement_id="MOV_E_R",
             movement_type="right",
-            control="uncontrolled_slip_lane",
+            control="uncontrolled",
         )
     )
 
@@ -54,22 +52,21 @@ def test_movement_ids_are_stripped():
     assert movement.movement_id == "MOV_E_T"
 
 
-@pytest.mark.parametrize(
-    "field",
-    ["movement_id", "intersection_id", "approach_id"],
-)
 @pytest.mark.parametrize("bad_value", ["", "   "])
-def test_empty_movement_ids_rejected(field, bad_value):
+def test_empty_movement_id_rejected(bad_value):
     with pytest.raises(ValidationError):
-        MovementAttributes(**valid_movement_data(**{field: bad_value}))
+        MovementAttributes(**valid_movement_data(movement_id=bad_value))
 
 
-def test_missing_approach_id_rejected():
-    data = valid_movement_data()
-    del data["approach_id"]
+@pytest.mark.parametrize(
+    "field, value",
+    [("intersection_id", "INT_01"), ("approach_id", "APP_E")],
+)
+def test_movement_parent_ids_are_not_fields(field, value):
+    """Rule (a): Movement owns the movement's intersection and approach."""
 
     with pytest.raises(ValidationError):
-        MovementAttributes(**data)
+        MovementAttributes(**valid_movement_data(**{field: value}))
 
 
 @pytest.mark.parametrize(
@@ -99,7 +96,6 @@ def valid_lane_data(**overrides):
     """A valid lane shared by the East through and left movements."""
 
     data = {
-        "intersection_id": "INT_01",
         "approach_id": "APP_E",
         "lane_index": 1,
         "served_movement_ids": ["MOV_E_L", "MOV_E_T"],
@@ -142,14 +138,17 @@ def test_lane_ids_are_stripped():
     assert lane.served_movement_ids == ["MOV_E_L", "MOV_E_T"]
 
 
-@pytest.mark.parametrize(
-    "field",
-    ["intersection_id", "approach_id"],
-)
 @pytest.mark.parametrize("bad_value", ["", "   "])
-def test_empty_lane_ids_rejected(field, bad_value):
+def test_empty_approach_id_rejected(bad_value):
     with pytest.raises(ValidationError):
-        ApproachLane(**valid_lane_data(**{field: bad_value}))
+        ApproachLane(**valid_lane_data(approach_id=bad_value))
+
+
+def test_lane_intersection_id_is_not_a_field():
+    """Rule (a): Approach owns the lane's intersection."""
+
+    with pytest.raises(ValidationError):
+        ApproachLane(**valid_lane_data(intersection_id="INT_01"))
 
 
 @pytest.mark.parametrize(

@@ -421,6 +421,10 @@ class VehicleDelayRecord(BaseModel):
     the path) is decided by the simulation pipeline. Time loss is the
     difference between the actual and the free-flow travel time.
 
+    Only the most specific identifiers are stored: the scenario is
+    found through run_id (SimulationRun) and the approach and
+    intersection through movement_id (Movement).
+
     These are simulation measurements, not final application KPIs.
     """
 
@@ -429,12 +433,8 @@ class VehicleDelayRecord(BaseModel):
         allow_inf_nan=False,
     )
 
-    scenario_id: str
     run_id: str
     vehicle_id: str
-
-    intersection_id: str
-    approach_id: str
     movement_id: str
 
     zone_entry_time: datetime
@@ -445,11 +445,8 @@ class VehicleDelayRecord(BaseModel):
     free_flow_travel_time_s: float = Field(gt=0)
 
     @field_validator(
-        "scenario_id",
         "run_id",
         "vehicle_id",
-        "intersection_id",
-        "approach_id",
         "movement_id",
     )
     @classmethod
@@ -542,6 +539,11 @@ class CycleQueueRecord(BaseModel):
     movements it serves come from the matching ApproachLane, so a
     shared lane's queue applies to all of its movements.
 
+    Only the most specific identifiers are stored: the scenario is
+    found through run_id (SimulationRun) and the intersection through
+    approach_id (Approach). Together, approach_id and lane_index
+    identify the lane.
+
     These are simulation measurements, not final application KPIs.
     """
 
@@ -550,10 +552,8 @@ class CycleQueueRecord(BaseModel):
         allow_inf_nan=False,
     )
 
-    scenario_id: str
     run_id: str
 
-    intersection_id: str
     approach_id: str
     lane_index: int = Field(ge=1)
 
@@ -567,9 +567,7 @@ class CycleQueueRecord(BaseModel):
     max_halting_duration_s: float = Field(ge=0)
 
     @field_validator(
-        "scenario_id",
         "run_id",
-        "intersection_id",
         "approach_id",
     )
     @classmethod

@@ -25,8 +25,6 @@ def valid_kpi_data(**overrides):
     data = {
         "kpi": "control_delay",
         "level": "movement",
-        "intersection_id": "INT_01",
-        "approach_id": "APP_E",
         "movement_id": "MOV_E_W",
         "interval_start": datetime(2026, 10, 14, 8, 0, tzinfo=RIYADH),
         "interval_end": datetime(2026, 10, 14, 8, 15, tzinfo=RIYADH),
@@ -70,9 +68,14 @@ def test_valid_movement_result():
 
 def test_valid_approach_result():
     result = KpiResult(
-        **valid_kpi_data(level="approach", movement_id=None)
+        **valid_kpi_data(
+            level="approach",
+            movement_id=None,
+            approach_id="APP_E",
+        )
     )
 
+    assert result.approach_id == "APP_E"
     assert result.movement_id is None
 
 
@@ -80,11 +83,12 @@ def test_valid_intersection_result():
     result = KpiResult(
         **valid_kpi_data(
             level="intersection",
-            approach_id=None,
             movement_id=None,
+            intersection_id="INT_01",
         )
     )
 
+    assert result.intersection_id == "INT_01"
     assert result.approach_id is None
 
 
@@ -147,13 +151,13 @@ def test_result_without_value(status):
 def test_ids_and_reason_are_stripped():
     result = KpiResult(
         **valid_kpi_data(
-            intersection_id="  INT_01  ",
+            movement_id="  MOV_E_W  ",
             run_ids=[" RUN_1 "],
             reason="  note  ",
         )
     )
 
-    assert result.intersection_id == "INT_01"
+    assert result.movement_id == "MOV_E_W"
     assert result.run_ids == ["RUN_1"]
     assert result.reason == "note"
 
@@ -162,14 +166,36 @@ def test_ids_and_reason_are_stripped():
 # IDENTIFIERS
 # ============================================================
 
-@pytest.mark.parametrize(
-    "field",
-    ["intersection_id", "scenario_id", "approach_id", "movement_id"],
-)
+LEVEL_IDS = {
+    "movement": ("movement_id", "MOV_E_W"),
+    "approach": ("approach_id", "APP_E"),
+    "intersection": ("intersection_id", "INT_01"),
+}
+
+
+def level_data(level, **overrides):
+    """Valid result data at a given level, carrying only that level's ID."""
+
+    field, element_id = LEVEL_IDS[level]
+    data = valid_kpi_data(level=level, movement_id=None)
+    data[field] = element_id
+    data.update(overrides)
+    return data
+
+
+@pytest.mark.parametrize("level", ["movement", "approach", "intersection"])
 @pytest.mark.parametrize("bad_value", ["", "   "])
-def test_empty_ids_rejected(field, bad_value):
+def test_empty_element_id_rejected(level, bad_value):
+    field, _ = LEVEL_IDS[level]
+
     with pytest.raises(ValidationError):
-        KpiResult(**valid_kpi_data(**{field: bad_value}))
+        KpiResult(**level_data(level, **{field: bad_value}))
+
+
+@pytest.mark.parametrize("bad_value", ["", "   "])
+def test_empty_scenario_id_rejected(bad_value):
+    with pytest.raises(ValidationError):
+        KpiResult(**valid_kpi_data(scenario_id=bad_value))
 
 
 def test_empty_reason_rejected():
@@ -280,20 +306,32 @@ def test_negative_standard_deviation_rejected():
 # LEVEL AND IDS
 # ============================================================
 
+@pytest.mark.parametrize("level", ["movement", "approach", "intersection"])
+def test_own_level_id_is_required(level):
+    field, _ = LEVEL_IDS[level]
+
+    with pytest.raises(ValidationError):
+        KpiResult(**level_data(level, **{field: None}))
+
+
 @pytest.mark.parametrize(
-    "overrides",
+    "level, other_level",
     [
-        {"level": "movement", "movement_id": None},
-        {"level": "movement", "approach_id": None},
-        {"level": "approach", "approach_id": None, "movement_id": None},
-        {"level": "approach"},
-        {"level": "intersection", "movement_id": None},
-        {"level": "intersection", "approach_id": None},
+        ("movement", "approach"),
+        ("movement", "intersection"),
+        ("approach", "movement"),
+        ("approach", "intersection"),
+        ("intersection", "movement"),
+        ("intersection", "approach"),
     ],
 )
-def test_ids_must_match_level(overrides):
+def test_other_level_ids_are_rejected(level, other_level):
+    """Rule (a): only the element's own ID; parents are looked up."""
+
+    other_field, other_id = LEVEL_IDS[other_level]
+
     with pytest.raises(ValidationError):
-        KpiResult(**valid_kpi_data(**overrides))
+        KpiResult(**level_data(level, **{other_field: other_id}))
 
 
 # ============================================================

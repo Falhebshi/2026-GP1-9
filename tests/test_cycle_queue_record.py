@@ -19,9 +19,7 @@ def valid_queue_data(**overrides):
     """
 
     data = {
-        "scenario_id": "SCN_BASE",
         "run_id": "RUN_1",
-        "intersection_id": "INT_01",
         "approach_id": "APP_E",
         "lane_index": 2,
         "cycle_start": CYCLE_START,
@@ -92,12 +90,23 @@ def test_ids_are_stripped():
 
 @pytest.mark.parametrize(
     "field",
-    ["scenario_id", "run_id", "intersection_id", "approach_id"],
+    ["run_id", "approach_id"],
 )
 @pytest.mark.parametrize("bad_value", ["", "   "])
 def test_empty_ids_rejected(field, bad_value):
     with pytest.raises(ValidationError):
         CycleQueueRecord(**valid_queue_data(**{field: bad_value}))
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [("scenario_id", "SCN_BASE"), ("intersection_id", "INT_01")],
+)
+def test_parent_ids_are_not_fields(field, value):
+    """Rule (a): parents are looked up through run_id and approach_id."""
+
+    with pytest.raises(ValidationError):
+        CycleQueueRecord(**valid_queue_data(**{field: value}))
 
 
 @pytest.mark.parametrize(
