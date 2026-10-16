@@ -421,6 +421,12 @@ class VehicleDelayRecord(BaseModel):
     the path) is decided by the simulation pipeline. Time loss is the
     difference between the actual and the free-flow travel time.
 
+    halted_time_s is how long the vehicle stood still inside the zone
+    (the queue-duration KPI is measured per vehicle from it, so it
+    splits cleanly by movement). What counts as stopped is a speed
+    threshold chosen by the simulation pipeline (SUMO uses
+    < 0.1 m/s), so it is not checked against time_loss_s.
+
     Only the most specific identifiers are stored: the scenario is
     found through run_id (SimulationRun) and the approach and
     intersection through movement_id (Movement).
@@ -443,6 +449,8 @@ class VehicleDelayRecord(BaseModel):
 
     zone_distance_m: float = Field(gt=0)
     free_flow_travel_time_s: float = Field(gt=0)
+
+    halted_time_s: float = Field(ge=0)
 
     @field_validator(
         "run_id",
@@ -509,6 +517,15 @@ class VehicleDelayRecord(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_halted_time(self) -> "VehicleDelayRecord":
+        if self.halted_time_s > self.zone_travel_time_s:
+            raise ValueError(
+                "halted_time_s cannot exceed the time spent in the zone"
+            )
+
+        return self
+
     @property
     def zone_travel_time_s(self) -> float:
         """Seconds the vehicle spent inside the delay zone."""
@@ -530,8 +547,9 @@ class VehicleDelayRecord(BaseModel):
 
 class CycleQueueRecord(BaseModel):
     """
-    Queue measurements for one lane over one signal cycle, in one
-    simulation run.
+    Queue length for one lane over one signal cycle, in one
+    simulation run. (Queue duration is measured per vehicle in
+    VehicleDelayRecord.halted_time_s, not here.)
 
     Produced by the simulation pipeline from a lane-area detector
     whose output period is one signal cycle, aligned with the cycle
@@ -559,9 +577,6 @@ class CycleQueueRecord(BaseModel):
 
     max_queue_length_m: float = Field(ge=0)
     max_queue_vehicles: int = Field(ge=0)
-
-    mean_halting_duration_s: float = Field(ge=0)
-    max_halting_duration_s: float = Field(ge=0)
 
     @field_validator(
         "run_id",
@@ -615,16 +630,6 @@ class CycleQueueRecord(BaseModel):
         if self.cycle_end <= self.cycle_start:
             raise ValueError(
                 "cycle_end must be later than cycle_start"
-            )
-
-        return self
-
-    @model_validator(mode="after")
-    def validate_halting_durations(self) -> "CycleQueueRecord":
-        if self.mean_halting_duration_s > self.max_halting_duration_s:
-            raise ValueError(
-                "mean_halting_duration_s cannot exceed "
-                "max_halting_duration_s"
             )
 
         return self

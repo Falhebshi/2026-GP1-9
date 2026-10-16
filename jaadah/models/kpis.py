@@ -30,8 +30,16 @@ class KpiName(str, Enum):
 
 
 class KpiLevel(str, Enum):
-    """The network level a KPI result describes."""
+    """
+    The network level a KPI result describes.
 
+    LANE and LANE_GROUP hold KPIs that are measured per lane (queues)
+    or calculated per lane group (HCM capacity measures), which cannot
+    be split between the movements of a shared lane.
+    """
+
+    LANE = "lane"
+    LANE_GROUP = "lane_group"
     MOVEMENT = "movement"
     APPROACH = "approach"
     INTERSECTION = "intersection"
@@ -147,6 +155,37 @@ VALUE_COMPUTATIONS: dict[tuple[KpiName, KpiMethod], ValueComputation] = {
 }
 
 
+_PER_ELEMENT = {KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION}
+
+# Levels at which each (KPI, method) pair may be reported. Per-vehicle
+# KPIs split cleanly by movement; per-lane and per-lane-group KPIs are
+# also reported on their lane or lane group (shared-lane decision,
+# 17 Oct). Every key of VALUE_COMPUTATIONS appears here.
+ALLOWED_KPI_LEVELS: dict[tuple[KpiName, KpiMethod], set[KpiLevel]] = {
+    # Simulation-based results
+    (KpiName.CONTROL_DELAY, KpiMethod.SIMULATION): _PER_ELEMENT,
+    (KpiName.LEVEL_OF_SERVICE, KpiMethod.SIMULATION): _PER_ELEMENT,
+    (KpiName.THROUGHPUT, KpiMethod.SIMULATION): _PER_ELEMENT,
+    (KpiName.QUEUE_DURATION, KpiMethod.SIMULATION): _PER_ELEMENT,
+    (KpiName.QUEUE_LENGTH, KpiMethod.SIMULATION): {KpiLevel.LANE} | _PER_ELEMENT,
+    (KpiName.QUEUE_STORAGE_RATIO, KpiMethod.SIMULATION): {KpiLevel.LANE} | _PER_ELEMENT,
+    (KpiName.SATURATION_FLOW_RATE, KpiMethod.SIMULATION): {KpiLevel.LANE},
+    # HCM results
+    (KpiName.CONTROL_DELAY, KpiMethod.HCM): {KpiLevel.LANE_GROUP} | _PER_ELEMENT,
+    (KpiName.LEVEL_OF_SERVICE, KpiMethod.HCM): {KpiLevel.LANE_GROUP} | _PER_ELEMENT,
+    (KpiName.VOLUME_TO_CAPACITY_RATIO, KpiMethod.HCM): {KpiLevel.LANE_GROUP} | _PER_ELEMENT,
+    (KpiName.CAPACITY, KpiMethod.HCM): {
+        KpiLevel.LANE_GROUP,
+        KpiLevel.MOVEMENT,
+        KpiLevel.APPROACH,
+    },
+    (KpiName.SATURATION_FLOW_RATE, KpiMethod.HCM): {
+        KpiLevel.LANE_GROUP,
+        KpiLevel.MOVEMENT,
+    },
+}
+
+
 # ============================================================
 # KPI RESULT
 # ============================================================
@@ -163,14 +202,20 @@ class KpiResult(BaseModel):
     value is the mean across the runs and standard_deviation is
     the spread between them. HCM results may have no runs at all.
 
-    value_computation and replication_count are computed fields: they
-    appear in model_dump() and JSON output but cannot be passed in.
-    For storage, dump with exclude={"value_computation",
-    "replication_count"}; otherwise reloading the dump fails, because
-    extra fields are forbidden.
+    A movement result taken from a shared lane or lane group names it
+    in measured_on_lane_id or measured_on_lane_group_id; the dashboard
+    shows such values with a "Shared lane" tag (is_shared_value).
+
+    value_computation, replication_count and is_shared_value are
+    computed fields: they appear in model_dump() and JSON output but
+    cannot be passed in. For storage, dump with exclude= those three
+    names; otherwise reloading the dump fails, because extra fields
+    are forbidden.
 
     The element is identified by exactly one ID, matching the level:
-    movement_id, approach_id or intersection_id. Its parents (e.g. the
+    lane_id, lane_group_id, movement_id, approach_id or
+    intersection_id. Lane-group IDs are stable names derived from the
+    lane layout (e.g. east_LT). Its parents (e.g. the
     approach of a movement) are looked up in the network models, not
     repeated here. scenario_id is always stored: the result belongs
     to a scenario, while run_ids only lists the executions it
@@ -185,9 +230,14 @@ class KpiResult(BaseModel):
     kpi: KpiName
     level: KpiLevel
 
-    intersection_id: str | None = None
-    approach_id: str | None = None
+    lane_id: str | None = None
+    lane_group_id: str | None = None
     movement_id: str | None = None
+    approach_id: str | None = None
+    intersection_id: str | None = None
+
+    measured_on_lane_id: str | None = None
+    measured_on_lane_group_id: str | None = None
 
     interval_start: datetime
     interval_end: datetime
@@ -224,9 +274,13 @@ class KpiResult(BaseModel):
         return value
 
     @field_validator(
-        "intersection_id",
-        "approach_id",
+        "lane_id",
+        "lane_group_id",
         "movement_id",
+        "approach_id",
+        "intersection_id",
+        "measured_on_lane_id",
+        "measured_on_lane_group_id",
         "reason",
     )
     @classmethod
@@ -311,6 +365,8 @@ class KpiResult(BaseModel):
     @model_validator(mode="after")
     def validate_level_ids(self) -> "KpiResult":
         ids = {
+            KpiLevel.LANE: self.lane_id,
+            KpiLevel.LANE_GROUP: self.lane_group_id,
             KpiLevel.MOVEMENT: self.movement_id,
             KpiLevel.APPROACH: self.approach_id,
             KpiLevel.INTERSECTION: self.intersection_id,
@@ -389,6 +445,55 @@ class KpiResult(BaseModel):
             raise ValueError(
                 f"{self.kpi.value} is not calculated "
                 f"with the {self.method.value} method"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_level_allowed(self) -> "KpiResult":
+        allowed = ALLOWED_KPI_LEVELS.get((self.kpi, self.method), set())
+
+        if self.level not in allowed:
+            raise ValueError(
+                f"{self.kpi.value} ({self.method.value}) is not "
+                f"reported at {self.level.value} level"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_shared_marker(self) -> "KpiResult":
+        """
+        A movement result whose value was measured on a shared lane or
+        lane group records where. The lane, its position and the other
+        movements using it are looked up from ApproachLane.
+        """
+
+        lane = self.measured_on_lane_id
+        group = self.measured_on_lane_group_id
+
+        if lane is None and group is None:
+            return self
+
+        if self.level != KpiLevel.MOVEMENT:
+            raise ValueError(
+                "measured_on_lane_id and measured_on_lane_group_id "
+                "are only used on movement-level results"
+            )
+
+        if lane is not None and group is not None:
+            raise ValueError(
+                "a result is measured on a lane or a lane group, "
+                "not both"
+            )
+
+        allowed = ALLOWED_KPI_LEVELS.get((self.kpi, self.method), set())
+        needed = KpiLevel.LANE if lane is not None else KpiLevel.LANE_GROUP
+
+        if needed not in allowed:
+            raise ValueError(
+                f"{self.kpi.value} ({self.method.value}) is not "
+                f"measured on a {needed.value.replace('_', ' ')}"
             )
 
         return self
@@ -481,3 +586,13 @@ class KpiResult(BaseModel):
             return None
 
         return VALUE_COMPUTATIONS[(self.kpi, self.method)]
+
+    @computed_field
+    @property
+    def is_shared_value(self) -> bool:
+        """True for a movement value taken from a shared lane or lane group."""
+
+        return (
+            self.measured_on_lane_id is not None
+            or self.measured_on_lane_group_id is not None
+        )

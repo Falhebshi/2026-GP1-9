@@ -14,8 +14,7 @@ CYCLE_START = datetime(2026, 10, 14, 8, 0, 0, tzinfo=RIYADH)
 def valid_queue_data(**overrides):
     """
     A valid 120 s cycle on lane LANE_E_2: the longest queue was 48 m
-    (7 vehicles); halted vehicles stood still 35 s on average and
-    62 s at most.
+    (7 vehicles).
     """
 
     data = {
@@ -25,8 +24,6 @@ def valid_queue_data(**overrides):
         "cycle_end": CYCLE_START + timedelta(seconds=120),
         "max_queue_length_m": 48.0,
         "max_queue_vehicles": 7,
-        "mean_halting_duration_s": 35.0,
-        "max_halting_duration_s": 62.0,
     }
     data.update(overrides)
     return data
@@ -48,8 +45,6 @@ def test_cycle_without_queue():
         **valid_queue_data(
             max_queue_length_m=0,
             max_queue_vehicles=0,
-            mean_halting_duration_s=0,
-            max_halting_duration_s=0,
         )
     )
 
@@ -64,17 +59,6 @@ def test_cycle_length_is_not_fixed():
     )
 
     assert record.cycle_end > record.cycle_start
-
-
-def test_equal_mean_and_max_halting_is_allowed():
-    record = CycleQueueRecord(
-        **valid_queue_data(
-            mean_halting_duration_s=40.0,
-            max_halting_duration_s=40.0,
-        )
-    )
-
-    assert record.mean_halting_duration_s == 40.0
 
 
 def test_ids_are_stripped():
@@ -162,20 +146,12 @@ def test_cycle_end_not_after_start_rejected(seconds):
 # ============================================================
 
 @pytest.mark.parametrize(
-    "field",
-    [
-        "max_queue_length_m",
-        "mean_halting_duration_s",
-        "max_halting_duration_s",
-    ],
-)
-@pytest.mark.parametrize(
     "bad_value",
     [-1.0, float("nan"), float("inf")],
 )
-def test_invalid_measurements_rejected(field, bad_value):
+def test_invalid_queue_length_rejected(bad_value):
     with pytest.raises(ValidationError):
-        CycleQueueRecord(**valid_queue_data(**{field: bad_value}))
+        CycleQueueRecord(**valid_queue_data(max_queue_length_m=bad_value))
 
 
 @pytest.mark.parametrize(
@@ -185,16 +161,6 @@ def test_invalid_measurements_rejected(field, bad_value):
 def test_invalid_queue_vehicles_rejected(bad_value):
     with pytest.raises(ValidationError):
         CycleQueueRecord(**valid_queue_data(max_queue_vehicles=bad_value))
-
-
-def test_mean_halting_above_max_rejected():
-    with pytest.raises(ValidationError):
-        CycleQueueRecord(
-            **valid_queue_data(
-                mean_halting_duration_s=70.0,
-                max_halting_duration_s=62.0,
-            )
-        )
 
 
 @pytest.mark.parametrize(
@@ -209,3 +175,14 @@ def test_queue_units_must_agree(length_m, vehicles):
                 max_queue_vehicles=vehicles,
             )
         )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["mean_halting_duration_s", "max_halting_duration_s"],
+)
+def test_halting_fields_are_not_fields(field):
+    """Queue duration is measured per vehicle (VehicleDelayRecord)."""
+
+    with pytest.raises(ValidationError):
+        CycleQueueRecord(**valid_queue_data(**{field: 35.0}))

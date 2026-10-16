@@ -4,6 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from jaadah.models.kpis import (
+    ALLOWED_KPI_LEVELS,
+    VALUE_COMPUTATIONS,
     KpiLevel,
     KpiMethod,
     KpiName,
@@ -666,7 +668,7 @@ def test_hcm_result_without_runs_cannot_have_standard_deviation():
 # SERIALIZATION (review comment 8)
 # ============================================================
 
-COMPUTED_FIELDS = {"value_computation", "replication_count"}
+COMPUTED_FIELDS = {"value_computation", "replication_count", "is_shared_value"}
 
 
 def test_computed_fields_appear_in_dump():
@@ -702,3 +704,234 @@ def test_reloading_a_full_dump_fails():
 
     with pytest.raises(ValidationError):
         KpiResult(**full_dump)
+
+
+# ============================================================
+# LANE AND LANE-GROUP LEVELS (shared-lane decision, 17 Oct)
+# ============================================================
+
+def lane_queue_data(**overrides):
+    """A valid lane-level queue result: lane LANE_E_2, 48 m."""
+
+    data = {
+        "kpi": "queue_length",
+        "unit": "m",
+        "value": 48.0,
+        "level": "lane",
+        "movement_id": None,
+        "lane_id": "LANE_E_2",
+    }
+    data.update(overrides)
+    return valid_kpi_data(**data)
+
+
+def lane_group_capacity_data(**overrides):
+    """A valid HCM capacity result for lane group east_LT."""
+
+    data = {
+        "kpi": "capacity",
+        "unit": "veh/h",
+        "value": 620.0,
+        "method": "hcm",
+        "input_origins": ["observed", "modelled_assumption"],
+        "run_ids": [],
+        "level": "lane_group",
+        "movement_id": None,
+        "lane_group_id": "east_LT",
+    }
+    data.update(overrides)
+    return valid_kpi_data(**data)
+
+
+def test_both_tables_cover_the_same_pairs():
+    assert set(ALLOWED_KPI_LEVELS) == set(VALUE_COMPUTATIONS)
+
+
+def test_valid_lane_result():
+    result = KpiResult(**lane_queue_data())
+
+    assert result.level == KpiLevel.LANE
+    assert result.lane_id == "LANE_E_2"
+
+
+def test_valid_lane_group_result():
+    result = KpiResult(**lane_group_capacity_data())
+
+    assert result.level == KpiLevel.LANE_GROUP
+    assert result.lane_group_id == "east_LT"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # simulation delay is per car, never on a lane
+        {"kpi": "control_delay", "unit": "s/veh"},
+        # queue duration is now measured per car
+        {"kpi": "queue_duration", "unit": "s"},
+    ],
+)
+def test_per_car_kpis_not_reported_on_a_lane(overrides):
+    with pytest.raises(ValidationError, match="not reported at lane level"):
+        KpiResult(**lane_queue_data(**overrides))
+
+
+def test_queue_length_not_reported_on_a_lane_group():
+    with pytest.raises(ValidationError, match="not reported at lane_group"):
+        KpiResult(
+            **lane_queue_data(
+                level="lane_group",
+                lane_id=None,
+                lane_group_id="east_LT",
+            )
+        )
+
+
+def test_capacity_not_reported_at_intersection_level():
+    with pytest.raises(ValidationError, match="not reported at intersection"):
+        KpiResult(
+            **lane_group_capacity_data(
+                level="intersection",
+                lane_group_id=None,
+                intersection_id="INT_01",
+            )
+        )
+
+
+def test_measured_saturation_flow_only_on_lanes():
+    with pytest.raises(ValidationError, match="not reported at movement"):
+        KpiResult(
+            **valid_kpi_data(kpi="saturation_flow_rate", unit="veh/h/lane")
+        )
+
+
+@pytest.mark.parametrize(
+    "data_builder, own_field",
+    [
+        (lane_queue_data, "lane_id"),
+        (lane_group_capacity_data, "lane_group_id"),
+    ],
+)
+def test_lane_levels_require_their_own_id(data_builder, own_field):
+    with pytest.raises(ValidationError):
+        KpiResult(**data_builder(**{own_field: None}))
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("lane_group_id", "east_LT"),
+        ("movement_id", "MOV_E_T"),
+        ("approach_id", "APP_E"),
+        ("intersection_id", "INT_01"),
+    ],
+)
+def test_lane_result_rejects_other_ids(field, value):
+    with pytest.raises(ValidationError):
+        KpiResult(**lane_queue_data(**{field: value}))
+
+
+@pytest.mark.parametrize("bad_value", ["", "   "])
+@pytest.mark.parametrize(
+    "data_builder, own_field",
+    [
+        (lane_queue_data, "lane_id"),
+        (lane_group_capacity_data, "lane_group_id"),
+    ],
+)
+def test_empty_lane_ids_rejected(data_builder, own_field, bad_value):
+    with pytest.raises(ValidationError):
+        KpiResult(**data_builder(**{own_field: bad_value}))
+
+
+# ============================================================
+# SHARED-LANE MARKER
+# ============================================================
+
+def shared_queue_data(**overrides):
+    """East-through's queue, taken from the shared lane LANE_E_2."""
+
+    data = {
+        "kpi": "queue_length",
+        "unit": "m",
+        "value": 48.0,
+        "movement_id": "MOV_E_T",
+        "measured_on_lane_id": "LANE_E_2",
+    }
+    data.update(overrides)
+    return valid_kpi_data(**data)
+
+
+def test_shared_lane_value_is_marked():
+    result = KpiResult(**shared_queue_data())
+
+    assert result.is_shared_value is True
+    assert result.measured_on_lane_id == "LANE_E_2"
+
+
+def test_ordinary_value_is_not_marked():
+    result = KpiResult(**valid_kpi_data())
+
+    assert result.is_shared_value is False
+
+
+def test_shared_lane_group_value_is_marked():
+    result = KpiResult(
+        **lane_group_capacity_data(
+            level="movement",
+            lane_group_id=None,
+            movement_id="MOV_E_T",
+            measured_on_lane_group_id="east_LT",
+        )
+    )
+
+    assert result.is_shared_value is True
+
+
+def test_is_shared_value_appears_in_dump():
+    dumped = KpiResult(**shared_queue_data()).model_dump()
+
+    assert dumped["is_shared_value"] is True
+
+
+def test_marker_only_on_movement_level():
+    with pytest.raises(ValidationError, match="only used on movement-level"):
+        KpiResult(
+            **shared_queue_data(
+                level="approach",
+                movement_id=None,
+                approach_id="APP_E",
+            )
+        )
+
+
+def test_marker_cannot_name_lane_and_lane_group():
+    with pytest.raises(ValidationError, match="not both"):
+        KpiResult(**shared_queue_data(measured_on_lane_group_id="east_LT"))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # simulation delay is per car: never measured on a lane
+        {"kpi": "control_delay", "unit": "s/veh", "value": 32.5},
+        # queue length is a lane measure, not a lane-group one
+        {"measured_on_lane_id": None, "measured_on_lane_group_id": "east_LT"},
+    ],
+)
+def test_marker_must_match_the_kpi(overrides):
+    with pytest.raises(ValidationError, match="is not measured on a"):
+        KpiResult(**shared_queue_data(**overrides))
+
+
+@pytest.mark.parametrize("bad_value", ["", "   "])
+def test_empty_marker_rejected(bad_value):
+    with pytest.raises(ValidationError):
+        KpiResult(**shared_queue_data(measured_on_lane_id=bad_value))
+
+
+def test_shared_value_storage_round_trip():
+    original = KpiResult(**shared_queue_data())
+    reloaded = KpiResult(**original.model_dump(exclude=COMPUTED_FIELDS))
+
+    assert reloaded == original
+    assert reloaded.is_shared_value is True

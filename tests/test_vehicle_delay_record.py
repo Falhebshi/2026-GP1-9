@@ -16,7 +16,7 @@ def valid_record_data(**overrides):
     A valid passage: the vehicle enters the zone at 08:00:00, crosses
     the stop line at 08:00:40 and leaves at 08:00:55 (55 s in the
     zone). With no traffic it would have needed 25 s (330 m at
-    13.2 m/s), so it lost 30 s.
+    13.2 m/s), so it lost 30 s. It stood still for 20 s.
     """
 
     data = {
@@ -28,6 +28,7 @@ def valid_record_data(**overrides):
         "zone_exit_time": ENTRY + timedelta(seconds=55),
         "zone_distance_m": 330.0,
         "free_flow_travel_time_s": 25.0,
+        "halted_time_s": 20.0,
     }
     data.update(overrides)
     return data
@@ -199,3 +200,36 @@ def test_faster_than_free_flow_rejected():
         VehicleDelayRecord(
             **valid_record_data(free_flow_travel_time_s=55.1)
         )
+
+
+# ============================================================
+# TIME STOPPED (queue duration per vehicle)
+# ============================================================
+
+@pytest.mark.parametrize("halted", [0, 55.0])
+def test_halted_time_within_zone_time_is_allowed(halted):
+    record = VehicleDelayRecord(**valid_record_data(halted_time_s=halted))
+
+    assert record.halted_time_s == halted
+
+
+def test_halted_longer_than_zone_time_rejected():
+    with pytest.raises(ValidationError, match="halted_time_s cannot exceed"):
+        VehicleDelayRecord(**valid_record_data(halted_time_s=55.1))
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [-1.0, float("nan"), float("inf")],
+)
+def test_invalid_halted_time_rejected(bad_value):
+    with pytest.raises(ValidationError):
+        VehicleDelayRecord(**valid_record_data(halted_time_s=bad_value))
+
+
+def test_halted_time_is_required():
+    data = valid_record_data()
+    del data["halted_time_s"]
+
+    with pytest.raises(ValidationError):
+        VehicleDelayRecord(**data)
