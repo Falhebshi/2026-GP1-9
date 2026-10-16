@@ -1,0 +1,50 @@
+/* Camera buttons, north arrow and scale bar (scoped to the 3D scene) */
+.traffic-scene .north {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1;
+  color: #374151;
+}
+.traffic-scene .nav {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.traffic-scene .nav button {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  color: #1f2937;
+  cursor: pointer;
+}
+.traffic-scene .nav-compass {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.traffic-scene .nav-group {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08);
+}
+.traffic-scene .nav-group button {
+  width: 32px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+}
+.traffic-scene .nav-group button + button {
+  border-top: 1px solid #eef0f2;
+}
+.traffic-scene .nav-group button:hover {
+  background: #f3f4f6;
+}

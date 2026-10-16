@@ -1,0 +1,90 @@
+/* The map fills its box; the page puts its panels on top of it */
+.network-map {
+  position: absolute;
+  inset: 0;
+}
+
+.network-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.network-map-message {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* keep MapLibre's zoom buttons and credits clear of the timeline card */
+.network-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--map-bottom-inset, 0px);
+}
+
+/* map credits: a tiny faint (i) in the corner, full size again when hovered or opened */
+.network-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 14px;
+  padding: 0 14px 0 0;
+  /* centred under the 29 px zoom buttons, which sit 10 px from the edge */
+  margin: 0 17.5px 6px 0;
+  background: transparent;
+  opacity: 0.45;
+}
+
+.network-map .maplibregl-ctrl-attrib-button {
+  width: 14px;
+  height: 14px;
+  background-size: 14px;
+}
+
+.network-map .maplibregl-ctrl-attrib.maplibregl-compact:hover,
+.network-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  opacity: 1;
+  background: var(--color-surface);
+  font-size: 10px;
+}
+
+/* card shown when the mouse is on an intersection dot */
+.network-map-hover .maplibregl-popup-content {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  font-family: var(--font);
+  color: var(--color-text);
+}
+
+.network-map-hover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.network-map-hover-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.network-map-hover-area {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.network-map-hover-status {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.network-map-hover-status.active {
+  color: var(--color-selected);
+  font-weight: 600;
+}

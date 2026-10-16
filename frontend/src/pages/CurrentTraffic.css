@@ -1,0 +1,43 @@
+/* Simulation, timeline, then KPIs and alerts side by side */
+.current-traffic {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 16px);
+}
+
+.current-traffic-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md, 16px);
+  align-items: start;
+}
+
+/* two columns of KPI tiles, like the wireframe */
+.current-traffic-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm, 8px);
+}
+
+/* stack KPIs and alerts on narrow screens */
+@media (max-width: 900px) {
+  .current-traffic-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* simulation time above the map, on the right */
+.current-traffic-time {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  margin-bottom: var(--space-sm, 8px);
+  font-size: var(--text-sm, 13px);
+}
+
+
+.current-traffic-time-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

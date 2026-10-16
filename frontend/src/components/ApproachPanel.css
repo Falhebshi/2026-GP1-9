@@ -1,0 +1,201 @@
+/* Approach chips along the bottom of the 3D scene, and the card that opens above them */
+.approach-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: 100%;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+}
+
+.approach-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-float);
+}
+
+.approach-chips-label {
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.approach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.approach-chip:hover {
+  background: var(--color-selected-bg);
+}
+
+.approach-chip.active {
+  border-color: var(--color-selected);
+  background: var(--color-selected-bg);
+}
+
+.approach-chip-name {
+  font-weight: 600;
+}
+
+.approach-chip-delay {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.approach-card {
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+}
+
+.approach-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 12px 6px;
+}
+
+.approach-card-title {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.approach-card-road {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.approach-close {
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.approach-close:hover {
+  color: var(--color-text);
+}
+
+.approach-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.approach-table th,
+.approach-table td {
+  padding: 6px 7px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.approach-table thead th {
+  font-weight: 500;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approach-table thead small {
+  font-size: 10px;
+}
+
+.approach-table tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+
+.movement-row th {
+  padding-left: 22px;
+  color: var(--color-text-muted);
+}
+
+.movement-row td {
+  color: var(--color-text);
+}
+
+.movement-details td {
+  padding: 0 8px 8px 22px;
+  text-align: left;
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+  white-space: normal;
+}
+
+.movement-details span + span::before {
+  content: '·';
+  margin: 0 6px;
+}
+
+.movement-details b {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.kpi-na {
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+}
+
+.kpi-bad {
+  color: #c2410c;
+  font-weight: 600;
+}
+
+/* LOS letter, coloured like the timeline: A-C green, D-E amber, F red */
+.los {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.los-A,
+.los-B,
+.los-C {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.los-D,
+.los-E {
+  background: #fdf0d9;
+  color: #a86b0f;
+}
+
+.los-F {
+  background: #fde4e1;
+  color: #b42318;
+}
+
+.approach-total th,
+.approach-total td {
+  font-weight: 600;
+  border-top: 1px solid var(--color-border);
+}
+
+.approach-total + .movement-row {
+  border-top: 1px solid var(--color-border);
+}
