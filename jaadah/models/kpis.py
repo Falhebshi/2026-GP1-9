@@ -5,6 +5,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    computed_field,
     field_validator,
     model_validator,
 )
@@ -70,17 +71,20 @@ class KpiMethod(str, Enum):
     SIMULATION = "simulation"
 
 
-class ValueOrigin(str, Enum):
+class ValueComputation(str, Enum):
     """
-    How a KPI value itself was produced.
+    How the final KPI value was computed from its inputs.
 
-    SIMULATED: a direct summary of SUMO measurements (a mean, maximum,
-    percentile or count) with no traffic formula applied.
+    DIRECT_SUMMARY: a direct summary of SUMO measurements (a mean,
+    maximum, percentile or count) with no traffic formula applied.
     DERIVED: calculated by Jaadah with a formula or model
     (e.g. HCM capacity, v/c ratio, level of service).
+
+    This is separate from KpiMethod: a simulation-method result can be
+    DERIVED (e.g. simulation-based LOS is graded from simulated delay).
     """
 
-    SIMULATED = "simulated"
+    DIRECT_SUMMARY = "direct_summary"
     DERIVED = "derived"
 
 
@@ -123,23 +127,23 @@ ALLOWED_KPI_UNITS: dict[KpiName, set[KpiUnit]] = {
 }
 
 
-# How each supported (KPI, method) pair produces its value.
+# How each supported (KPI, method) pair computes its final value.
 # A pair that is not listed here is not a supported KPI result.
-VALUE_ORIGINS: dict[tuple[KpiName, KpiMethod], ValueOrigin] = {
+VALUE_COMPUTATIONS: dict[tuple[KpiName, KpiMethod], ValueComputation] = {
     # Simulation-based results
-    (KpiName.CONTROL_DELAY, KpiMethod.SIMULATION): ValueOrigin.SIMULATED,
-    (KpiName.LEVEL_OF_SERVICE, KpiMethod.SIMULATION): ValueOrigin.DERIVED,
-    (KpiName.SATURATION_FLOW_RATE, KpiMethod.SIMULATION): ValueOrigin.SIMULATED,
-    (KpiName.QUEUE_LENGTH, KpiMethod.SIMULATION): ValueOrigin.SIMULATED,
-    (KpiName.QUEUE_DURATION, KpiMethod.SIMULATION): ValueOrigin.SIMULATED,
-    (KpiName.QUEUE_STORAGE_RATIO, KpiMethod.SIMULATION): ValueOrigin.DERIVED,
-    (KpiName.THROUGHPUT, KpiMethod.SIMULATION): ValueOrigin.SIMULATED,
+    (KpiName.CONTROL_DELAY, KpiMethod.SIMULATION): ValueComputation.DIRECT_SUMMARY,
+    (KpiName.LEVEL_OF_SERVICE, KpiMethod.SIMULATION): ValueComputation.DERIVED,
+    (KpiName.SATURATION_FLOW_RATE, KpiMethod.SIMULATION): ValueComputation.DIRECT_SUMMARY,
+    (KpiName.QUEUE_LENGTH, KpiMethod.SIMULATION): ValueComputation.DIRECT_SUMMARY,
+    (KpiName.QUEUE_DURATION, KpiMethod.SIMULATION): ValueComputation.DIRECT_SUMMARY,
+    (KpiName.QUEUE_STORAGE_RATIO, KpiMethod.SIMULATION): ValueComputation.DERIVED,
+    (KpiName.THROUGHPUT, KpiMethod.SIMULATION): ValueComputation.DIRECT_SUMMARY,
     # HCM results
-    (KpiName.CONTROL_DELAY, KpiMethod.HCM): ValueOrigin.DERIVED,
-    (KpiName.LEVEL_OF_SERVICE, KpiMethod.HCM): ValueOrigin.DERIVED,
-    (KpiName.VOLUME_TO_CAPACITY_RATIO, KpiMethod.HCM): ValueOrigin.DERIVED,
-    (KpiName.CAPACITY, KpiMethod.HCM): ValueOrigin.DERIVED,
-    (KpiName.SATURATION_FLOW_RATE, KpiMethod.HCM): ValueOrigin.DERIVED,
+    (KpiName.CONTROL_DELAY, KpiMethod.HCM): ValueComputation.DERIVED,
+    (KpiName.LEVEL_OF_SERVICE, KpiMethod.HCM): ValueComputation.DERIVED,
+    (KpiName.VOLUME_TO_CAPACITY_RATIO, KpiMethod.HCM): ValueComputation.DERIVED,
+    (KpiName.CAPACITY, KpiMethod.HCM): ValueComputation.DERIVED,
+    (KpiName.SATURATION_FLOW_RATE, KpiMethod.HCM): ValueComputation.DERIVED,
 }
 
 
@@ -157,7 +161,13 @@ class KpiResult(BaseModel):
 
     When run_ids holds more than one run (a replicated experiment),
     value is the mean across the runs and standard_deviation is
-    the spread between them.
+    the spread between them. HCM results may have no runs at all.
+
+    value_computation and replication_count are computed fields: they
+    appear in model_dump() and JSON output but cannot be passed in.
+    For storage, dump with exclude={"value_computation",
+    "replication_count"}; otherwise reloading the dump fails, because
+    extra fields are forbidden.
 
     The element is identified by exactly one ID, matching the level:
     movement_id, approach_id or intersection_id. Its parents (e.g. the
@@ -196,7 +206,7 @@ class KpiResult(BaseModel):
     input_origins: list[InputOrigin] = Field(default_factory=list)
 
     scenario_id: str
-    run_ids: list[str]
+    run_ids: list[str] = Field(default_factory=list)
 
     standard_deviation: float | None = Field(
         default=None,
@@ -249,9 +259,6 @@ class KpiResult(BaseModel):
                 raise ValueError("run ID must not be empty")
 
             cleaned_values.append(value)
-
-        if not cleaned_values:
-            raise ValueError("at least one run ID is required")
 
         if len(cleaned_values) != len(set(cleaned_values)):
             raise ValueError("run_ids must not contain duplicates")
@@ -378,10 +385,24 @@ class KpiResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_method(self) -> "KpiResult":
-        if (self.kpi, self.method) not in VALUE_ORIGINS:
+        if (self.kpi, self.method) not in VALUE_COMPUTATIONS:
             raise ValueError(
                 f"{self.kpi.value} is not calculated "
                 f"with the {self.method.value} method"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_runs_for_method(self) -> "KpiResult":
+        """
+        Simulation results summarize at least one run. HCM results may
+        be calculated without running SUMO, so they may have none.
+        """
+
+        if self.method == KpiMethod.SIMULATION and not self.run_ids:
+            raise ValueError(
+                "simulation-based results require at least one run ID"
             )
 
         return self
@@ -441,20 +462,22 @@ class KpiResult(BaseModel):
 
         return self
 
+    @computed_field
     @property
     def replication_count(self) -> int:
-        """Number of simulation runs this result summarizes."""
+        """Number of simulation runs this result summarizes (0 for HCM)."""
 
         return len(self.run_ids)
 
+    @computed_field
     @property
-    def value_origin(self) -> ValueOrigin | None:
+    def value_computation(self) -> ValueComputation | None:
         """
-        How the value was produced, looked up from VALUE_ORIGINS.
+        How the value was computed, looked up from VALUE_COMPUTATIONS.
         None when the result has no value.
         """
 
         if self.status != KpiStatus.OK:
             return None
 
-        return VALUE_ORIGINS[(self.kpi, self.method)]
+        return VALUE_COMPUTATIONS[(self.kpi, self.method)]

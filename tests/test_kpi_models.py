@@ -12,7 +12,7 @@ from jaadah.models.kpis import (
     KpiUnit,
     LevelOfServiceGrade,
     InputOrigin,
-    ValueOrigin,
+    ValueComputation,
 )
 
 
@@ -58,7 +58,7 @@ def test_valid_movement_result():
     assert result.unit == KpiUnit.SECONDS_PER_VEHICLE
     assert result.status == KpiStatus.OK
     assert result.method == KpiMethod.SIMULATION
-    assert result.value_origin == ValueOrigin.SIMULATED
+    assert result.value_computation == ValueComputation.DIRECT_SUMMARY
     assert result.input_origins == [
         InputOrigin.SIMULATED,
         InputOrigin.OBSERVED,
@@ -205,7 +205,7 @@ def test_empty_reason_rejected():
 
 @pytest.mark.parametrize(
     "run_ids",
-    [[], [""], ["  "], ["RUN_1", "RUN_1"], ["RUN_1", " RUN_1 "]],
+    [[""], ["  "], ["RUN_1", "RUN_1"], ["RUN_1", " RUN_1 "]],
 )
 def test_invalid_run_ids_rejected(run_ids):
     with pytest.raises(ValidationError):
@@ -513,35 +513,35 @@ def test_replicated_unavailable_result_without_standard_deviation():
 @pytest.mark.parametrize(
     "kpi, unit, method, expected",
     [
-        ("control_delay", "s/veh", "simulation", ValueOrigin.SIMULATED),
-        ("control_delay", "s/veh", "hcm", ValueOrigin.DERIVED),
-        ("queue_length", "m", "simulation", ValueOrigin.SIMULATED),
-        ("queue_storage_ratio", "ratio", "simulation", ValueOrigin.DERIVED),
-        ("throughput", "veh/h", "simulation", ValueOrigin.SIMULATED),
-        ("capacity", "veh/h", "hcm", ValueOrigin.DERIVED),
-        ("volume_to_capacity_ratio", "ratio", "hcm", ValueOrigin.DERIVED),
+        ("control_delay", "s/veh", "simulation", ValueComputation.DIRECT_SUMMARY),
+        ("control_delay", "s/veh", "hcm", ValueComputation.DERIVED),
+        ("queue_length", "m", "simulation", ValueComputation.DIRECT_SUMMARY),
+        ("queue_storage_ratio", "ratio", "simulation", ValueComputation.DERIVED),
+        ("throughput", "veh/h", "simulation", ValueComputation.DIRECT_SUMMARY),
+        ("capacity", "veh/h", "hcm", ValueComputation.DERIVED),
+        ("volume_to_capacity_ratio", "ratio", "hcm", ValueComputation.DERIVED),
     ],
 )
-def test_value_origin_follows_kpi_and_method(kpi, unit, method, expected):
+def test_value_computation_follows_kpi_and_method(kpi, unit, method, expected):
     result = KpiResult(
         **valid_kpi_data(kpi=kpi, unit=unit, method=method)
     )
 
-    assert result.value_origin == expected
+    assert result.value_computation == expected
 
 
 def test_simulation_based_los_is_derived():
     result = KpiResult(**los_data())
 
-    assert result.value_origin == ValueOrigin.DERIVED
+    assert result.value_computation == ValueComputation.DERIVED
 
 
-def test_value_origin_cannot_be_set():
+def test_value_computation_cannot_be_set():
     with pytest.raises(ValidationError):
-        KpiResult(**valid_kpi_data(value_origin="derived"))
+        KpiResult(**valid_kpi_data(value_computation="derived"))
 
 
-def test_result_without_value_has_no_value_origin():
+def test_result_without_value_has_no_value_computation():
     result = KpiResult(
         **valid_kpi_data(
             status="unavailable",
@@ -550,7 +550,7 @@ def test_result_without_value_has_no_value_origin():
         )
     )
 
-    assert result.value_origin is None
+    assert result.value_computation is None
 
 
 @pytest.mark.parametrize(
@@ -615,3 +615,90 @@ def test_result_without_value_has_no_input_origins():
                 input_origins=["observed"],
             )
         )
+
+
+# ============================================================
+# RUNS BY METHOD (review comment 9)
+# ============================================================
+
+def hcm_data(**overrides):
+    """A valid HCM capacity result calculated without running SUMO."""
+
+    data = {
+        "kpi": "capacity",
+        "unit": "veh/h",
+        "value": 1520.0,
+        "method": "hcm",
+        "input_origins": ["observed", "modelled_assumption"],
+        "run_ids": [],
+    }
+    data.update(overrides)
+    return valid_kpi_data(**data)
+
+
+def test_simulation_result_without_runs_rejected():
+    with pytest.raises(ValidationError, match="at least one run ID"):
+        KpiResult(**valid_kpi_data(run_ids=[]))
+
+
+def test_hcm_result_without_runs_is_allowed():
+    result = KpiResult(**hcm_data())
+
+    assert result.run_ids == []
+    assert result.replication_count == 0
+
+
+def test_run_ids_default_to_empty_for_hcm():
+    data = hcm_data()
+    del data["run_ids"]
+
+    result = KpiResult(**data)
+
+    assert result.run_ids == []
+
+
+def test_hcm_result_without_runs_cannot_have_standard_deviation():
+    with pytest.raises(ValidationError):
+        KpiResult(**hcm_data(standard_deviation=10.0))
+
+
+# ============================================================
+# SERIALIZATION (review comment 8)
+# ============================================================
+
+COMPUTED_FIELDS = {"value_computation", "replication_count"}
+
+
+def test_computed_fields_appear_in_dump():
+    dumped = KpiResult(**valid_kpi_data()).model_dump()
+
+    assert dumped["value_computation"] == ValueComputation.DIRECT_SUMMARY
+    assert dumped["replication_count"] == 1
+
+
+def test_computed_fields_appear_in_json():
+    as_json = KpiResult(**valid_kpi_data()).model_dump_json()
+
+    assert '"value_computation":"direct_summary"' in as_json
+    assert '"replication_count":1' in as_json
+
+
+def test_storage_round_trip_without_computed_fields():
+    """The safe way to save and reload: leave out what is recalculated."""
+
+    original = KpiResult(**valid_kpi_data())
+    stored = original.model_dump(exclude=COMPUTED_FIELDS)
+
+    reloaded = KpiResult(**stored)
+
+    assert reloaded == original
+    assert reloaded.value_computation == original.value_computation
+
+
+def test_reloading_a_full_dump_fails():
+    """Documents the catch: computed fields cannot be passed back in."""
+
+    full_dump = KpiResult(**valid_kpi_data()).model_dump()
+
+    with pytest.raises(ValidationError):
+        KpiResult(**full_dump)
