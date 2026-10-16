@@ -296,8 +296,19 @@ class SimulationConfig(BaseModel):
     """
     Core execution configuration shared by Jaadah simulation runs.
 
-    Values such as the initial warm-up duration remain configurable
-    rather than being treated as validated traffic constants.
+    A run is divided into three parts:
+
+        | warm-up | analysis period | clearance |
+
+    Vehicles are counted only if they enter the delay zone during the
+    analysis period. The clearance period lets those vehicles finish
+    their passage; traffic keeps arriving during it, but new arrivals
+    are not counted. Vehicles that still have not finished when the
+    run ends are recorded as IncompletePassage, never dropped.
+
+    Values such as the warm-up and clearance durations remain
+    configurable rather than being treated as validated traffic
+    constants. Both are required so that every run states them.
     """
 
     model_config = ConfigDict(
@@ -313,9 +324,14 @@ class SimulationConfig(BaseModel):
         ge=0,
     )
 
+    clearance_duration_s: int = Field(
+        ge=0,
+    )
+
     @field_validator(
         "simulation_duration_s",
         "warmup_duration_s",
+        "clearance_duration_s",
         mode="before",
     )
     @classmethod
@@ -328,6 +344,27 @@ class SimulationConfig(BaseModel):
             )
 
         return value
+
+    @model_validator(mode="after")
+    def validate_analysis_period(self) -> "SimulationConfig":
+        """
+        Require warm-up and clearance to leave a non-empty analysis
+        period when the total duration is known.
+        """
+
+        if self.simulation_duration_s is None:
+            return self
+
+        if (
+            self.warmup_duration_s + self.clearance_duration_s
+            >= self.simulation_duration_s
+        ):
+            raise ValueError(
+                "warmup_duration_s + clearance_duration_s must be "
+                "shorter than simulation_duration_s"
+            )
+
+        return self
 
 # ============================================================
 # REPLICATION PAIR

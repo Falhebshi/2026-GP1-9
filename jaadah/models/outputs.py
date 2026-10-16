@@ -405,7 +405,9 @@ class VehicleDelayRecord(BaseModel):
     The delay zone runs from a fixed distance before the stop line to
     the point after the intersection where the vehicle is back to
     speed. Records are produced by the simulation pipeline from SUMO
-    vehicle position output; only complete passages are recorded.
+    vehicle position output. Only complete passages are recorded
+    here; vehicles that had not finished when the run ended are
+    recorded as IncompletePassage instead, never dropped.
 
     zone_entry_time is when the vehicle arrived: its delay is counted
     in the interval it arrived in.
@@ -645,3 +647,103 @@ class CycleQueueRecord(BaseModel):
             )
 
         return self
+
+
+# ============================================================
+# INCOMPLETE PASSAGE
+# ============================================================
+
+class IncompletePassage(BaseModel):
+    """
+    A vehicle that entered the delay zone of a movement but had not
+    left it when the simulation run ended.
+
+    Recorded so that unfinished vehicles are never silently dropped:
+    they are usually the most delayed ones (still queued), so leaving
+    them out would make delay look better than it was. Their delay is
+    unknown, so they have no time loss; the KPI engine decides how an
+    interval with incomplete passages is reported.
+
+    A vehicle that crossed the stop line before the run ended was
+    served, so it still counts towards throughput.
+
+    Only the most specific identifiers are stored: the scenario is
+    found through run_id (SimulationRun) and the approach and
+    intersection through movement_id (Movement).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    run_id: str
+    vehicle_id: str
+    movement_id: str
+
+    zone_entry_time: datetime
+    stop_line_time: datetime | None = None
+    last_seen_time: datetime
+
+    @field_validator(
+        "run_id",
+        "vehicle_id",
+        "movement_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator(
+        "zone_entry_time",
+        "stop_line_time",
+        "last_seen_time",
+    )
+    @classmethod
+    def validate_timezone(
+        cls,
+        value: datetime | None,
+    ) -> datetime | None:
+        if value is None:
+            return None
+
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "timestamp must include timezone information"
+            )
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError(
+                "timestamp must use Riyadh time (UTC+03:00)"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "IncompletePassage":
+        if self.last_seen_time < self.zone_entry_time:
+            raise ValueError(
+                "last_seen_time cannot be before zone_entry_time"
+            )
+
+        if self.stop_line_time is not None and not (
+            self.zone_entry_time
+            <= self.stop_line_time
+            <= self.last_seen_time
+        ):
+            raise ValueError(
+                "stop_line_time must be between "
+                "zone_entry_time and last_seen_time"
+            )
+
+        return self
+
+    @property
+    def crossed_stop_line(self) -> bool:
+        """True if the vehicle was served before the run ended."""
+
+        return self.stop_line_time is not None
