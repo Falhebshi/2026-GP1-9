@@ -15,3 +15,6 @@ Thumbs.db
 /data/raw/rcrc_sample/
 /data/processed/rcrc_sample/
 .pytest_cache/
+
+# SUMO Stress Test v2 generated results
+/simulation/outputs/tests/stress_test_v2/
