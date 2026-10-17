@@ -7,8 +7,8 @@
 // (glass and roof) is a second loft on top of it. Normals are smoothed across each loft, so light
 // rolls over the bodywork instead of showing flat facets.
 //
-// Every model is split by material so each part gets its own colour and shine:
-//   paint     body and roof (white here, tinted with the car's colour by the layer)
+// Every model is split by material so each part gets its own color and shine:
+//   paint     body and roof (white here, tinted with the car's color by the layer)
 //   shiny     glass, wheel rims, number plates
 //   matte     tyres, wheel arches, black plastic, grilles
 //   head, tail, brake, indicatorLeft, indicatorRight   the lamps, drawn on top when they are lit
@@ -31,7 +31,7 @@ const LAMP_REAR = rgb(110, 22, 24)
 const SE = 2.6 // how square the body sections are (2 = ellipse, higher = boxier); a model can set its own
 const clamp01 = (v) => Math.min(1, Math.max(0, v))
 
-// A list of triangles with normals and vertex colours, in the form SimpleMeshLayer takes.
+// A list of triangles with normals and vertex colors, in the form SimpleMeshLayer takes.
 function part() {
   const positions = [],
     normals = [],
@@ -169,7 +169,7 @@ function fullRing(half) {
   return [...right, ...left]
 }
 
-// Lofts rings (one per x) into a smooth surface. pick(i, j) says which part and colour each
+// Lofts rings (one per x) into a smooth surface. pick(i, j) says which part and color each
 // quad goes to (or null to leave it out); quad (i, j) runs from ring i to i+1, point j to j+1.
 function loft(xs, rings, centreZ, pick) {
   const P = xs.map((x, i) => rings[i].map(([y, z]) => [x, y, z]))
@@ -797,7 +797,7 @@ export const CAR_MODELS = [SEDAN, SUV, CROSSOVER, PICKUP, DEFENDER].map(buildMod
 // How common each model is, roughly as on Riyadh's main roads.
 export const MODEL_SHARE = { sedan: 36, suv: 20, crossover: 20, pickup: 14, defender: 10 }
 
-// Car colours and how often they appear: mostly white, silver and grey, then black and beige.
+// Car colors and how often they appear: mostly white, silver and grey, then black and beige.
 export const PAINT_SHARE = [
   { color: [236, 237, 234], share: 36 }, // white
   { color: [186, 190, 194], share: 15 }, // silver

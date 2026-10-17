@@ -191,7 +191,7 @@ function buildHardware(controllers) {
   ]
 }
 
-/** Lens positions and colours for the current signal states. */
+/** Lens positions and colors for the current signal states. */
 function lensData(sig, states) {
   const lit = [],
     dim = [],
@@ -313,7 +313,7 @@ function topLayers(icons, top) {
   ]
 }
 
-// Only rebuild the layers when a signal changes colour or the view changes, not on every frame.
+// Only rebuild the layers when a signal changes color or the view changes, not on every frame.
 let cache = { key: null, sig: null, layers: [] }
 
 export function signalLayers(sig, t, { top = false } = {}) {

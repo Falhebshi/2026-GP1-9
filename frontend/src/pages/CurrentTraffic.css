@@ -2,13 +2,13 @@
 .current-traffic {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md, 16px);
+  gap: var(--space-md);
 }
 
 .current-traffic-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-md, 16px);
+  gap: var(--space-md);
   align-items: start;
 }
 
@@ -16,7 +16,7 @@
 .current-traffic-kpis {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm, 8px);
+  gap: var(--space-sm);
 }
 
 /* stack KPIs and alerts on narrow screens */
@@ -31,9 +31,9 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: var(--space-sm, 8px);
-  margin-bottom: var(--space-sm, 8px);
-  font-size: var(--text-sm, 13px);
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-sm);
 }
 
 

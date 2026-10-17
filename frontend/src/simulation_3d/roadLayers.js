@@ -188,7 +188,7 @@ export function roadLayers(
   const flat = (layer) =>
     layer.props.parameters === STREET ? layer.clone({ shadowEnabled: false }) : layer
   return [
-    // Below street level. The texture doesn't render on these sloped polygons, so they use plain colours.
+    // Below street level. The texture doesn't render on these sloped polygons, so they use plain colors.
     new SolidPolygonLayer({
       id: 'ramp-floor',
       data: net.rampFloor,
@@ -244,7 +244,7 @@ export function roadLayers(
       parameters: xray ? { depthCompare: 'always', depthWriteEnabled: false } : STREET,
       updateTriggers: { getFillColor: xray },
     }),
-    // Soft, large patches over the open ground so it isn't one flat colour: slightly darker
+    // Soft, large patches over the open ground so it isn't one flat color: slightly darker
     // earth, paler compacted ground and a faint dry-scrub tint. Low strength and different sizes
     // and positions, so nothing lines up or looks like a pattern.
     ...[

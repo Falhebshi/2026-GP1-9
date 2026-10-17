@@ -1,12 +1,12 @@
 // Small 3D models built in code (no model files): palm trunk and crown, shrub, tree crown and
-// street light. Sizes are in metres, z is up. Each model carries its own colours per vertex, so
+// street light. Sizes are in metres, z is up. Each model carries its own colors per vertex, so
 // the layers draw them with getColor white.
 
 function builder() {
   const positions = [],
     normals = [],
     colors = []
-  // triangle with one colour; the normal is turned to face `out` (a direction), if given
+  // triangle with one color; the normal is turned to face `out` (a direction), if given
   const tri = (a, b, c, color, out) => {
     const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
       v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
@@ -37,7 +37,7 @@ function seeded(seed) {
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296
 }
 
-// Tapered tube from z0 to z1. color(z) gives the colour along the height.
+// Tapered tube from z0 to z1. color(z) gives the color along the height.
 function tube(m, r0, r1, z0, z1, sides, rings, color, x = 0, y = 0) {
   for (let k = 0; k < rings; k++) {
     const za = z0 + ((z1 - z0) * k) / rings,

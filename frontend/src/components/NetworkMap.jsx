@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Map as MapLibreMap, NavigationControl, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { themeColor } from '../utils/theme'
 import './NetworkMap.css'
 
 // The city map on Network Traffic Overview: a light OpenFreeMap basemap (streets and district
-// names from OpenStreetMap) drawn by MapLibre, with our road segments coloured by congestion on
+// names from OpenStreetMap) drawn by MapLibre, with our road segments colored by congestion on
 // top, or a heatmap of the same data.
 //
 //   bounds         [[west, south], [east, north]] the map opens on
-//   segments       GeoJSON road segments (see services/networkData.js), or null for none yet
+//   segments       GeoJSON road segments (see services/networkService.js), or null for none yet
 //   view           'segments' or 'heatmap'
 //   intersections  [{ id, name, area, center: [lon, lat], simulation }] shown as dots; the ones
 //                  with a simulation pulse and can be clicked
@@ -18,11 +19,6 @@ import './NetworkMap.css'
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
-// the congestion colours from the theme (index.css), so the map matches the legend
-function themeColor(name, fallback) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value || fallback
-}
 
 // Points every ~40 m along the segments, carrying the segment's congestion, for the heatmap.
 function heatPoints(segments) {
@@ -65,7 +61,7 @@ function hoverContent(name, area, active) {
   line('span', 'network-map-hover-area', area)
   line(
     'span',
-    active ? 'network-map-hover-status active' : 'network-map-hover-status',
+    active ? 'network-map-hover-status network-map-hover-status-active' : 'network-map-hover-status',
     active ? 'Click to open the simulation' : 'Simulation not available yet',
   )
   return box
@@ -129,11 +125,12 @@ function NetworkMap({
       containerRef.current
         .querySelector('.maplibregl-ctrl-attrib')
         ?.classList.remove('maplibregl-compact-show')
-      const low = themeColor('--congestion-low', '#2e8b70')
-      const moderate = themeColor('--congestion-moderate', '#e5a33d')
-      const high = themeColor('--congestion-high', '#c8473f')
-      const none = themeColor('--congestion-none', '#c9ccda')
-      const selected = themeColor('--color-selected', '#35206f')
+      // congestion colors from the theme (index.css), so the map matches the legend
+      const low = themeColor('--congestion-low')
+      const moderate = themeColor('--congestion-moderate')
+      const high = themeColor('--congestion-high')
+      const none = themeColor('--congestion-none')
+      const selected = themeColor('--color-selected')
 
       // draw our layers under the basemap's place names, so district names stay readable
       const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
@@ -214,7 +211,7 @@ function NetworkMap({
         paint: {
           'circle-radius': ['case', ['get', 'selected'], 9, 7],
           'circle-color': selected,
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': themeColor('--color-surface'),
           'circle-stroke-width': 2,
         },
       })

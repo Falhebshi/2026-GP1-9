@@ -1,6 +1,5 @@
 // Colors for the 3D view. Road paint is only white or yellow, following SHC 602 section 4.1.3.
 export const PALETTE = {
-  sky: '#cfd6dc',
   ground: [214, 209, 198],
   asphalt: [58, 63, 71],
   junction: [70, 75, 83],

@@ -3,7 +3,7 @@ import { PALETTE } from './palette'
 import { material } from './materials'
 
 // Background map from OpenStreetMap (parking, green areas, land use and streets that are not in the SUMO network).
-// It's only for looks and is drawn flat under the simulated roads. Built by data/sumo_run/build_context.py.
+// It's only for looks and is drawn flat under the simulated roads. Built by build_context.py.
 const AREA_ORDER = { campus: 0, landuse: 0, parking: 1, pitch: 1, green: 1, water: 2 }
 
 export function prepareContext(geojson) {

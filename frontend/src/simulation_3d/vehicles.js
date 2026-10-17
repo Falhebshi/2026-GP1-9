@@ -31,7 +31,7 @@ function pickByShare(items, shareOf, u) {
 function carOf(id) {
   const model = pickByShare(CAR_MODELS, (m) => MODEL_SHARE[m.name], hashOf(id, 7) / 2 ** 32)
   const { color } = pickByShare(PAINT_SHARE, (p) => p.share, hashOf(id, 11) / 2 ** 32)
-  // small difference in shade between cars of the same colour, like real paint and dirt
+  // small difference in shade between cars of the same color, like real paint and dirt
   const shade = 0.96 + ((hashOf(id, 13) % 1000) / 1000) * 0.07
   return { model, paint: color.map((c) => Math.min(255, Math.round(c * shade))) }
 }
@@ -165,7 +165,7 @@ export function vehicleStates(v, t) {
 
 export function vehicleLayers(states, t, { visible = true } = {}) {
   const night = ENV.n
-  // At night the scene light is dim, so the cars get more of their own colour back, as if lit by
+  // At night the scene light is dim, so the cars get more of their own color back, as if lit by
   // the street lamps; otherwise every car turns black
   const lift = 1 + night * 1.2
   const lit = (m) => ({ ...m, ambient: m.ambient * lift })

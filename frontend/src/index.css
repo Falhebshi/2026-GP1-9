@@ -102,6 +102,17 @@
   --los-e: var(--blue);
   --los-f: var(--navy);
 
+  /* 3D intersection scene (TrafficScene3D): the sky behind the roads, only seen when the camera
+     tilts. Day is a hazy desert sky; night fades in over it as it gets dark. */
+  --scene-sky-day-1: #b4c4d0;
+  --scene-sky-day-2: #d9dfe2;
+  --scene-sky-day-3: #dcd8ce;
+  --scene-sky-day-4: #c9c2b3;
+  --scene-sky-night-1: #050a18;
+  --scene-sky-night-2: #0c1830;
+  --scene-sky-night-3: #1b2638;
+  --scene-sky-night-4: #232a33;
+
   /* ---- 3. SIZES ---------------------------------------------------------- */
 
   --font: "Inter", system-ui, "Segoe UI", sans-serif;

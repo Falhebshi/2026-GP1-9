@@ -4,6 +4,7 @@ import './LocationSummary.css'
 
 // A small title on top of the map with the intersection's name. Click it (or hover it) to open
 // the full Location & General Information card, so the card doesn't cover the map all the time.
+//
 //   intersection   same object as LocationInfoCard: { name, area, approaches, signalType }
 function LocationSummary({ intersection }) {
   const [pinned, setPinned] = useState(false) // opened by a click, stays open
@@ -18,7 +19,7 @@ function LocationSummary({ intersection }) {
     >
       <button
         type="button"
-        className={`location-summary-title ${open ? 'open' : ''}`}
+        className={`location-summary-title ${open ? 'location-summary-title-open' : ''}`}
         aria-expanded={open}
         onClick={() => setPinned((p) => !p)}
       >

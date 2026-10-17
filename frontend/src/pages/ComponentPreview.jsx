@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import AlertCard from '../components/AlertCard'
 import AlertList from '../components/AlertList'
+import ApproachPanel from '../components/ApproachPanel'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
 import Card from '../components/Card'
@@ -10,6 +11,7 @@ import HistoricalTimeline from '../components/HistoricalTimeline'
 import InfoList from '../components/InfoList'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
+import LocationSummary from '../components/LocationSummary'
 import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
 import SegmentedControl from '../components/SegmentedControl'
@@ -82,6 +84,43 @@ const fullIntersection = {
   approaches: 4,
   signalType: 'Adaptive signal',
 }
+
+// Example approaches for the ApproachPanel example (fake data). 'na' = not applicable,
+// null = unavailable.
+const exampleKpis = (delay, los, vc, queue, throughput) => ({
+  delay,
+  los,
+  vc,
+  queue,
+  throughput,
+  capacity: vc === 'na' ? 'na' : 1200,
+  satFlow: vc === 'na' ? 'na' : 1800,
+  queueDuration: 30,
+  storage: null,
+})
+
+const exampleApproaches = [
+  {
+    id: 'E',
+    arm: 'East',
+    road: 'Main road',
+    kpis: exampleKpis(44, 'D', 0.88, 118, 1540),
+    movements: [
+      { id: 'E-T', type: 'Through', kpis: exampleKpis(40, 'D', 0.82, 96, 1040) },
+      { id: 'E-L', type: 'Left', kpis: exampleKpis(71, 'E', 0.94, 118, 500) },
+    ],
+  },
+  {
+    id: 'N',
+    arm: 'North',
+    road: 'Side road',
+    kpis: exampleKpis(64, 'F', 1.04, 168, 790),
+    movements: [
+      { id: 'N-L', type: 'Left', kpis: exampleKpis(64, 'F', 1.04, 168, 700) },
+      { id: 'N-R', type: 'Right (slip lane)', kpis: exampleKpis(8, 'na', 'na', 18, 90) },
+    ],
+  },
+]
 
 const partialIntersection = {
   name: 'Intersection B',
@@ -266,6 +305,7 @@ function DemoTraffic({ time, cars, speed }) {
 function ComponentPreview() {
   // Each Select needs a place to remember what is currently chosen
   const [period, setPeriod] = useState('30')
+  const [openApproach, setOpenApproach] = useState('E')
   const [intersection, setIntersection] = useState('')
   const [metric, setMetric] = useState('delay')
 
@@ -561,6 +601,26 @@ function ComponentPreview() {
 
           {/* No intersection at all, e.g. while the data is still loading */}
           <LocationInfoCard className="preview-card" />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>LocationSummary</h2>
+        <div className="preview-row preview-row-top">
+          {/* Click or hover the name to open the full card */}
+          <LocationSummary intersection={fullIntersection} />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>ApproachPanel</h2>
+        <div className="preview-row preview-row-top">
+          {/* Click a chip to open or close its approach */}
+          <ApproachPanel
+            approaches={exampleApproaches}
+            openId={openApproach}
+            onToggle={(id) => setOpenApproach((open) => (open === id ? null : id))}
+          />
         </div>
       </section>
 

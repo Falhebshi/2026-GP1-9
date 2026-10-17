@@ -4,7 +4,7 @@ import { PALETTE, glowMaterial } from './palette'
 import { material } from './materials'
 
 // Buildings around the intersection, from OSM, Overture Maps and 8 landmarks traced from Esri imagery
-// (see data/sumo_run/merge_buildings.py). Only 6 have real floor counts in OSM, the rest are estimated heights.
+// (merged by merge_buildings.py). Only 6 have real floor counts in OSM, the rest are estimated heights.
 // 3D view shows modern blocks with a glass window band on every floor, Top view shows flat
 // footprints like a site plan. At night some of the windows are lit.
 const NEAR_M = 0

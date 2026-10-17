@@ -18,7 +18,7 @@ import { prepareLaneIndex, approachLanes } from '../simulation_3d/laneIndex'
 import { prepareVegetation, vegetationLayers } from '../simulation_3d/vegetation'
 import { prepareVehicles, vehicleStates, vehicleLayers } from '../simulation_3d/vehicles'
 import { ENV, envLighting } from '../simulation_3d/palette'
-import { loadIntersectionScene } from '../services/simulationData'
+import { getIntersectionScene } from '../services/simulationService'
 import SceneNavControls from './SceneNavControls'
 import ApproachPanel from './ApproachPanel'
 import SegmentedControl from './SegmentedControl'
@@ -28,6 +28,7 @@ import './TrafficScene3D.css'
 // with the simulation time, and the approaches along the bottom. Clicking an approach (its chip or
 // its lanes on the map) highlights its lanes and opens its KPIs and movements.
 // Goes inside <SimulationViewport> and keeps the top-left corner free for the viewport's card.
+//
 //   intersectionId   folder in public/data, e.g. "turki_imamsaud"
 //   center           [longitude, latitude] the camera starts over
 //   scenario         "baseline" (default) or an intervention run
@@ -36,7 +37,7 @@ import './TrafficScene3D.css'
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
 //                    scene's own buttons move down below it
-//   approaches       approaches with their KPIs for the panel (see services/currentTrafficData.js)
+//   approaches       approaches with their KPIs for the panel (see services/currentTrafficService.js)
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
 // Cars come from the SUMO run (sim.json); cars inside the tunnel are not shown.
@@ -54,7 +55,7 @@ const paintOpacityFor = (zoom) => Math.min(1, Math.max(0, (zoom - 16.2) / 0.6))
 // Same for the tunnel roof slats, between zoom 18.0 and 17.2
 const slatOpacityFor = (zoom) => Math.min(1, Math.max(0, (zoom - 17.2) / 0.8))
 
-// Sun colour through the evening: white daylight, warm orange around sunset, cool blue moonlight
+// Sun color through the evening: white daylight, warm orange around sunset, cool blue moonlight
 const SUN_COLORS = [
   [0, [255, 250, 240]],
   [0.35, [255, 196, 140]],
@@ -87,11 +88,11 @@ const VIEW_OPTIONS = [
   { value: 'top', label: 'Top' },
 ]
 const TOOLTIP_STYLE = {
-  background: '#111827',
-  color: '#fff',
-  fontSize: '12px',
-  padding: '6px 8px',
-  borderRadius: '6px',
+  background: 'var(--color-text)',
+  color: 'var(--color-text-on-dark)',
+  fontSize: 'var(--text-xs)',
+  padding: 'var(--space-xs) var(--space-sm)',
+  borderRadius: 'var(--radius)',
 }
 
 const CLIP = new ClipExtension()
@@ -259,7 +260,7 @@ function TrafficScene3D({
     ]
     redraw()
   }
-  // signalLayers() returns the same layers until a light changes colour, so we skip the update otherwise
+  // signalLayers() returns the same layers until a light changes color, so we skip the update otherwise
   function redraw(force = true) {
     const s = sceneRef.current
     if (!deckRef.current || !s) return
@@ -358,7 +359,7 @@ function TrafficScene3D({
     let cancelled = false,
       raf = 0,
       last = performance.now()
-    loadIntersectionScene(intersectionId, scenario)
+    getIntersectionScene(intersectionId, scenario)
       .then((d) => {
         if (cancelled) return
         const sig = prepareSignals(d.signals, d.surface, center)
@@ -410,8 +411,7 @@ function TrafficScene3D({
           raf = requestAnimationFrame(tick)
         }
       })
-      .catch((e) => {
-        console.error(e)
+      .catch(() => {
         if (cancelled) return
         setStatus('error')
         callbacksRef.current.onError?.(
@@ -458,7 +458,7 @@ function TrafficScene3D({
     rebuildStatic()
   }
 
-  // Blend lighting and colours to the new darkness over about 1.5 s
+  // Blend lighting and colors to the new darkness over about 1.5 s
   useEffect(() => {
     const to = Math.min(1, Math.max(0, Number(night) || 0)),
       from = ENV.n,
@@ -507,17 +507,17 @@ function TrafficScene3D({
   return (
     <div
       ref={hostRef}
-      className={`traffic-scene ${belowStatus ? 'below-status' : ''}`}
+      className={`traffic-scene ${belowStatus ? 'traffic-scene-below-status' : ''}`}
       style={{ '--night': night }}
     >
       {/* the canvas gets added here by the effect above */}
-      {status === 'loading' && <div className="center-note">Loading simulation…</div>}
+      {status === 'loading' && <div className="traffic-scene-note">Loading simulation…</div>}
 
-      <div className="ts-right">
+      <div className="traffic-scene-right">
         <SceneNavControls bearing={viewState.bearing} onNudge={nudge} />
       </div>
 
-      <div className="ts-bottom-left">
+      <div className="traffic-scene-bottom-left">
         {status === 'ready' && (
           <ApproachPanel
             approaches={approaches}
@@ -527,7 +527,7 @@ function TrafficScene3D({
         )}
       </div>
 
-      <div className="ts-top-right">
+      <div className="traffic-scene-top-right">
         <SegmentedControl
           ariaLabel="Camera view"
           size="sm"

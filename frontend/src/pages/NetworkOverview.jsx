@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
+import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
 import NetworkMap from '../components/NetworkMap'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
-import { sampleTimelineBars } from '../services/currentTrafficData'
-import { loadSegments, NETWORK_BOUNDS, NETWORK_INTERSECTIONS } from '../services/networkData'
+import { getNetwork, getNetworkTimeline, getSegments } from '../services/networkService'
 import './NetworkOverview.css'
 
 // Network Traffic Overview: the city map with road congestion, a list of intersections by
@@ -45,13 +45,15 @@ function dayOptions(now) {
 }
 
 // ours first, then the ones without a simulation yet (shown greyed out)
-const INTERSECTION_OPTIONS = [...NETWORK_INTERSECTIONS]
-  .sort((a, b) => Boolean(b.simulation) - Boolean(a.simulation))
-  .map((i) => ({
-    value: i.id,
-    label: `${i.area} · ${i.name}${i.simulation ? '' : ' (not available yet)'}`,
-    disabled: !i.simulation,
-  }))
+function intersectionOptions(intersections) {
+  return [...intersections]
+    .sort((a, b) => Boolean(b.simulation) - Boolean(a.simulation))
+    .map((i) => ({
+      value: i.id,
+      label: `${i.area} · ${i.name}${i.simulation ? '' : ' (not available yet)'}`,
+      disabled: !i.simulation,
+    }))
+}
 
 function NetworkOverview() {
   const navigate = useNavigate()
@@ -60,21 +62,48 @@ function NetworkOverview() {
   const [intersectionId, setIntersectionId] = useState('')
   const [day, setDay] = useState('') // '' = today
   const [time, setTime] = useState(null) // null = latest
+  const [network, setNetwork] = useState(null) // map area and intersections, once they arrive
+  const [error, setError] = useState(null) // the error message, if loading failed
+  const [bars, setBars] = useState([])
   const [segments, setSegments] = useState(null)
   const timelineRef = useRef(null)
   const [timelineHeight, setTimelineHeight] = useState(0)
 
+  // Load the map area and the intersections once, when the page opens
+  useEffect(() => {
+    let cancelled = false // true if the user leaves before the data arrives
+
+    getNetwork()
+      .then((result) => {
+        if (!cancelled) setNetwork(result)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // 24 hours of bars: the last 24 hours today, or the whole of a past day
-  const bars = useMemo(
-    () =>
-      day ? sampleTimelineBars(new Date(`${day}T23:45:00`).getTime()) : sampleTimelineBars(now),
-    [day, now],
-  )
-  const shown = time ? new Date(time) : new Date(bars.at(-1).time)
+  useEffect(() => {
+    let cancelled = false
+    const end = day ? new Date(`${day}T23:45:00`).getTime() : now
+    getNetworkTimeline(end).then((result) => {
+      if (!cancelled) setBars(result.bars)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [day, now])
+
+  const latest = bars.at(-1)?.time
+  const shown = time ? new Date(time) : new Date(latest ?? now)
 
   useEffect(() => {
     let cancelled = false
-    loadSegments(time).then((data) => {
+    getSegments(time).then((data) => {
       if (!cancelled) setSegments(data)
     })
     return () => {
@@ -84,10 +113,11 @@ function NetworkOverview() {
 
   // keep the map's own buttons above the timeline card
   useEffect(() => {
+    if (!timelineRef.current) return undefined
     const observer = new ResizeObserver(([entry]) => setTimelineHeight(entry.contentRect.height))
     observer.observe(timelineRef.current)
     return () => observer.disconnect()
-  }, [])
+  }, [network])
 
   function changeDay(value) {
     setDay(value)
@@ -112,18 +142,32 @@ function NetworkOverview() {
   }
   const activePeak = PEAKS.find((p) => shown.getHours() >= p.from && shown.getHours() < p.to)
 
+  if (error) {
+    return (
+      <EmptyState variant="error" title="Network overview unavailable">
+        {error}
+      </EmptyState>
+    )
+  }
+
+  if (!network) {
+    return <EmptyState>Loading the network…</EmptyState>
+  }
+
+  const { bounds, intersections } = network
+
   return (
     <div className="network-overview" style={{ '--map-bottom-inset': `${timelineHeight + 32}px` }}>
       <NetworkMap
-        bounds={NETWORK_BOUNDS}
+        bounds={bounds}
         segments={segments}
         view={view}
-        intersections={NETWORK_INTERSECTIONS}
+        intersections={intersections}
         selectedId={intersectionId}
         onSelect={setIntersectionId}
         onArrive={(id) => {
           // after zooming in, open the intersection's own page
-          const target = NETWORK_INTERSECTIONS.find((i) => i.id === id)?.simulation
+          const target = intersections.find((i) => i.id === id)?.simulation
           if (target) navigate(target)
         }}
       />
@@ -134,13 +178,17 @@ function NetworkOverview() {
         </Card>
 
         <Card floating title="Intersections by area" className="network-overview-picker">
-          <Select
-            ariaLabel="Intersection"
-            placeholder="Select intersection"
-            options={INTERSECTION_OPTIONS}
-            value={intersectionId}
-            onChange={setIntersectionId}
-          />
+          {intersections.length ? (
+            <Select
+              ariaLabel="Intersection"
+              placeholder="Select intersection"
+              options={intersectionOptions(intersections)}
+              value={intersectionId}
+              onChange={setIntersectionId}
+            />
+          ) : (
+            <EmptyState>No intersections are available.</EmptyState>
+          )}
         </Card>
       </div>
 

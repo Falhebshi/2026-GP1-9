@@ -1,4 +1,4 @@
-// Loads the data TrafficScene3D needs for one intersection.
+// Where TrafficScene3D gets the data for one intersection.
 // The files live in public/data/<intersection>/ and come from our SUMO run (scripts in simulation/).
 // Once the backend API is ready, only this file has to change, as long as it returns the same object.
 //   network/                  roads, markings, arrows, underpass, buildings, background
@@ -14,7 +14,7 @@ async function getJson(url) {
   return response.json()
 }
 
-export async function loadIntersectionScene(intersectionId, scenario = 'baseline') {
+export async function getIntersectionScene(intersectionId, scenario = 'baseline') {
   const net = `${BASE}/${intersectionId}/network`
   const run = `${BASE}/${intersectionId}/${scenario}`
   const optional = (promise) => promise.catch(() => null)

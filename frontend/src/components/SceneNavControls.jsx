@@ -1,20 +1,20 @@
 import './SceneNavControls.css'
 
 // North arrow and camera buttons for TrafficScene3D.
+//   NorthArrow         bearing: current camera bearing, in degrees (the arrow turns with it)
+//   SceneNavControls   see the comment above the function
 
 export function NorthArrow({ bearing = 0 }) {
   return (
-    <div className="north" title="North">
-      <svg
-        width="34"
-        height="34"
-        viewBox="-17 -17 34 34"
-        style={{ transform: `rotate(${-bearing}deg)` }}
-      >
-        <circle r="16" fill="rgba(255,255,255,.92)" stroke="#c9ccd1" />
-        <path d="M0 -12 L5 3 L0 0 L-5 3 Z" fill="#1f2937" />
-        <path d="M0 12 L5 3 L0 0 L-5 3 Z" fill="#9ca3af" transform="rotate(180)" />
-        <text y="-1" x="0" fontSize="0" />
+    <div className="scene-nav-north" title="North" style={{ '--bearing': `${-bearing}deg` }}>
+      <svg width="34" height="34" viewBox="-17 -17 34 34">
+        <circle className="scene-nav-north-dial" r="16" />
+        <path className="scene-nav-north-tip" d="M0 -12 L5 3 L0 0 L-5 3 Z" />
+        <path
+          className="scene-nav-north-tail"
+          d="M0 12 L5 3 L0 0 L-5 3 Z"
+          transform="rotate(180)"
+        />
       </svg>
       <span>N</span>
     </div>
@@ -26,15 +26,15 @@ export function NorthArrow({ bearing = 0 }) {
 //   onNudge   called with a function that returns the camera change
 function SceneNavControls({ bearing = 0, onNudge }) {
   return (
-    <div className="nav">
+    <div className="scene-nav">
       <button
         title="Reset to north-up"
-        className="nav-compass"
+        className="scene-nav-compass"
         onClick={() => onNudge(() => ({ bearing: 0 }))}
       >
         <NorthArrow bearing={bearing} />
       </button>
-      <div className="nav-group">
+      <div className="scene-nav-group">
         <button title="Zoom in" onClick={() => onNudge((v) => ({ zoom: v.zoom + 0.6 }))}>
           +
         </button>
@@ -42,7 +42,7 @@ function SceneNavControls({ bearing = 0, onNudge }) {
           −
         </button>
       </div>
-      <div className="nav-group">
+      <div className="scene-nav-group">
         <button title="Rotate left" onClick={() => onNudge((v) => ({ bearing: v.bearing - 45 }))}>
           ⟲
         </button>
@@ -50,7 +50,7 @@ function SceneNavControls({ bearing = 0, onNudge }) {
           ⟳
         </button>
       </div>
-      <div className="nav-group">
+      <div className="scene-nav-group">
         <button title="Tilt up (more 3D)" onClick={() => onNudge((v) => ({ pitch: v.pitch + 15 }))}>
           ⤒
         </button>

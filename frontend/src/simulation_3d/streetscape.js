@@ -2,7 +2,7 @@ import { SolidPolygonLayer } from '@deck.gl/layers'
 import { PALETTE } from './palette'
 import { material } from './materials'
 
-// Kerbs (15 cm), raised sidewalks and medians, from data/sumo_run/build_streetscape.py. Only for looks.
+// Kerbs (15 cm), raised sidewalks and medians, built by build_streetscape.py. Only for looks.
 // They use the normal depth test so buildings and cars can hide them.
 export function streetscapeLayers(ss, { visible = true, night = 0 } = {}) {
   const C = PALETTE.street3d

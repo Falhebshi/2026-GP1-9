@@ -5,6 +5,7 @@ import './ApproachPanel.css'
 // its LOS and delay. Clicking a chip (or the approach's lanes on the map) opens a card above it
 // with the approach's KPIs and its movements, so you can see which movement causes the trouble.
 // Clicking the chip again, or the ×, closes it.
+//
 //   approaches   list of { id, arm, road, kpis, movements: [{ id, type, kpis }] }
 //   openId       id of the open approach, or null
 //   onToggle     called with an approach id when its chip is clicked
@@ -71,13 +72,13 @@ function ApproachPanel({ approaches, openId, onToggle }) {
               </tr>
               {open.movements.map((m) => (
                 <Fragment key={m.id}>
-                  <tr className="movement-row">
+                  <tr className="approach-movement-row">
                     <th scope="row">{m.type}</th>
                     {COLUMNS.map((c) => (
                       <td key={c.key}>{show(m.kpis[c.key], c.key)}</td>
                     ))}
                   </tr>
-                  <tr className="movement-details">
+                  <tr className="approach-movement-details">
                     <td colSpan={COLUMNS.length + 1}>
                       {DETAILS.map((d) => (
                         <span key={d.key}>
@@ -100,7 +101,7 @@ function ApproachPanel({ approaches, openId, onToggle }) {
           <button
             key={a.id}
             type="button"
-            className={`approach-chip ${a.id === openId ? 'active' : ''}`}
+            className={`approach-chip ${a.id === openId ? 'approach-chip-active' : ''}`}
             aria-pressed={a.id === openId}
             onClick={() => onToggle(a.id)}
           >
@@ -115,12 +116,12 @@ function ApproachPanel({ approaches, openId, onToggle }) {
 }
 
 function show(value, key) {
-  if (value === 'na') return <span className="kpi-na">N/A</span>
-  if (value === null || value === undefined) return <span className="kpi-na">Unavailable</span>
-  if (key === 'los') return <span className={`los los-${value}`}>{value}</span>
+  if (value === 'na') return <span className="approach-kpi-missing">N/A</span>
+  if (value === null || value === undefined) return <span className="approach-kpi-missing">Unavailable</span>
+  if (key === 'los') return <span className={`approach-los approach-los-${value}`}>{value}</span>
   if (key === 'vc' || key === 'storage') {
     const text = value.toFixed(2)
-    return value >= 1 ? <span className="kpi-bad">{text}</span> : text
+    return value >= 1 ? <span className="approach-kpi-over">{text}</span> : text
   }
   return value.toLocaleString('en-US')
 }

@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-sm);
   max-height: 100%;
   font-size: var(--text-xs);
   color: var(--color-text);
@@ -16,7 +16,7 @@
   padding: 5px 6px 5px 10px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: var(--shadow-float);
 }
 
@@ -31,7 +31,7 @@
   gap: 6px;
   padding: 4px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
@@ -42,7 +42,7 @@
   background: var(--color-selected-bg);
 }
 
-.approach-chip.active {
+.approach-chip.approach-chip-active {
   border-color: var(--color-selected);
   background: var(--color-selected-bg);
 }
@@ -69,7 +69,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: var(--space-md);
   padding: 10px 12px 6px;
 }
 
@@ -125,16 +125,16 @@
   font-weight: 500;
 }
 
-.movement-row th {
+.approach-movement-row th {
   padding-left: 22px;
   color: var(--color-text-muted);
 }
 
-.movement-row td {
+.approach-movement-row td {
   color: var(--color-text);
 }
 
-.movement-details td {
+.approach-movement-details td {
   padding: 0 8px 8px 22px;
   text-align: left;
   color: var(--color-text-muted);
@@ -142,52 +142,61 @@
   white-space: normal;
 }
 
-.movement-details span + span::before {
+.approach-movement-details span + span::before {
   content: '·';
   margin: 0 6px;
 }
 
-.movement-details b {
+.approach-movement-details b {
   color: var(--color-text);
   font-weight: 600;
 }
 
-.kpi-na {
+.approach-kpi-missing {
   color: var(--color-text-muted);
   font-size: 10.5px;
 }
 
-.kpi-bad {
-  color: #c2410c;
+.approach-kpi-over {
+  color: var(--color-danger-text);
   font-weight: 600;
 }
 
-/* LOS letter, coloured like the timeline: A-C green, D-E amber, F red */
-.los {
+/* LOS letter, in the team's level-of-service colors (index.css, --los-a to --los-f) */
+.approach-los {
   display: inline-block;
   min-width: 18px;
   padding: 1px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   text-align: center;
   font-weight: 700;
+  color: var(--color-text);
 }
 
-.los-A,
-.los-B,
-.los-C {
-  background: var(--color-success-bg);
-  color: var(--color-success);
+.approach-los-A {
+  background: var(--los-a);
 }
 
-.los-D,
-.los-E {
-  background: #fdf0d9;
-  color: #a86b0f;
+.approach-los-B {
+  background: var(--los-b);
 }
 
-.los-F {
-  background: #fde4e1;
-  color: #b42318;
+.approach-los-C {
+  background: var(--los-c);
+}
+
+.approach-los-D {
+  background: var(--los-d);
+}
+
+.approach-los-E {
+  background: var(--los-e);
+  color: var(--color-text-on-dark);
+}
+
+.approach-los-F {
+  background: var(--los-f);
+  color: var(--color-text-on-dark);
 }
 
 .approach-total th,
@@ -196,6 +205,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-.approach-total + .movement-row {
+.approach-total + .approach-movement-row {
   border-top: 1px solid var(--color-border);
 }

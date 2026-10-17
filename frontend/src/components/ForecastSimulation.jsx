@@ -5,14 +5,15 @@ import PlaybackBar from './PlaybackBar'
 import SimulationViewport from './SimulationViewport'
 import TrafficScene3D from './TrafficScene3D'
 import usePlayback from '../hooks/usePlayback'
-import { INTERSECTION } from '../services/currentTrafficData'
-import { darkness } from '../services/daylight'
+import { darkness } from '../utils/daylight'
 import './ForecastSimulation.css'
 
 // The 3D simulation for the Traffic Forecast page: the predicted next 60 minutes, played in
 // accelerated time, with the team's PlaybackBar under it (marks at 15, 30, 45 and 60 min) and the
 // predicted time above it. Clicking a mark jumps there. The horizon is the next mark ahead of the
 // playhead, so the KPIs below show the prediction for the stretch being played.
+//
+//   intersection     the intersection to show: { id, center, bounds, name, area, ... }
 //   start            the time the forecast starts from (a Date, now unless you say otherwise)
 //   scenario         which simulation run to show ('forecast' when the backend provides it)
 //   onHorizonChange  called with the horizon in minutes (15, 30, 45 or 60) when it changes
@@ -25,7 +26,7 @@ const HORIZONS = [
   { time: 3600, label: '60' },
 ]
 
-function ForecastSimulation({ start, scenario = 'baseline', onHorizonChange, error }) {
+function ForecastSimulation({ intersection, start, scenario = 'baseline', onHorizonChange, error }) {
   const [startTime] = useState(() => start ?? new Date())
   const [runLength, setRunLength] = useState(120)
   const [loadError, setLoadError] = useState(null)
@@ -53,7 +54,7 @@ function ForecastSimulation({ start, scenario = 'baseline', onHorizonChange, err
 
       <SimulationViewport
         height={520}
-        overlay={<LocationSummary intersection={INTERSECTION} />}
+        overlay={<LocationSummary intersection={intersection} />}
         error={error || loadError}
         footer={
           <PlaybackBar
@@ -72,12 +73,12 @@ function ForecastSimulation({ start, scenario = 'baseline', onHorizonChange, err
         }
       >
         <TrafficScene3D
-          intersectionId={INTERSECTION.id}
-          center={INTERSECTION.center}
-          bounds={INTERSECTION.bounds}
+          intersectionId={intersection.id}
+          center={intersection.center}
+          bounds={intersection.bounds}
           scenario={scenario}
           time={sceneTime}
-          night={darkness(shown, INTERSECTION.center)}
+          night={darkness(shown, intersection.center)}
           onReady={({ duration }) => setRunLength(duration || 120)}
           onError={setLoadError}
         />

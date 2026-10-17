@@ -5,9 +5,15 @@
   height: 100%;
   overflow: hidden;
   font-family: inherit;
-  color: #111827;
+  color: var(--color-text);
   /* desert sky, only seen when the camera tilts */
-  background: linear-gradient(to bottom, #b4c4d0 0%, #d9dfe2 34%, #dcd8ce 60%, #c9c2b3 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--scene-sky-day-1) 0%,
+    var(--scene-sky-day-2) 34%,
+    var(--scene-sky-day-3) 60%,
+    var(--scene-sky-day-4) 100%
+  );
 }
 .traffic-scene *,
 .traffic-scene *::before,
@@ -25,7 +31,13 @@
   opacity: var(--night, 0); /* night sky fades in with the darkness */
   transition: opacity 1.5s ease;
   pointer-events: none;
-  background: linear-gradient(to bottom, #050a18 0%, #0c1830 40%, #1b2638 62%, #232a33 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--scene-sky-night-1) 0%,
+    var(--scene-sky-night-2) 40%,
+    var(--scene-sky-night-3) 62%,
+    var(--scene-sky-night-4) 100%
+  );
 }
 .traffic-scene .traffic-scene-canvas {
   position: absolute;
@@ -35,7 +47,7 @@
 }
 
 /* camera buttons on the right under the 3D / Top switch */
-.traffic-scene .ts-right {
+.traffic-scene .traffic-scene-right {
   position: absolute;
   top: 56px;
   bottom: 12px;
@@ -46,7 +58,7 @@
   align-items: flex-start;
   gap: 10px;
 }
-.traffic-scene .ts-top-right {
+.traffic-scene .traffic-scene-top-right {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -54,37 +66,28 @@
 }
 
 /* white background so the 3D / Top switch stands out on the map */
-.traffic-scene .ts-top-right .segmented {
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08);
+.traffic-scene .traffic-scene-top-right .segmented {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
 }
 
-.traffic-scene .panel {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  box-shadow: 0 4px 18px rgba(17, 24, 39, 0.08);
-  min-width: 250px;
-}
-.traffic-scene .center-note {
+/* "Loading simulation…" in the middle of the scene */
+.traffic-scene .traffic-scene-note {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 3;
-  background: #fff;
+  background: var(--color-surface);
   padding: 14px 18px;
-  border-radius: 10px;
-  box-shadow: 0 4px 18px rgba(17, 24, 39, 0.12);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
   font-size: 13px;
   font-weight: 600;
 }
-.traffic-scene .center-note.error {
-  color: #b91c1c;
-}
 
 /* approach chips and their card, bottom left */
-.traffic-scene .ts-bottom-left {
+.traffic-scene .traffic-scene-bottom-left {
   position: absolute;
   left: 12px;
   bottom: 12px;
@@ -96,15 +99,15 @@
   pointer-events: none;
 }
 
-.traffic-scene .ts-bottom-left > * {
+.traffic-scene .traffic-scene-bottom-left > * {
   pointer-events: auto;
 }
 
 /* when the viewport's time label sits in the top right corner, move the buttons below it */
-.traffic-scene.below-status .ts-top-right {
+.traffic-scene.traffic-scene-below-status .traffic-scene-top-right {
   top: 52px;
 }
 
-.traffic-scene.below-status .ts-right {
+.traffic-scene.traffic-scene-below-status .traffic-scene-right {
   top: 96px;
 }
