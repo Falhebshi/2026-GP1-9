@@ -21,7 +21,6 @@ RIYADH = timezone(timedelta(hours=3))
 def test_valid_vehicle_state():
     state = VehicleState(
         vehicle_id="veh_001",
-        scenario_id="SCN_001",
         run_id="RUN_001",
         simulation_time_s=10.5,
         timestamp=datetime(
@@ -52,7 +51,6 @@ def test_valid_vehicle_state():
 def test_valid_minimal_vehicle_state():
     state = VehicleState(
         vehicle_id="veh_001",
-        scenario_id="SCN_001",
         run_id="RUN_001",
         simulation_time_s=0,
         timestamp=datetime(
@@ -75,7 +73,6 @@ def test_valid_minimal_vehicle_state():
     "field",
     [
         "vehicle_id",
-        "scenario_id",
         "run_id",
         "sumo_edge_id",
     ],
@@ -83,7 +80,6 @@ def test_valid_minimal_vehicle_state():
 def test_blank_required_vehicle_ids_are_rejected(field):
     data = {
         "vehicle_id": "veh_001",
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "simulation_time_s": 10,
         "timestamp": datetime(
@@ -109,7 +105,6 @@ def test_blank_required_vehicle_ids_are_rejected(field):
 def test_required_vehicle_ids_are_trimmed():
     state = VehicleState(
         vehicle_id="  veh_001  ",
-        scenario_id="  SCN_001  ",
         run_id="  RUN_001  ",
         simulation_time_s=10,
         timestamp=datetime(
@@ -124,7 +119,6 @@ def test_required_vehicle_ids_are_trimmed():
     )
 
     assert state.vehicle_id == "veh_001"
-    assert state.scenario_id == "SCN_001"
     assert state.run_id == "RUN_001"
     assert state.sumo_edge_id == "edge_001"
 
@@ -140,7 +134,6 @@ def test_required_vehicle_ids_are_trimmed():
 def test_blank_optional_vehicle_ids_are_rejected(field):
     data = {
         "vehicle_id": "veh_001",
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "simulation_time_s": 10,
         "timestamp": datetime(
@@ -165,7 +158,6 @@ def test_blank_optional_vehicle_ids_are_rejected(field):
 def test_optional_vehicle_ids_are_trimmed():
     state = VehicleState(
         vehicle_id="veh_001",
-        scenario_id="SCN_001",
         run_id="RUN_001",
         simulation_time_s=10,
         timestamp=datetime(
@@ -194,7 +186,6 @@ def test_naive_vehicle_timestamp_is_rejected():
     ):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(2026, 10, 10, 8, 0),
@@ -214,7 +205,6 @@ def test_non_riyadh_vehicle_timestamp_is_rejected():
     ):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -245,7 +235,6 @@ def test_non_riyadh_vehicle_timestamp_is_rejected():
 def test_valid_coordinate_boundaries(longitude, latitude):
     state = VehicleState(
         vehicle_id="veh_001",
-        scenario_id="SCN_001",
         run_id="RUN_001",
         simulation_time_s=10,
         timestamp=datetime(
@@ -279,7 +268,6 @@ def test_invalid_coordinates_are_rejected(
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -306,7 +294,6 @@ def test_non_finite_vehicle_values_are_rejected(value):
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -325,7 +312,6 @@ def test_negative_simulation_time_is_rejected():
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=-1,
             timestamp=datetime(
@@ -344,7 +330,6 @@ def test_negative_speed_is_rejected():
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -371,7 +356,6 @@ def test_invalid_heading_is_rejected(heading):
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -389,7 +373,6 @@ def test_invalid_heading_is_rejected(heading):
 def test_supported_vehicle_type():
     state = VehicleState(
         vehicle_id="veh_001",
-        scenario_id="SCN_001",
         run_id="RUN_001",
         simulation_time_s=10,
         timestamp=datetime(
@@ -418,7 +401,6 @@ def test_unsupported_vehicle_types_are_rejected(vehicle_type):
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -449,7 +431,6 @@ def test_invalid_optional_vehicle_measurements_are_rejected(
 ):
     data = {
         "vehicle_id": "veh_001",
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "simulation_time_s": 10,
         "timestamp": datetime(
@@ -472,7 +453,6 @@ def test_vehicle_state_extra_field_is_rejected():
     with pytest.raises(ValidationError):
         VehicleState(
             vehicle_id="veh_001",
-            scenario_id="SCN_001",
             run_id="RUN_001",
             simulation_time_s=10,
             timestamp=datetime(
@@ -494,9 +474,7 @@ def test_vehicle_state_extra_field_is_rejected():
 
 def test_valid_edge_traffic_state():
     state = EdgeTrafficState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        segment_id="SEG_001",
         sumo_edge_id="edge_001",
         interval_start=datetime(
             2026, 10, 10, 8, 0, tzinfo=RIYADH
@@ -513,14 +491,13 @@ def test_valid_edge_traffic_state():
         sampled_seconds=900,
     )
 
-    assert state.segment_id == "SEG_001"
+    assert state.sumo_edge_id == "edge_001"
     assert state.vehicles_entered == 100
     assert state.sampled_seconds == 900
 
 
-def test_valid_edge_state_without_segment_mapping():
+def test_valid_edge_state_without_optional_measurements():
     state = EdgeTrafficState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
         sumo_edge_id="edge_001",
         interval_start=datetime(
@@ -535,7 +512,6 @@ def test_valid_edge_state_without_segment_mapping():
         sampled_seconds=900,
     )
 
-    assert state.segment_id is None
     assert state.average_speed_mps is None
     assert state.travel_time_s is None
     assert state.time_loss_s is None
@@ -544,14 +520,12 @@ def test_valid_edge_state_without_segment_mapping():
 @pytest.mark.parametrize(
     "field",
     [
-        "scenario_id",
         "run_id",
         "sumo_edge_id",
     ],
 )
 def test_blank_required_edge_ids_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "sumo_edge_id": "edge_001",
         "interval_start": datetime(
@@ -575,34 +549,9 @@ def test_blank_required_edge_ids_are_rejected(field):
         EdgeTrafficState(**data)
 
 
-def test_blank_segment_id_is_rejected():
-    with pytest.raises(
-        ValidationError,
-        match="identifier must not be empty",
-    ):
-        EdgeTrafficState(
-            scenario_id="SCN_001",
-            run_id="RUN_001",
-            segment_id="   ",
-            sumo_edge_id="edge_001",
-            interval_start=datetime(
-                2026, 10, 10, 8, 0, tzinfo=RIYADH
-            ),
-            interval_end=datetime(
-                2026, 10, 10, 8, 15, tzinfo=RIYADH
-            ),
-            vehicles_entered=100,
-            vehicles_left=95,
-            density_veh_per_km=20,
-            sampled_seconds=900,
-        )
-
-
 def test_edge_ids_are_trimmed():
     state = EdgeTrafficState(
-        scenario_id="  SCN_001  ",
         run_id="  RUN_001  ",
-        segment_id="  SEG_001  ",
         sumo_edge_id="  edge_001  ",
         interval_start=datetime(
             2026, 10, 10, 8, 0, tzinfo=RIYADH
@@ -616,9 +565,7 @@ def test_edge_ids_are_trimmed():
         sampled_seconds=900,
     )
 
-    assert state.scenario_id == "SCN_001"
     assert state.run_id == "RUN_001"
-    assert state.segment_id == "SEG_001"
     assert state.sumo_edge_id == "edge_001"
 
 
@@ -632,7 +579,6 @@ def test_edge_interval_equal_times_are_rejected():
         match="interval_end must be later than interval_start",
     ):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=timestamp,
@@ -650,7 +596,6 @@ def test_edge_interval_end_before_start_is_rejected():
         match="interval_end must be later than interval_start",
     ):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=datetime(
@@ -672,7 +617,6 @@ def test_naive_edge_timestamp_is_rejected():
         match="timestamp must include timezone information",
     ):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=datetime(2026, 10, 10, 8, 0),
@@ -692,7 +636,6 @@ def test_non_riyadh_edge_timestamp_is_rejected():
         match="timestamp must use Riyadh time",
     ):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=datetime(
@@ -717,7 +660,6 @@ def test_non_riyadh_edge_timestamp_is_rejected():
 )
 def test_negative_edge_vehicle_counts_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "sumo_edge_id": "edge_001",
         "interval_start": datetime(
@@ -747,7 +689,6 @@ def test_negative_edge_vehicle_counts_are_rejected(field):
 )
 def test_boolean_edge_vehicle_counts_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "sumo_edge_id": "edge_001",
         "interval_start": datetime(
@@ -787,7 +728,6 @@ def test_invalid_edge_measurements_are_rejected(
     value,
 ):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
         "sumo_edge_id": "edge_001",
         "interval_start": datetime(
@@ -819,7 +759,6 @@ def test_invalid_edge_measurements_are_rejected(
 def test_non_finite_edge_measurements_are_rejected(value):
     with pytest.raises(ValidationError):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=datetime(
@@ -838,7 +777,6 @@ def test_non_finite_edge_measurements_are_rejected(value):
 def test_edge_state_extra_field_is_rejected():
     with pytest.raises(ValidationError):
         EdgeTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
             sumo_edge_id="edge_001",
             interval_start=datetime(
@@ -855,15 +793,34 @@ def test_edge_state_extra_field_is_rejected():
         )
 
 
+def test_segment_id_is_no_longer_a_field():
+    """Segments were dropped from the analysis (cleanup, 17 Oct)."""
+
+    with pytest.raises(ValidationError):
+        EdgeTrafficState(
+            run_id="RUN_001",
+            segment_id="SEG_001",
+            sumo_edge_id="edge_001",
+            interval_start=datetime(
+                2026, 10, 10, 8, 0, tzinfo=RIYADH
+            ),
+            interval_end=datetime(
+                2026, 10, 10, 8, 15, tzinfo=RIYADH
+            ),
+            vehicles_entered=100,
+            vehicles_left=95,
+            density_veh_per_km=20,
+            sampled_seconds=900,
+        )
+
+
 # ============================================================
 # APPROACH TRAFFIC STATE TESTS
 # ============================================================
 
 def test_valid_approach_traffic_state():
     state = ApproachTrafficState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        intersection_id="INT_001",
         approach_id="APP_EAST",
         queue_detection_lane_ids=[
             "lane_east_1",
@@ -889,9 +846,7 @@ def test_valid_approach_traffic_state():
 
 def test_valid_approach_state_without_time_loss():
     state = ApproachTrafficState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        intersection_id="INT_001",
         approach_id="APP_EAST",
         queue_detection_lane_ids=["lane_east_1"],
         interval_start=datetime(
@@ -912,17 +867,13 @@ def test_valid_approach_state_without_time_loss():
 @pytest.mark.parametrize(
     "field",
     [
-        "scenario_id",
         "run_id",
-        "intersection_id",
         "approach_id",
     ],
 )
 def test_blank_required_approach_ids_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
-        "intersection_id": "INT_001",
         "approach_id": "APP_EAST",
         "queue_detection_lane_ids": ["lane_east_1"],
         "interval_start": datetime(
@@ -948,9 +899,7 @@ def test_blank_required_approach_ids_are_rejected(field):
 
 def test_approach_ids_are_trimmed():
     state = ApproachTrafficState(
-        scenario_id="  SCN_001  ",
         run_id="  RUN_001  ",
-        intersection_id="  INT_001  ",
         approach_id="  APP_EAST  ",
         queue_detection_lane_ids=["lane_east_1"],
         interval_start=datetime(
@@ -965,17 +914,13 @@ def test_approach_ids_are_trimmed():
         vehicles_seen=30,
     )
 
-    assert state.scenario_id == "SCN_001"
     assert state.run_id == "RUN_001"
-    assert state.intersection_id == "INT_001"
     assert state.approach_id == "APP_EAST"
 
 
 def test_queue_detection_lane_ids_are_trimmed():
     state = ApproachTrafficState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        intersection_id="INT_001",
         approach_id="APP_EAST",
         queue_detection_lane_ids=[
             "  lane_east_1  ",
@@ -1005,9 +950,7 @@ def test_empty_queue_detection_lane_list_is_rejected():
         match="at least one queue detection lane ID is required",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=[],
             interval_start=datetime(
@@ -1029,9 +972,7 @@ def test_blank_queue_detection_lane_id_is_rejected():
         match="queue detection lane ID must not be empty",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=[
                 "lane_east_1",
@@ -1056,9 +997,7 @@ def test_duplicate_queue_detection_lane_ids_are_rejected():
         match="must not contain duplicates",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=[
                 "lane_east_1",
@@ -1087,9 +1026,7 @@ def test_approach_interval_equal_times_are_rejected():
         match="interval_end must be later than interval_start",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=timestamp,
@@ -1107,9 +1044,7 @@ def test_approach_interval_end_before_start_is_rejected():
         match="interval_end must be later than interval_start",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=datetime(
@@ -1131,9 +1066,7 @@ def test_naive_approach_timestamp_is_rejected():
         match="timestamp must include timezone information",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=datetime(
@@ -1155,9 +1088,7 @@ def test_non_riyadh_approach_timestamp_is_rejected():
         match="timestamp must use Riyadh time",
     ):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=datetime(
@@ -1193,9 +1124,7 @@ def test_invalid_approach_measurements_are_rejected(
     value,
 ):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
-        "intersection_id": "INT_001",
         "approach_id": "APP_EAST",
         "queue_detection_lane_ids": ["lane_east_1"],
         "interval_start": datetime(
@@ -1225,9 +1154,7 @@ def test_invalid_approach_measurements_are_rejected(
 )
 def test_boolean_approach_vehicle_counts_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
-        "intersection_id": "INT_001",
         "approach_id": "APP_EAST",
         "queue_detection_lane_ids": ["lane_east_1"],
         "interval_start": datetime(
@@ -1262,9 +1189,7 @@ def test_boolean_approach_vehicle_counts_are_rejected(field):
 def test_non_finite_approach_measurements_are_rejected(value):
     with pytest.raises(ValidationError):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=datetime(
@@ -1283,9 +1208,7 @@ def test_non_finite_approach_measurements_are_rejected(value):
 def test_approach_state_extra_field_is_rejected():
     with pytest.raises(ValidationError):
         ApproachTrafficState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             approach_id="APP_EAST",
             queue_detection_lane_ids=["lane_east_1"],
             interval_start=datetime(
@@ -1300,3 +1223,60 @@ def test_approach_state_extra_field_is_rejected():
             vehicles_seen=30,
             congestion_level="high",
         )
+
+# ============================================================
+# RULE (A): PARENT IDS ARE LOOKED UP, NOT STORED
+# ============================================================
+
+def test_vehicle_state_scenario_id_is_not_a_field():
+    with pytest.raises(ValidationError):
+        VehicleState(
+            vehicle_id="veh_001",
+            run_id="RUN_001",
+            scenario_id="SCN_001",
+            simulation_time_s=10,
+            timestamp=datetime(2026, 10, 10, 8, 0, tzinfo=RIYADH),
+            longitude=46.63,
+            latitude=24.74,
+            speed_mps=10,
+            heading_deg=90,
+            vehicle_type=VehicleType.CAR,
+            sumo_edge_id="edge_001",
+        )
+
+
+def test_edge_state_scenario_id_is_not_a_field():
+    with pytest.raises(ValidationError):
+        EdgeTrafficState(
+            run_id="RUN_001",
+            scenario_id="SCN_001",
+            sumo_edge_id="edge_001",
+            interval_start=datetime(2026, 10, 10, 8, 0, tzinfo=RIYADH),
+            interval_end=datetime(2026, 10, 10, 8, 15, tzinfo=RIYADH),
+            vehicles_entered=100,
+            vehicles_left=95,
+            density_veh_per_km=20,
+            sampled_seconds=900,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("scenario_id", "SCN_001"), ("intersection_id", "INT_001")],
+)
+def test_approach_state_parent_ids_are_not_fields(field, value):
+    data = {
+        "run_id": "RUN_001",
+        "approach_id": "APP_EAST",
+        "queue_detection_lane_ids": ["lane_east_1"],
+        "interval_start": datetime(2026, 10, 10, 8, 0, tzinfo=RIYADH),
+        "interval_end": datetime(2026, 10, 10, 8, 1, tzinfo=RIYADH),
+        "max_queue_length_m": 50,
+        "mean_max_queue_vehicles": 5,
+        "started_halts": 10,
+        "vehicles_seen": 30,
+        field: value,
+    }
+
+    with pytest.raises(ValidationError):
+        ApproachTrafficState(**data)

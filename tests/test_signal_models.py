@@ -224,7 +224,6 @@ def test_valid_signal_program():
     program = SignalProgram(
         signal_program_id="PROGRAM_BASELINE",
         scenario_id="SCN_001",
-        intersection_id="INT_001",
         control_type=SignalControlType.FIXED_TIME,
         cycle_length_s=120,
         phases=make_120_second_phases(),
@@ -240,7 +239,6 @@ def test_signal_program_ids_are_trimmed():
     program = SignalProgram(
         signal_program_id="  PROGRAM_001  ",
         scenario_id="  SCN_001  ",
-        intersection_id="  INT_001  ",
         control_type=SignalControlType.FIXED_TIME,
         cycle_length_s=120,
         phases=make_120_second_phases(),
@@ -249,7 +247,6 @@ def test_signal_program_ids_are_trimmed():
 
     assert program.signal_program_id == "PROGRAM_001"
     assert program.scenario_id == "SCN_001"
-    assert program.intersection_id == "INT_001"
 
 
 @pytest.mark.parametrize(
@@ -257,14 +254,12 @@ def test_signal_program_ids_are_trimmed():
     [
         "signal_program_id",
         "scenario_id",
-        "intersection_id",
     ],
 )
 def test_blank_signal_program_ids_are_rejected(field):
     data = {
         "signal_program_id": "PROGRAM_001",
         "scenario_id": "SCN_001",
-        "intersection_id": "INT_001",
         "control_type": SignalControlType.FIXED_TIME,
         "cycle_length_s": 120,
         "phases": make_120_second_phases(),
@@ -288,7 +283,6 @@ def test_empty_phase_list_is_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=120,
             phases=[],
@@ -317,7 +311,6 @@ def test_duplicate_phase_ids_are_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=90,
             phases=phases,
@@ -346,7 +339,6 @@ def test_duplicate_sequence_orders_are_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=90,
             phases=phases,
@@ -362,7 +354,6 @@ def test_cycle_length_must_match_phase_total():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=118,
             phases=make_120_second_phases(),
@@ -374,7 +365,6 @@ def test_small_floating_point_difference_is_allowed():
     program = SignalProgram(
         signal_program_id="PROGRAM_001",
         scenario_id="SCN_001",
-        intersection_id="INT_001",
         control_type=SignalControlType.FIXED_TIME,
         cycle_length_s=120.0000001,
         phases=make_120_second_phases(),
@@ -399,7 +389,6 @@ def test_invalid_cycle_length_is_rejected(cycle_length):
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=cycle_length,
             phases=make_120_second_phases(),
@@ -412,7 +401,6 @@ def test_invalid_control_type_is_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type="magic_control",
             cycle_length_s=120,
             phases=make_120_second_phases(),
@@ -425,7 +413,6 @@ def test_invalid_signal_program_source_is_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=120,
             phases=make_120_second_phases(),
@@ -438,7 +425,6 @@ def test_sumo_tls_id_is_rejected_from_canonical_signal_program():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=120,
             phases=make_120_second_phases(),
@@ -452,7 +438,6 @@ def test_signal_program_extra_field_is_rejected():
         SignalProgram(
             signal_program_id="PROGRAM_001",
             scenario_id="SCN_001",
-            intersection_id="INT_001",
             control_type=SignalControlType.FIXED_TIME,
             cycle_length_s=120,
             phases=make_120_second_phases(),
@@ -525,9 +510,7 @@ def test_movement_signal_state_extra_field_is_rejected():
 
 def test_valid_current_signal_state():
     state = CurrentSignalState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        intersection_id="INT_001",
         signal_program_id="PROGRAM_001",
         simulation_time_s=100,
         timestamp=datetime(
@@ -555,9 +538,7 @@ def test_valid_current_signal_state():
 
 def test_phase_remaining_time_may_be_missing():
     state = CurrentSignalState(
-        scenario_id="SCN_001",
         run_id="RUN_001",
-        intersection_id="INT_001",
         signal_program_id="PROGRAM_001",
         simulation_time_s=100,
         timestamp=datetime(
@@ -579,18 +560,14 @@ def test_phase_remaining_time_may_be_missing():
 @pytest.mark.parametrize(
     "field",
     [
-        "scenario_id",
         "run_id",
-        "intersection_id",
         "signal_program_id",
         "active_phase_id",
     ],
 )
 def test_blank_current_signal_ids_are_rejected(field):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
-        "intersection_id": "INT_001",
         "signal_program_id": "PROGRAM_001",
         "simulation_time_s": 100,
         "timestamp": datetime(
@@ -618,9 +595,7 @@ def test_blank_current_signal_ids_are_rejected(field):
 
 def test_current_signal_ids_are_trimmed():
     state = CurrentSignalState(
-        scenario_id="  SCN_001  ",
         run_id="  RUN_001  ",
-        intersection_id="  INT_001  ",
         signal_program_id="  PROGRAM_001  ",
         simulation_time_s=100,
         timestamp=datetime(
@@ -636,9 +611,7 @@ def test_current_signal_ids_are_trimmed():
         ],
     )
 
-    assert state.scenario_id == "SCN_001"
     assert state.run_id == "RUN_001"
-    assert state.intersection_id == "INT_001"
     assert state.signal_program_id == "PROGRAM_001"
     assert state.active_phase_id == "PHASE_EAST"
 
@@ -649,9 +622,7 @@ def test_naive_current_signal_timestamp_is_rejected():
         match="timestamp must include timezone information",
     ):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=100,
             timestamp=datetime(2026, 10, 10, 8, 0),
@@ -672,9 +643,7 @@ def test_non_riyadh_current_signal_timestamp_is_rejected():
         match="timestamp must use Riyadh time",
     ):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=100,
             timestamp=datetime(
@@ -702,9 +671,7 @@ def test_empty_movement_states_are_rejected():
         match="at least one movement signal state is required",
     ):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=100,
             timestamp=datetime(
@@ -722,9 +689,7 @@ def test_duplicate_movement_states_are_rejected():
         match="duplicate movement IDs",
     ):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=100,
             timestamp=datetime(
@@ -758,9 +723,7 @@ def test_negative_current_signal_times_are_rejected(
     value,
 ):
     data = {
-        "scenario_id": "SCN_001",
         "run_id": "RUN_001",
-        "intersection_id": "INT_001",
         "signal_program_id": "PROGRAM_001",
         "simulation_time_s": 100,
         "timestamp": datetime(
@@ -794,9 +757,7 @@ def test_negative_current_signal_times_are_rejected(
 def test_non_finite_current_signal_times_are_rejected(value):
     with pytest.raises(ValidationError):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=value,
             timestamp=datetime(
@@ -816,9 +777,7 @@ def test_non_finite_current_signal_times_are_rejected(value):
 def test_current_signal_state_extra_field_is_rejected():
     with pytest.raises(ValidationError):
         CurrentSignalState(
-            scenario_id="SCN_001",
             run_id="RUN_001",
-            intersection_id="INT_001",
             signal_program_id="PROGRAM_001",
             simulation_time_s=100,
             timestamp=datetime(
@@ -833,4 +792,43 @@ def test_current_signal_state_extra_field_is_rejected():
                 )
             ],
             raw_sumo_tls_state="GGrr",
+        )
+
+def test_signal_program_intersection_id_is_not_a_field():
+    """Rule (a): the intersection is found through scenario_id."""
+
+    with pytest.raises(ValidationError):
+        SignalProgram(
+            signal_program_id="PROGRAM_001",
+            scenario_id="SCN_001",
+            intersection_id="INT_001",
+            control_type=SignalControlType.FIXED_TIME,
+            cycle_length_s=120,
+            phases=make_120_second_phases(),
+            source=SignalProgramSource.BASELINE_MODEL,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("scenario_id", "SCN_001"), ("intersection_id", "INT_001")],
+)
+def test_current_signal_parent_ids_are_not_fields(field, value):
+    """Rule (a): found through run_id and signal_program_id."""
+
+    with pytest.raises(ValidationError):
+        CurrentSignalState(
+            run_id="RUN_001",
+            signal_program_id="PROGRAM_001",
+            simulation_time_s=100,
+            timestamp=datetime(2026, 10, 10, 8, 0, tzinfo=RIYADH),
+            active_phase_id="PHASE_EAST",
+            phase_elapsed_s=10,
+            movement_states=[
+                MovementSignalState(
+                    movement_id="MOV_E_W",
+                    indication=SignalIndication.GREEN,
+                )
+            ],
+            **{field: value},
         )
