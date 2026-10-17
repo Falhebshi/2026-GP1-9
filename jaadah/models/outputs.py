@@ -30,6 +30,7 @@ class VehicleState(BaseModel):
 
     Contains the application-facing geographic state used by Jaadah
     together with selected SUMO identifiers needed for traceability.
+    The scenario is found through run_id (SimulationRun), not stored here.
     """
 
     model_config = ConfigDict(
@@ -38,7 +39,6 @@ class VehicleState(BaseModel):
     )
 
     vehicle_id: str
-    scenario_id: str
     run_id: str
 
     simulation_time_s: float = Field(ge=0)
@@ -90,7 +90,6 @@ class VehicleState(BaseModel):
 
     @field_validator(
         "vehicle_id",
-        "scenario_id",
         "run_id",
         "sumo_edge_id",
     )
@@ -156,6 +155,7 @@ class EdgeTrafficState(BaseModel):
     These are simulation measurements, not final application KPIs.
     The KPI engine does not use them: they serve network-level views
     (e.g. speeds and densities on the network overview map).
+    The scenario is found through run_id (SimulationRun), not stored here.
     """
 
     model_config = ConfigDict(
@@ -163,7 +163,6 @@ class EdgeTrafficState(BaseModel):
         allow_inf_nan=False,
     )
 
-    scenario_id: str
     run_id: str
 
     sumo_edge_id: str
@@ -192,7 +191,6 @@ class EdgeTrafficState(BaseModel):
     sampled_seconds: float = Field(gt=0)
 
     @field_validator(
-        "scenario_id",
         "run_id",
         "sumo_edge_id",
     )
@@ -265,6 +263,9 @@ class ApproachTrafficState(BaseModel):
     CycleQueueRecord, and time loss and time stopped per vehicle in
     VehicleDelayRecord. Kept until the team decides whether any
     component needs it (see the GitHub issue on ApproachTrafficState).
+
+    The scenario is found through run_id (SimulationRun) and the
+    intersection through approach_id (Approach), not stored here.
     """
 
     model_config = ConfigDict(
@@ -272,10 +273,8 @@ class ApproachTrafficState(BaseModel):
         allow_inf_nan=False,
     )
 
-    scenario_id: str
     run_id: str
 
-    intersection_id: str
     approach_id: str
 
     queue_detection_lane_ids: list[str]
@@ -295,9 +294,7 @@ class ApproachTrafficState(BaseModel):
     )
 
     @field_validator(
-        "scenario_id",
         "run_id",
-        "intersection_id",
         "approach_id",
     )
     @classmethod
