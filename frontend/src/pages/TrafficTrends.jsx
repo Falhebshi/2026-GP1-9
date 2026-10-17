@@ -12,6 +12,9 @@ import Select from '../components/Select'
 import { EmptyPeriodError, getTrends } from '../services/trendsService'
 import { formatKpiValue, kpiTileProps } from '../utils/kpi'
 import { shortDate, timeOf, timeRange } from '../utils/format'
+import CongestionHeatmap from './trends/CongestionHeatmap'
+import LosDistribution from './trends/LosDistribution'
+import ThresholdChart from './trends/ThresholdChart'
 import TrendChart from './trends/TrendChart'
 import WeekdayWeekendChart from './trends/WeekdayWeekendChart'
 import './TrafficTrends.css'
@@ -161,11 +164,11 @@ function TrafficTrends() {
             <WeekdayWeekendChart pairs={data.weekdayWeekend} />
           </div>
 
-          <ChartPlaceholder title="Congestion by hour and day" />
+          <CongestionHeatmap cells={data.heatmap} />
 
-          <div className="trends-row">
-            <ChartPlaceholder title="Threshold exceedance by time window" />
-            <ChartPlaceholder title="Level of service distribution" />
+          <div className="trends-row trends-row-wide-left">
+            <ThresholdChart thresholds={data.thresholds} />
+            <LosDistribution rows={data.losDistribution} />
           </div>
 
           <ChartPlaceholder title="Approach and movement breakdown" />

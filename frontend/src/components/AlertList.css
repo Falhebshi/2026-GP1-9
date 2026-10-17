@@ -82,6 +82,7 @@
   font-size: var(--text-xs);
   font-weight: 500;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 /* Sliding open and closed.
