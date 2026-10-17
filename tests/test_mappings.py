@@ -11,7 +11,6 @@ from jaadah.models.mappings import (
     MovementMapping,
     NetworkMappingConfig,
     NetworkMetadata,
-    SegmentMapping,
     SignalCrossingMapping,
 )
 from jaadah.models.traffic import TrafficObservationSource
@@ -45,7 +44,6 @@ VALID = {
     DetectorMapping: {"source": "synthetic", "detector_id": "D1", "intersection_id": "INT_001", "mapping_status": "unresolved"},
     SignalCrossingMapping: {"crossing_order": 0, "sumo_tls_id": "tls", "controlled_link_indices": [0]},
     MovementMapping: {"movement_id": "MOV_E_W", "intersection_id": "INT_001", "sumo_route_edge_ids": ["edge1", "edge2"], "signal_controlled": False},
-    SegmentMapping: {"segment_id": "SEG_1"},
     NetworkMappingConfig: valid_config(),
 }
 
@@ -87,7 +85,6 @@ def test_missing_required_field(model):
     (DetectorMapping, "detector_id"), (DetectorMapping, "intersection_id"),
     (SignalCrossingMapping, "sumo_tls_id"),
     (MovementMapping, "movement_id"), (MovementMapping, "intersection_id"),
-    (SegmentMapping, "segment_id"),
     (NetworkMappingConfig, "schema_version"), (NetworkMappingConfig, "mapping_version"),
 ])
 @pytest.mark.parametrize("blank", ["", "  ", "\n\t"])
@@ -112,7 +109,6 @@ def test_optional_identifiers_reject_blank_if_supplied(model, field, blank):
     (ApproachMapping, "source_detectors"), (ApproachMapping, "queue_detection_lane_ids"),
     (DetectorMapping, "movement_ids"),
     (MovementMapping, "sumo_lanes"),
-    (SegmentMapping, "sumo_edges"), (SegmentMapping, "osm_ids"), (SegmentMapping, "tomtom_ids"),
 ])
 @pytest.mark.parametrize("items", [["x", "x"], ["x", " x "], ["", "y"], ["  "]])
 def test_identifier_lists_reject_invalid_entries(model, field, items):
@@ -124,7 +120,6 @@ def test_identifier_lists_reject_invalid_entries(model, field, items):
     (IntersectionMapping, "source_sites"),
     (ApproachMapping, "source_detectors"), (ApproachMapping, "queue_detection_lane_ids"),
     (MovementMapping, "sumo_lanes"),
-    (SegmentMapping, "sumo_edges"), (SegmentMapping, "osm_ids"), (SegmentMapping, "tomtom_ids"),
 ])
 def test_optional_lists_default_to_independent_empty_lists(model, field):
     first, second = makes(model), makes(model)
@@ -254,21 +249,17 @@ def test_movement_signal_metadata_rejects_inconsistent_values(updates):
 
 def test_config_valid_defaults_and_round_trip():
     obj = NetworkMappingConfig.model_validate(valid_config())
-    assert obj.detector_mappings == obj.segment_mappings == []
+    assert obj.detector_mappings == []
     assert NetworkMappingConfig.model_validate_json(obj.model_dump_json()) == obj
 
 
 @pytest.mark.parametrize("collection,duplicate", [
     ("approach_mappings", {"approach_id": "APP_E", "intersection_id": "INT_001", "direction": "east"}),
     ("movement_mappings", {"movement_id": "MOV_E_W", "intersection_id": "INT_001", "sumo_route_edge_ids": ["a", "b"], "signal_controlled": False}),
-    ("segment_mappings", {"segment_id": "SEG_1"}),
 ])
 def test_config_rejects_duplicate_entity_keys(collection, duplicate):
     d = valid_config()
-    if collection == "segment_mappings":
-        d[collection] = [duplicate, deepcopy(duplicate)]
-    else:
-        d[collection].append(duplicate)
+    d[collection].append(duplicate)
     with pytest.raises(ValidationError, match="duplicate"):
         NetworkMappingConfig.model_validate(d)
 

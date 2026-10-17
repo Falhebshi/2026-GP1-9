@@ -316,43 +316,6 @@ class MovementMapping(BaseModel):
 
 
 # ============================================================
-# SEGMENT MAPPING
-# ============================================================
-
-class SegmentMapping(BaseModel):
-    """Maps an optional Jaadah road segment to external road identifiers."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    segment_id: str
-    sumo_edges: list[str] = Field(default_factory=list)
-    osm_ids: list[str] = Field(default_factory=list)
-    tomtom_ids: list[str] = Field(default_factory=list)
-
-    @field_validator("segment_id")
-    @classmethod
-    def validate_segment_id(cls, value: str) -> str:
-        """Reject an empty segment ID."""
-
-        value = value.strip()
-        if not value:
-            raise ValueError("identifier must not be empty")
-        return value
-
-    @field_validator("sumo_edges", "osm_ids", "tomtom_ids")
-    @classmethod
-    def validate_identifiers(cls, values: list[str]) -> list[str]:
-        """Reject blank or duplicate identifiers."""
-
-        cleaned = [value.strip() for value in values]
-        if any(not value for value in cleaned):
-            raise ValueError("identifier must not be empty")
-        if len(cleaned) != len(set(cleaned)):
-            raise ValueError("identifiers must be unique within a list")
-        return cleaned
-
-
-# ============================================================
 # NETWORK MAPPING CONFIG
 # ============================================================
 
@@ -368,7 +331,6 @@ class NetworkMappingConfig(BaseModel):
     approach_mappings: list[ApproachMapping] = Field(default_factory=list)
     detector_mappings: list[DetectorMapping] = Field(default_factory=list)
     movement_mappings: list[MovementMapping] = Field(default_factory=list)
-    segment_mappings: list[SegmentMapping] = Field(default_factory=list)
 
     @field_validator("schema_version", "mapping_version")
     @classmethod
@@ -395,7 +357,6 @@ class NetworkMappingConfig(BaseModel):
         for label, keys in (
             ("approach_id", [item.approach_id for item in self.approach_mappings]),
             ("movement_id", [item.movement_id for item in self.movement_mappings]),
-            ("segment_id", [item.segment_id for item in self.segment_mappings]),
             ("detector key", detector_keys),
         ):
             if len(keys) != len(set(keys)):
