@@ -1,5 +1,3 @@
-"""Unit tests for the M3 Pydantic mapping models (no SUMO runtime required)."""
-
 from copy import deepcopy
 
 import pytest
