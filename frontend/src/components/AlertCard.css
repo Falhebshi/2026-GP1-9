@@ -1,0 +1,48 @@
+/* The card is a column, so the footer can be pushed to the bottom */
+.alert-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The small tag next to the title */
+.alert-card-tag {
+  display: inline-block;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.alert-card-tag-current {
+  background: var(--alert-current-bg);
+  color: var(--alert-current-text);
+}
+
+.alert-card-tag-forecast {
+  background: var(--alert-forecast-bg);
+  color: var(--alert-forecast-text);
+}
+
+.alert-card-tag-pattern {
+  background: var(--alert-pattern-bg);
+  color: var(--alert-pattern-text);
+}
+
+/* The link (or "No intervention available") at the bottom */
+.alert-card-footer {
+  margin-top: auto; /* push to the bottom of the card */
+  padding-top: 12px;
+  font-size: var(--text-sm);
+}
+
+.alert-card-link {
+  text-decoration: none;  
+  font-weight: 500;
+}
+
+.alert-card-none {
+  color: var(--color-text-muted);
+}
