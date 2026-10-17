@@ -12,6 +12,15 @@ from jaadah.models.kpis import LevelOfServiceGrade
 
 
 # ============================================================
+# ANALYSIS INTERVALS
+# ============================================================
+
+# Length of one KPI reporting interval: 15 minutes, the HCM analysis
+# period.
+ANALYSIS_INTERVAL_S = 900
+
+
+# ============================================================
 # SATURATION FLOW
 # ============================================================
 

@@ -28,9 +28,11 @@ backend/
     └── kpi/
         ├── __init__.py
         ├── parameters.py   constants and the level-of-service function
+        ├── intervals.py    the 15-minute analysis intervals
         └── kpi_tests/
             ├── __init__.py
-            └── test_parameters.py
+            ├── test_parameters.py
+            └── test_intervals.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -42,6 +44,13 @@ Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi
 ## 1.1 Analysis intervals
 
 KPIs are calculated per **15-minute interval**, the HCM analysis period.
+
+Each simulation run has three parts, each occurring once: a **warm-up** at the start, while the network fills with vehicles; the **analysis period**; and a **clearance** at the end, which lets vehicles already in the network finish their passage. The 15-minute intervals lie back to back inside the analysis period; nothing is reported for the warm-up or the clearance (see section 4).
+
+```text
+| warm-up |  08:00–08:15 | 08:15–08:30 | 08:30–08:45 | 08:45–09:00 | clearance |
+          |<------------------ analysis period ------------------>|
+```
 
 ## 1.2 Movements analysed
 
@@ -118,3 +127,23 @@ A delay exactly on a threshold receives the better grade (for example, 10.0 s/ve
 When a lane group's volume-to-capacity ratio is greater than 1.0, its level of service is F regardless of its delay, because demand exceeds what the lane group can serve.
 
 The override applies only at **lane-group and movement level**. Approach and intersection level of service are determined by control delay alone, as defined in HCM 6th edition (Exhibit 19-8).
+
+---
+
+# 4. Analysis Intervals
+
+Implemented in `backend/analytics/kpi/intervals.py`.
+
+## 4.1 Where the intervals come from
+
+The analysis period is taken from the scenario: `Scenario.start_time` and `Scenario.end_time` are the start and end of the analysis period, the time window shown to the user (for example, an AM peak of 08:00–09:00). The warm-up runs before `start_time` and the clearance after `end_time`.
+
+Every KPI file receives the same list of intervals from this module instead of building its own, so all KPIs of a run are reported over exactly the same intervals.
+
+## 4.2 Interval boundaries
+
+An interval includes its start time and excludes its end time. An event at exactly 08:15:00 belongs to 08:15–08:30, never to 08:00–08:15, so no event is counted in two intervals.
+
+## 4.3 Whole intervals only
+
+The analysis period must be a whole number of 15-minute intervals. If it is not (for example, 50 minutes), an error is raised: the leftover is neither dropped silently nor reported as a shorter interval, because a KPI over 5 minutes is not comparable with KPIs over 15 minutes.

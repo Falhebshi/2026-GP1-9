@@ -1,6 +1,7 @@
 import pytest
 
 from backend.analytics.kpi.parameters import (
+    ANALYSIS_INTERVAL_S,
     BASE_SATURATION_FLOW_PC_H_LN,
     LOS_THRESHOLDS,
     VOLUME_TO_CAPACITY_LOS_F,
@@ -12,6 +13,10 @@ from jaadah.models.kpis import LevelOfServiceGrade
 # ============================================================
 # CONSTANTS
 # ============================================================
+
+def test_analysis_interval_is_15_minutes():
+    assert ANALYSIS_INTERVAL_S == 900
+
 
 def test_base_saturation_flow():
     assert BASE_SATURATION_FLOW_PC_H_LN == 1900
