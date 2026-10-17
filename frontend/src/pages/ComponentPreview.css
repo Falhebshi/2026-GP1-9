@@ -97,3 +97,11 @@
 .preview-box > .page-header {
   margin-bottom: 0;
 }
+
+/* A row of equal-width KPI tiles, as on Traffic Patterns & Trends */
+.preview-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
