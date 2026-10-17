@@ -7,6 +7,7 @@ import CurrentTraffic from './pages/CurrentTraffic'
 import TrafficForecast from './pages/TrafficForecast'
 import TrafficTrends from './pages/TrafficTrends'
 import ComponentPreview from './pages/ComponentPreview'
+import Alerts from './pages/Alerts'
 
 
 // App is the router: it looks at the URL and decides which page to show.
@@ -24,6 +25,7 @@ function App() {
           <Route path="/current" element={<CurrentTraffic />} />
           <Route path="/forecast" element={<TrafficForecast />} />
           <Route path="/trends" element={<TrafficTrends />} />
+          <Route path="/alerts" element={<Alerts />} />
           <Route path="/preview" element={<ComponentPreview />} />
         </Route>
 

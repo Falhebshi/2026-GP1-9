@@ -37,6 +37,14 @@
   min-width: 320px;
 }
 
+/* Three equal columns that drop to fewer on a narrow page */
+.preview-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
 /* A single KPI tile on its own */
 .preview-tile {
   width: 220px;
@@ -75,4 +83,17 @@
 
 .demo-car {
   fill: var(--color-action);
+}
+
+/* A dashed outline that shows where an example starts and ends */
+.preview-box {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius);
+}
+
+/* On a real page the header keeps space below it; inside a box it is not needed */
+.preview-box > .page-header {
+  margin-bottom: 0;
 }
