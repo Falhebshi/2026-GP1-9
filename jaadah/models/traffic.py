@@ -139,6 +139,9 @@ class SimulationDemand(BaseModel):
     Represents demand after source data has been standardized,
     transformed, and mapped to Jaadah's network model. It intentionally
     contains no SUMO-specific identifiers.
+
+    The intersection is found through movement_id (Movement), not
+    stored here.
     """
 
     model_config = ConfigDict(
@@ -150,7 +153,6 @@ class SimulationDemand(BaseModel):
     interval_start: datetime
     interval_end: datetime
 
-    intersection_id: str
     movement_id: str
 
     vehicle_count: int = Field(ge=0)
@@ -160,7 +162,6 @@ class SimulationDemand(BaseModel):
 
     @field_validator(
         "demand_id",
-        "intersection_id",
         "movement_id",
     )
     @classmethod

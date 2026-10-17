@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import AlertCard from '../components/AlertCard'
 import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
@@ -8,6 +10,7 @@ import HistoricalTimeline from '../components/HistoricalTimeline'
 import InfoList from '../components/InfoList'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
+import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
@@ -191,6 +194,44 @@ const forecastStarts = [
 ]
 
 const COMPARISON_LENGTH = 600
+
+// Example alerts for the AlertCard examples (fake data), one of each type
+const alertCards = [
+  {
+    id: 'c1',
+    type: 'current',
+    title: 'Queue spillback',
+    details: [
+      { label: 'Affected area', value: 'North approach' },
+      { label: 'Detected at', value: '14:05' },
+      { label: 'Status', value: <Badge variant="warning">Active</Badge> },
+    ],
+    interventionsTo: '/recommendations/1',
+  },
+  {
+    id: 'f1',
+    type: 'forecast',
+    title: 'Queue buildup',
+    details: [
+      { label: 'Affected area', value: 'South approach' },
+      { label: 'Expected in', value: '12 min' },
+      { label: 'Horizon', value: '+15 min' },
+    ],
+    interventionsTo: '/recommendations/2',
+  },
+  {
+    id: 'p1',
+    type: 'pattern',
+    title: 'Recurring high V/C',
+    details: [
+      { label: 'Location', value: 'West approach' },
+      { label: 'When', value: 'Weekends, 12:00-15:00' },
+      { label: 'How often', value: '2 of 2 days' },
+      { label: 'Last seen', value: 'Sat 10 Oct' },
+    ],
+    // no interventionsTo: the card says "No intervention available"
+  },
+]
 
 // A stand-in for the real simulation, only for the SimulationViewport
 // examples: a crossing with rectangles for cars. Every car's position is
@@ -550,6 +591,58 @@ function ComponentPreview() {
             error="Abnormal traffic detection is not responding."
             className="preview-card-wide"
           />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>PageHeader</h2>
+
+        {/* As on Alerts: a plain subtitle and several buttons */}
+        <div className="preview-box">
+          <PageHeader
+            title="Alerts"
+            subtitle="Selected area: Intersection A"
+            actions={
+              <>
+                <Button variant="secondary" size="sm">Current 3</Button>
+                <Button variant="secondary" size="sm">Forecast 3</Button>
+                <Button variant="secondary" size="sm">Patterns 3</Button>
+              </>
+            }
+          />
+        </div>
+
+        {/* As on Recommendation Details: breadcrumb links and one button */}
+        <div className="preview-box">
+          <PageHeader
+            title="Intervention 1"
+            subtitle={
+              <>
+                <Link to="/recommendations">Interventions</Link> / Intervention 1
+              </>
+            }
+            actions={<Button variant="secondary">Back to interventions</Button>}
+          />
+        </div>
+
+        {/* Title only */}
+        <div className="preview-box">
+          <PageHeader title="Traffic Patterns & Trends" />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>AlertCard</h2>
+        <div className="preview-grid-3">
+          {alertCards.map((alert) => (
+            <AlertCard
+              key={alert.id}
+              type={alert.type}
+              title={alert.title}
+              details={alert.details}
+              interventionsTo={alert.interventionsTo}
+            />
+          ))}
         </div>
       </section>
 
