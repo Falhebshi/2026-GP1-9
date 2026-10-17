@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from jaadah.mapping.mapping_loader import load_network_mappings
+from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.mappings import NetworkMappingConfig
 
 
