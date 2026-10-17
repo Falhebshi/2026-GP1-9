@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -188,3 +190,180 @@ class Segment(BaseModel):
             raise ValueError("identifier must not be empty")
 
         return value
+
+# ============================================================
+# MOVEMENT AND LANE ENUMS
+# ============================================================
+
+class MovementType(str, Enum):
+    """The turning direction of a movement."""
+
+    THROUGH = "through"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class MovementControl(str, Enum):
+    """
+    Whether the traffic signal controls a movement.
+
+    UNCONTROLLED is used for right turns that leave the approach
+    through a slip lane before the signal.
+    """
+
+    SIGNALIZED = "signalized"
+    UNCONTROLLED = "uncontrolled"
+
+
+# ============================================================
+# MOVEMENT ATTRIBUTES
+# ============================================================
+
+class MovementAttributes(BaseModel):
+    """
+    Jaadah-level facts about one movement that the KPI engine needs.
+
+    Scope: only movements included in the KPI analysis of the
+    case-study intersection receive MovementAttributes (the through,
+    left and right-turn movements at its stop lines, including
+    uncontrolled right-turn slip lanes). Other movements in the
+    simulated network (ramps, tunnel paths, slips and U-turns
+    elsewhere) remain canonical Movements without attributes and
+    have no KPIs.
+
+    Only the movement_id is stored; the movement's intersection and
+    approach are owned by Movement. A movement that has
+    MovementAttributes must have Movement.approach_id set, because
+    its results roll up to an approach. That cross-model rule is
+    checked where Movement and MovementAttributes are combined, not
+    in this model.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    movement_id: str
+
+    movement_type: MovementType
+    control: MovementControl
+
+    @field_validator("movement_id")
+    @classmethod
+    def validate_movement_id(cls, value: str) -> str:
+        """Reject an empty or whitespace-only movement ID."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+
+# ============================================================
+# APPROACH LANE
+# ============================================================
+
+class ApproachLane(BaseModel):
+    """
+    One lane of a Jaadah approach and the movements it serves.
+
+    lane_id is the lane's stable Jaadah identity (e.g. LANE_E_2). It
+    keeps its meaning if the layout changes; the mapping layer links
+    it to SUMO lane IDs. approach_id and lane_index are facts about
+    the lane, not its identity.
+
+    lane_index counts from the median: 1 is the lane closest to the
+    median. This is a Jaadah index; the mapping layer converts it to
+    SUMO lane IDs (SUMO counts from the kerb, starting at 0).
+
+    A lane shared by several movements (e.g. through and left) lists
+    all of them in served_movement_ids.
+
+    Only approach_id is stored; the intersection is owned by Approach.
+
+    storage_length_m is the queue storage available in this lane,
+    measured back from the stop line. It is optional: when it is not
+    known, the queue storage ratio is reported as unavailable.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    lane_id: str
+    approach_id: str
+
+    lane_index: int = Field(ge=1)
+
+    served_movement_ids: list[str]
+
+    lane_width_m: float = Field(gt=0)
+    storage_length_m: float | None = Field(
+        default=None,
+        gt=0,
+    )
+
+    @field_validator(
+        "lane_id",
+        "approach_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        """Reject empty or whitespace-only identifiers."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator("lane_index", mode="before")
+    @classmethod
+    def validate_lane_index(cls, value):
+        """Reject booleans being interpreted as lane numbers."""
+
+        if isinstance(value, bool):
+            raise ValueError(
+                "lane_index must be an integer, not a boolean"
+            )
+
+        return value
+
+    @field_validator("served_movement_ids")
+    @classmethod
+    def validate_served_movement_ids(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        """
+        Normalize served movement IDs and reject empty, missing or
+        duplicate references.
+        """
+
+        cleaned_values = []
+
+        for value in values:
+            value = value.strip()
+
+            if not value:
+                raise ValueError(
+                    "served movement ID must not be empty"
+                )
+
+            cleaned_values.append(value)
+
+        if not cleaned_values:
+            raise ValueError(
+                "a lane must serve at least one movement"
+            )
+
+        if len(cleaned_values) != len(set(cleaned_values)):
+            raise ValueError(
+                "served_movement_ids must not contain duplicates"
+            )
+
+        return cleaned_values

@@ -721,15 +721,18 @@ def test_valid_bounded_simulation_config():
     config = SimulationConfig(
         simulation_duration_s=900,
         warmup_duration_s=300,
+        clearance_duration_s=120,
     )
 
     assert config.simulation_duration_s == 900
     assert config.warmup_duration_s == 300
+    assert config.clearance_duration_s == 120
 
 
 def test_valid_open_ended_simulation_config():
     config = SimulationConfig(
         warmup_duration_s=300,
+        clearance_duration_s=120,
     )
 
     assert config.simulation_duration_s is None
@@ -739,9 +742,31 @@ def test_zero_warmup_is_allowed():
     config = SimulationConfig(
         simulation_duration_s=900,
         warmup_duration_s=0,
+        clearance_duration_s=120,
     )
 
     assert config.warmup_duration_s == 0
+
+
+def test_zero_clearance_is_allowed():
+    config = SimulationConfig(
+        simulation_duration_s=900,
+        warmup_duration_s=300,
+        clearance_duration_s=0,
+    )
+
+    assert config.clearance_duration_s == 0
+
+
+def test_missing_clearance_is_rejected():
+    with pytest.raises(
+        ValidationError,
+        match="clearance_duration_s",
+    ):
+        SimulationConfig(
+            simulation_duration_s=900,
+            warmup_duration_s=300,
+        )
 
 
 @pytest.mark.parametrize(
@@ -756,6 +781,7 @@ def test_invalid_simulation_duration_is_rejected(duration):
         SimulationConfig(
             simulation_duration_s=duration,
             warmup_duration_s=300,
+            clearance_duration_s=120,
         )
 
 
@@ -764,6 +790,16 @@ def test_negative_warmup_is_rejected():
         SimulationConfig(
             simulation_duration_s=900,
             warmup_duration_s=-1,
+            clearance_duration_s=120,
+        )
+
+
+def test_negative_clearance_is_rejected():
+    with pytest.raises(ValidationError):
+        SimulationConfig(
+            simulation_duration_s=900,
+            warmup_duration_s=300,
+            clearance_duration_s=-1,
         )
 
 
@@ -772,12 +808,14 @@ def test_negative_warmup_is_rejected():
     [
         ("simulation_duration_s", True),
         ("warmup_duration_s", False),
+        ("clearance_duration_s", True),
     ],
 )
 def test_boolean_durations_are_rejected(field, value):
     data = {
         "simulation_duration_s": 900,
         "warmup_duration_s": 300,
+        "clearance_duration_s": 120,
     }
 
     data[field] = value
@@ -789,10 +827,39 @@ def test_boolean_durations_are_rejected(field, value):
         SimulationConfig(**data)
 
 
+@pytest.mark.parametrize(
+    ("warmup", "clearance"),
+    [
+        (600, 300),
+        (700, 300),
+    ],
+)
+def test_empty_analysis_period_is_rejected(warmup, clearance):
+    with pytest.raises(
+        ValidationError,
+        match="must be shorter than simulation_duration_s",
+    ):
+        SimulationConfig(
+            simulation_duration_s=900,
+            warmup_duration_s=warmup,
+            clearance_duration_s=clearance,
+        )
+
+
+def test_open_ended_config_skips_analysis_period_check():
+    config = SimulationConfig(
+        warmup_duration_s=3600,
+        clearance_duration_s=3600,
+    )
+
+    assert config.simulation_duration_s is None
+
+
 def test_simulation_config_extra_field_is_rejected():
     with pytest.raises(ValidationError):
         SimulationConfig(
             simulation_duration_s=900,
             warmup_duration_s=300,
+            clearance_duration_s=120,
             extraction_interval_s=1,
         )
