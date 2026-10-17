@@ -451,7 +451,10 @@ function buildTrends(periodDays, dayType, approachId) {
     const date = addDays(start, i)
     if (matchesDayType(date, dayType)) days.push(date)
   }
-  const anomalyDate = days[Math.floor(days.length * 0.6)]
+  // The fake anomaly: an unusually bad weekday, about 60% through the period
+  const anomalyDate =
+    days.slice(Math.floor(days.length * 0.6)).find((d) => !isWeekend(d)) ??
+    days[Math.floor(days.length * 0.6)]
   const missingDate = periodDays >= 30 ? days[Math.floor(days.length * 0.25)] : null
 
   const series = { control_delay: [], queue_length: [], throughput: [], volume_to_capacity_ratio: [] }
@@ -465,7 +468,7 @@ function buildTrends(periodDays, dayType, approachId) {
       continue
     }
     const weekendDip = isWeekend(date) ? 0.72 : 1
-    const spike = date === anomalyDate ? 1.3 : 1
+    const spike = date === anomalyDate ? 1.45 : 1
     const wobble = 0.9 + random() * 0.2
     const f = averageFactor * weekendDip * spike * wobble / DAY_TYPE_FACTOR[dayType] * DAY_TYPE_FACTOR.weekdays
     const day = pick(elementValues(f))

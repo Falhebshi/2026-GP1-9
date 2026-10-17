@@ -11,6 +11,9 @@ import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import { EmptyPeriodError, getTrends } from '../services/trendsService'
 import { formatKpiValue, kpiTileProps } from '../utils/kpi'
+import { shortDate, timeOf, timeRange } from '../utils/format'
+import TrendChart from './trends/TrendChart'
+import WeekdayWeekendChart from './trends/WeekdayWeekendChart'
 import './TrafficTrends.css'
 
 // Choices for the filters at the top of the page
@@ -154,8 +157,8 @@ function TrafficTrends() {
           <KpiRow summary={data.summary} dayType={dayType} approachId={approachId} note={note} />
 
           <div className="trends-row trends-row-wide-left">
-            <ChartPlaceholder title="Performance trend" />
-            <ChartPlaceholder title="Weekdays vs weekends" />
+            <TrendChart trend={data.trend} />
+            <WeekdayWeekendChart pairs={data.weekdayWeekend} />
           </div>
 
           <ChartPlaceholder title="Congestion by hour and day" />
@@ -257,24 +260,6 @@ function toAlertListItem(alert) {
 function describePeriod(period, periodDays) {
   const range = `${shortDate(period.start)} – ${shortDate(period.end)} ${period.end.slice(0, 4)}`
   return `${range} · ${period.intervalCount.toLocaleString('en-US')} fifteen-minute intervals · compared with the previous ${periodDays} days`
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-// "2026-09-15" → "15 Sep"
-function shortDate(dateText) {
-  const [, month, day] = dateText.split('-')
-  return `${Number(day)} ${MONTHS[Number(month) - 1]}`
-}
-
-// "2026-10-14T17:15:00+03:00" → "17:15". Read straight from the text, so
-// the time is always Riyadh time, whatever the viewer's computer is set to.
-function timeOf(timestamp) {
-  return timestamp?.slice(11, 16) ?? ''
-}
-
-function timeRange(start, end) {
-  return `${timeOf(start)}–${timeOf(end)}`
 }
 
 export default TrafficTrends
