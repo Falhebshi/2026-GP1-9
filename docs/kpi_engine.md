@@ -29,10 +29,12 @@ backend/
         ├── __init__.py
         ├── parameters.py   constants and the level-of-service function
         ├── intervals.py    the 15-minute analysis intervals
+        ├── throughput.py   vehicles served per movement
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
-            └── test_intervals.py
+            ├── test_intervals.py
+            └── test_throughput.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -147,3 +149,29 @@ An interval includes its start time and excludes its end time. An event at exact
 ## 4.3 Whole intervals only
 
 The analysis period must be a whole number of 15-minute intervals. If it is not (for example, 50 minutes), an error is raised: the leftover is neither dropped silently nor reported as a shorter interval, because a KPI over 5 minutes is not comparable with KPIs over 15 minutes.
+
+---
+
+# 5. Throughput
+
+Implemented in `backend/analytics/kpi/throughput.py`.
+
+Throughput is the number of vehicles a movement served in an interval, reported in vehicles per hour (a count over a 15-minute interval × 4). It is calculated per movement for each run; approach and intersection throughput are the sums of their movements (section 2.4), and the mean and standard deviation across seeds are calculated in the same way as for every other KPI.
+
+## 5.1 When a vehicle is counted
+
+A vehicle is counted in the interval that contains its **stop-line crossing** (`stop_line_time`), the moment the signal serves it. Counting by zone entry would measure arrivals (demand) rather than service, and counting by zone exit would depend on the length of the downstream zone, which differs by approach.
+
+A vehicle that arrived during the warm-up but crosses the stop line inside the analysis period is counted; a vehicle that crosses during the clearance is not counted in any interval.
+
+## 5.2 Vehicles still in the zone when the run ends
+
+A vehicle that crossed the stop line but had not left the zone when the run ended has an `IncompletePassage` record with a `stop_line_time` and no `VehicleDelayRecord`. It is counted: it was served, and leaving it out would undercount the last interval.
+
+## 5.3 Intervals with no vehicles
+
+When a run covered an interval and no vehicle of a movement crossed the stop line, throughput is reported as **0 veh/h** with status `ok`. This is a measured zero, not a missing value.
+
+## 5.4 Input checks
+
+An error is raised when a record belongs to a different run, uses a movement that is not analysed, or when the same vehicle appears more than once. These indicate a problem in the simulation output and are never silently ignored.
