@@ -1,0 +1,60 @@
+.trends-notice {
+  margin-bottom: var(--space-lg);
+}
+
+/* Left column for context, right column for the analysis */
+.trends-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+  transition: opacity 0.2s;
+}
+
+/* While new data loads, the old data stays, faded, so nothing jumps */
+.trends-layout.is-loading {
+  opacity: 0.5;
+}
+
+.trends-side,
+.trends-main {
+  display: grid;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+.trends-side-note {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* Two cards side by side */
+.trends-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+  align-items: stretch;
+}
+
+/* The left card a little wider, as for the trend chart */
+.trends-row-wide-left {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+
+/* One column on a narrower page: context first, then the analysis */
+@media (max-width: 1150px) {
+  .trends-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .trends-row,
+  .trends-row-wide-left {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

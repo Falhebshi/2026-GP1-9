@@ -98,10 +98,14 @@
   margin-bottom: 0;
 }
 
-/* A row of equal-width KPI tiles, as on Traffic Patterns & Trends */
+/* Space above the row of KPI tiles (the row itself is .kpi-row) */
 .preview-kpi-row {
+  margin-top: var(--space-md);
+}
+
+/* Examples one under the other, full width */
+.preview-stack {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-md);
+  gap: var(--space-sm);
   margin-top: var(--space-md);
 }

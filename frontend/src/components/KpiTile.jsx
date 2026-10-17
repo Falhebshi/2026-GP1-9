@@ -13,7 +13,8 @@ import './KpiTile.css'
 //                there is no value ('unavailable' unless you say otherwise)
 //   reason       why there is no value, shown in small text under the word
 //   detail       a small grey line under the value, e.g. "LOS C" (optional)
-//   tag          a small label in the corner, e.g. "Simulated" (optional)
+//   tag          a small label in the top right corner, e.g. "Simulated"
+//                (optional)
 //   change       how much the value changed: positive = up, negative = down
 //   changeUnit   unit of the change, "%" unless you say otherwise
 //   changeNote   text after the change, e.g. "vs previous". Shown on its own
@@ -22,8 +23,11 @@ import './KpiTile.css'
 //                The page decides, because it depends on the KPI:
 //                delay going up is bad, speed going up is good.
 //   layout       "inline"   change sits to the right of the value
-//                "stacked"  change sits at the bottom of the tile. Tiles
-//                           side by side in a row then line up.
+//                "stacked"  change sits at the bottom of the tile.
+//
+// Stacked tiles placed inside <div className="kpi-row"> line up with each
+// other row by row: labels, values, details and changes each share a line
+// across all the tiles, even when one label wraps onto two lines.
 //
 // A KPI result from the backend can fill most of these at once:
 //   <KpiTile label="Avg control delay" {...kpiTileProps(result)} />
@@ -76,11 +80,12 @@ function KpiTile({
     changeLine = <p className="kpi-change kpi-change-neutral">{changeNote}</p>
   }
 
-  const tagElement = tag && <span className="kpi-tag">{tag}</span>
-
   return (
     <div className={`kpi-tile kpi-tile-${layout} ${className}`}>
-      <p className="kpi-label">{label}</p>
+      <div className="kpi-head">
+        <p className="kpi-label">{label}</p>
+        {tag && <span className="kpi-tag">{tag}</span>}
+      </div>
 
       {isUnavailable ? (
         <p className="kpi-value kpi-value-unavailable">
@@ -95,20 +100,18 @@ function KpiTile({
 
       {layout === 'inline' && changeLine}
 
-      {detail && <p className="kpi-detail">{detail}</p>}
-
-      {/* Why there is no value, so nobody has to guess */}
-      {isUnavailable && reason && <p className="kpi-reason">{reason}</p>}
-
-      {/* Stacked: change and tag share the bottom row.
-          Inline: the bottom row only holds the tag. */}
-      {layout === 'stacked' && (changeLine || tagElement) && (
-        <div className="kpi-footer">
-          {changeLine}
-          {tagElement}
+      {/* The detail line, and why there is no value. In a stacked tile this
+          box is always there, even when empty, so tiles in a kpi-row keep
+          the same rows. */}
+      {(layout === 'stacked' || detail || (isUnavailable && reason)) && (
+        <div className="kpi-info">
+          {detail && <p className="kpi-detail">{detail}</p>}
+          {isUnavailable && reason && <p className="kpi-reason">{reason}</p>}
         </div>
       )}
-      {layout === 'inline' && tagElement && <div className="kpi-footer">{tagElement}</div>}
+
+      {/* Stacked: the change sits at the bottom of the tile */}
+      {layout === 'stacked' && <div className="kpi-footer">{changeLine}</div>}
     </div>
   )
 }

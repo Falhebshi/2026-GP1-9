@@ -13,14 +13,12 @@
   align-items: baseline;
 }
 
-.kpi-tile-inline .kpi-label,
-.kpi-tile-inline .kpi-detail,
-.kpi-tile-inline .kpi-footer {
+.kpi-tile-inline .kpi-head,
+.kpi-tile-inline .kpi-info {
   grid-column: 1 / -1; /* stretch across both columns */
 }
 
-/* Stacked: one column, with the footer pushed to the bottom so tiles of
-   different heights in the same row still line up */
+/* Stacked: one column, with the footer pushed to the bottom */
 .kpi-tile-stacked {
   display: flex;
   flex-direction: column;
@@ -30,6 +28,36 @@
 .kpi-tile-stacked .kpi-footer {
   margin-top: auto;
   padding-top: var(--space-sm);
+}
+
+/* A row of stacked tiles that line up with each other.
+   Each tile takes four rows of the shared grid (label, value, detail,
+   change), so the same line of every tile sits at the same height. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  column-gap: var(--space-md);
+  row-gap: var(--space-md); /* space between rows of tiles, when they wrap */
+}
+
+.kpi-row > .kpi-tile-stacked {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-xs); /* space between the lines inside a tile */
+  align-content: start;
+}
+
+.kpi-row > .kpi-tile-stacked .kpi-footer {
+  align-self: end;
+}
+
+/* Label on the left, tag on the right */
+.kpi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
 }
 
 .kpi-label {
@@ -69,18 +97,6 @@
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   font-style: italic;
-}
-
-.kpi-tile-inline .kpi-reason {
-  grid-column: 1 / -1;
-}
-
-/* Change on the left, tag on the right */
-.kpi-footer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-sm);
 }
 
 .kpi-change {

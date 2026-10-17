@@ -11,6 +11,7 @@ import InfoList from '../components/InfoList'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
 import LosBadge, { GRADES } from '../components/LosBadge'
+import Notice from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
 import SegmentedControl from '../components/SegmentedControl'
@@ -561,7 +562,7 @@ function ComponentPreview() {
         <h2>KpiTile from backend results</h2>
 
         {/* Stacked tiles in a row line up: the change line sits at the bottom */}
-        <div className="preview-kpi-row">
+        <div className="kpi-row preview-kpi-row">
           <KpiTile
             layout="stacked"
             label="Avg control delay"
@@ -599,6 +600,16 @@ function ComponentPreview() {
             label="LOS, right slip lane"
             {...kpiTileProps(exampleResults.losRight.current)}
           />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>Notice</h2>
+        <div className="preview-stack">
+          <Notice variant="warning">
+            Sample data for layout only: all values on this page are illustrative.
+          </Notice>
+          <Notice>Results cover weekdays only.</Notice>
         </div>
       </section>
 
