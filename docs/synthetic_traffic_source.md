@@ -466,7 +466,7 @@ Example response structure:
       "detector_id": 1,
       "Date  & Time": "2026-10-14T08:15:00+03:00",
       "volume": 51,
-      "description": "SYN-EB-L1"
+      "description": "SYN-EB-L1-L-STB"
     }
   ]
 }

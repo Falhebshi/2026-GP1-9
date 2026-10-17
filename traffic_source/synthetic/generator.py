@@ -111,21 +111,21 @@ TARGET_SITE_ID = 9
 
 
 TARGET_DETECTORS = (
-    TargetDetector(1, "SYN-EB-L1"),
-    TargetDetector(2, "SYN-EB-L2"),
-    TargetDetector(3, "SYN-EB-L3"),
+    TargetDetector(1, "SYN-EB-L1-L-STB"),
+    TargetDetector(2, "SYN-EB-L2-LT-STB"),
+    TargetDetector(3, "SYN-EB-L3-T-STB"),
 
-    TargetDetector(4, "SYN-SB-L1"),
-    TargetDetector(5, "SYN-SB-L2"),
-    TargetDetector(6, "SYN-SB-L3"),
+    TargetDetector(4, "SYN-SB-L1-L-STB"),
+    TargetDetector(5, "SYN-SB-L2-L-STB"),
+    TargetDetector(6, "SYN-SB-L3-L-STB"),
 
-    TargetDetector(7, "SYN-NB-L1"),
-    TargetDetector(8, "SYN-NB-L2"),
+    TargetDetector(7, "SYN-NB-L1-T-STB"),
+    TargetDetector(8, "SYN-NB-L2-T-STB"),
 
-    TargetDetector(9, "SYN-WB-L1"),
-    TargetDetector(10, "SYN-WB-L2"),
-    TargetDetector(11, "SYN-WB-L3"),
-    TargetDetector(12, "SYN-WB-L4"),
+    TargetDetector(9, "SYN-WB-L1-L-STB"),
+    TargetDetector(10, "SYN-WB-L2-LT-STB"),
+    TargetDetector(11, "SYN-WB-L3-T-STB"),
+    TargetDetector(12, "SYN-WB-L4-T-STB"),
 )
 
 
