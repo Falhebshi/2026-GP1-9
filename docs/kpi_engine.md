@@ -31,12 +31,14 @@ backend/
         ├── intervals.py    the 15-minute analysis intervals
         ├── throughput.py   vehicles served per movement
         ├── queue.py        queue length and queue storage ratio per lane
+        ├── delay.py        control delay and queue duration per movement
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
             ├── test_intervals.py
             ├── test_throughput.py
-            └── test_queue.py
+            ├── test_queue.py
+            └── test_delay.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -220,3 +222,50 @@ A detector reports every cycle, including cycles with no queue, which are record
 ## 6.7 Input checks
 
 An error is raised when a record belongs to a different run, to a lane that is not analysed, or when a lane has two records for the same cycle.
+
+---
+
+# 7. Control Delay and Queue Duration
+
+Implemented in `backend/analytics/kpi/delay.py`.
+
+## 7.1 Source
+
+Each `VehicleDelayRecord` describes one vehicle's passage through the measurement zone of its approach (section 1.3). The simulation pipeline provides its zone times, its free-flow travel time and the time it stood still; the record calculates its **time loss** (time in the zone − free-flow travel time). How the zone end and the free-flow speed are defined is decided in the simulation pipeline; the engine uses the finished time loss and does not depend on that definition.
+
+For each movement and interval:
+
+- **control delay** (s/veh) is the mean time loss of the vehicles that arrived in the interval;
+- **queue duration** (s) is the mean time stopped (`halted_time_s`) of the same vehicles.
+
+Approach and intersection values are vehicle-weighted means of their movements (section 2.4).
+
+## 7.2 Which interval a vehicle's delay belongs to
+
+A vehicle's delay belongs to the interval that contains its **zone entry** (its arrival). This is how the HCM assigns delay, to the demand that arrived in the period, and it matches the rule that vehicles are counted when they enter the zone during the analysis period. A vehicle arriving at 08:14:50 and served at 08:16 has its delay in 08:00–08:15.
+
+This differs on purpose from throughput, which counts a vehicle when it is served (section 5.1). Vehicles that arrive during the warm-up or clearance are not counted.
+
+## 7.3 Queue duration is averaged over all vehicles
+
+Vehicles that did not stop count with 0 s. The value therefore answers "how long does a vehicle on this movement stand still, on average?" and is labelled "average time stopped per vehicle".
+
+Averaging only over vehicles that stopped was not chosen: if an intervention let more vehicles through without stopping, that average could rise although traffic improved, which would make baseline and intervention comparisons misleading.
+
+## 7.4 Vehicles that had not finished when the run ended
+
+A vehicle that entered the zone but was still in it when the run ended has an `IncompletePassage` record and no time loss. Its delay is unknown and probably large. When any vehicle that arrived in an interval is incomplete, that interval's control delay and queue duration for the movement are `unavailable`, with the reason "N vehicle(s) had not finished their passage when the run ended; increase the clearance duration".
+
+Reporting the mean of the completed vehicles instead would understate the delay of exactly the most congested intervals. With a sufficient clearance duration (`SimulationConfig.clearance_duration_s`) no vehicle is left unfinished.
+
+## 7.5 Intervals with no arrivals
+
+When no vehicle of a movement arrived in an interval, a mean delay does not exist. Control delay and queue duration are `not_applicable`, with the reason "no vehicles arrived in this interval". They are not reported as 0, which would mean that vehicles passed without delay. This differs from throughput, where an interval without vehicles is a measured 0 veh/h (section 5.3).
+
+## 7.6 Level of service
+
+Simulation-based level of service is graded from the control delay with the thresholds of section 3.2. Simulation provides no volume-to-capacity ratio, so the grade comes from delay alone. It is graded from the **mean delay across seeds**, after the runs are combined, not from each run separately.
+
+## 7.7 Input checks
+
+An error is raised when a record belongs to a different run, uses a movement that is not analysed, or when the same vehicle appears more than once in the completed and incomplete records together.
