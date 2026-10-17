@@ -112,7 +112,7 @@ TARGET_SITE_ID = 9
 
 TARGET_DETECTORS = (
     TargetDetector(1, "SYN-EB-L1-L-STB"),
-    TargetDetector(2, "SYN-EB-L2-LT-STB"),
+    TargetDetector(2, "SYN-EB-L2-L-STB"),
     TargetDetector(3, "SYN-EB-L3-T-STB"),
 
     TargetDetector(4, "SYN-SB-L1-L-STB"),
@@ -123,7 +123,7 @@ TARGET_DETECTORS = (
     TargetDetector(8, "SYN-NB-L2-T-STB"),
 
     TargetDetector(9, "SYN-WB-L1-L-STB"),
-    TargetDetector(10, "SYN-WB-L2-LT-STB"),
+    TargetDetector(10, "SYN-WB-L2-L-STB"),
     TargetDetector(11, "SYN-WB-L3-T-STB"),
     TargetDetector(12, "SYN-WB-L4-T-STB"),
 )
