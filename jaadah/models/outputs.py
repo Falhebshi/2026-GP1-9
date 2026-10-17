@@ -154,6 +154,8 @@ class EdgeTrafficState(BaseModel):
     consistent with SUMO edgeData output.
 
     These are simulation measurements, not final application KPIs.
+    The KPI engine does not use them: they serve network-level views
+    (e.g. speeds and densities on the network overview map).
     """
 
     model_config = ConfigDict(
@@ -164,7 +166,6 @@ class EdgeTrafficState(BaseModel):
     scenario_id: str
     run_id: str
 
-    segment_id: str | None = None
     sumo_edge_id: str
 
     interval_start: datetime
@@ -197,22 +198,6 @@ class EdgeTrafficState(BaseModel):
     )
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
-        value = value.strip()
-
-        if not value:
-            raise ValueError("identifier must not be empty")
-
-        return value
-
-    @field_validator("segment_id")
-    @classmethod
-    def validate_optional_segment_id(
-        cls,
-        value: str | None,
-    ) -> str | None:
-        if value is None:
-            return None
-
         value = value.strip()
 
         if not value:
@@ -275,6 +260,11 @@ class ApproachTrafficState(BaseModel):
 
     Queue measurements may use multiple SUMO lanes defined by the
     corresponding approach mapping.
+
+    Not used by the KPI engine: queue length is measured per lane in
+    CycleQueueRecord, and time loss and time stopped per vehicle in
+    VehicleDelayRecord. Kept until the team decides whether any
+    component needs it (see the GitHub issue on ApproachTrafficState).
     """
 
     model_config = ConfigDict(

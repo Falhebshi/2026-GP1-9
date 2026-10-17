@@ -496,7 +496,6 @@ def test_valid_edge_traffic_state():
     state = EdgeTrafficState(
         scenario_id="SCN_001",
         run_id="RUN_001",
-        segment_id="SEG_001",
         sumo_edge_id="edge_001",
         interval_start=datetime(
             2026, 10, 10, 8, 0, tzinfo=RIYADH
@@ -513,12 +512,12 @@ def test_valid_edge_traffic_state():
         sampled_seconds=900,
     )
 
-    assert state.segment_id == "SEG_001"
+    assert state.sumo_edge_id == "edge_001"
     assert state.vehicles_entered == 100
     assert state.sampled_seconds == 900
 
 
-def test_valid_edge_state_without_segment_mapping():
+def test_valid_edge_state_without_optional_measurements():
     state = EdgeTrafficState(
         scenario_id="SCN_001",
         run_id="RUN_001",
@@ -535,7 +534,6 @@ def test_valid_edge_state_without_segment_mapping():
         sampled_seconds=900,
     )
 
-    assert state.segment_id is None
     assert state.average_speed_mps is None
     assert state.travel_time_s is None
     assert state.time_loss_s is None
@@ -575,34 +573,10 @@ def test_blank_required_edge_ids_are_rejected(field):
         EdgeTrafficState(**data)
 
 
-def test_blank_segment_id_is_rejected():
-    with pytest.raises(
-        ValidationError,
-        match="identifier must not be empty",
-    ):
-        EdgeTrafficState(
-            scenario_id="SCN_001",
-            run_id="RUN_001",
-            segment_id="   ",
-            sumo_edge_id="edge_001",
-            interval_start=datetime(
-                2026, 10, 10, 8, 0, tzinfo=RIYADH
-            ),
-            interval_end=datetime(
-                2026, 10, 10, 8, 15, tzinfo=RIYADH
-            ),
-            vehicles_entered=100,
-            vehicles_left=95,
-            density_veh_per_km=20,
-            sampled_seconds=900,
-        )
-
-
 def test_edge_ids_are_trimmed():
     state = EdgeTrafficState(
         scenario_id="  SCN_001  ",
         run_id="  RUN_001  ",
-        segment_id="  SEG_001  ",
         sumo_edge_id="  edge_001  ",
         interval_start=datetime(
             2026, 10, 10, 8, 0, tzinfo=RIYADH
@@ -618,7 +592,6 @@ def test_edge_ids_are_trimmed():
 
     assert state.scenario_id == "SCN_001"
     assert state.run_id == "RUN_001"
-    assert state.segment_id == "SEG_001"
     assert state.sumo_edge_id == "edge_001"
 
 
@@ -852,6 +825,28 @@ def test_edge_state_extra_field_is_rejected():
             density_veh_per_km=20,
             sampled_seconds=900,
             kpi_score=0.9,
+        )
+
+
+def test_segment_id_is_no_longer_a_field():
+    """Segments were dropped from the analysis (cleanup, 17 Oct)."""
+
+    with pytest.raises(ValidationError):
+        EdgeTrafficState(
+            scenario_id="SCN_001",
+            run_id="RUN_001",
+            segment_id="SEG_001",
+            sumo_edge_id="edge_001",
+            interval_start=datetime(
+                2026, 10, 10, 8, 0, tzinfo=RIYADH
+            ),
+            interval_end=datetime(
+                2026, 10, 10, 8, 15, tzinfo=RIYADH
+            ),
+            vehicles_entered=100,
+            vehicles_left=95,
+            density_veh_per_km=20,
+            sampled_seconds=900,
         )
 
 
