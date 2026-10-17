@@ -114,7 +114,7 @@ It models several characteristics of traffic behavior, including:
 - temporal persistence between consecutive observations,
 - and configurable traffic-volume scenarios.
 
-The generator exposes **12 synthetic detector streams** for the target site.
+The generator exposes **16 synthetic detector streams** for the target site.
 
 Each generated observation is represented internally as a `SyntheticDetectorObservation` containing:
 
@@ -132,7 +132,7 @@ The generator does not contain SUMO lane IDs, edge IDs, or route IDs. Mapping a 
 
 ## Synthetic Detector Model
 
-The synthetic source currently exposes one target site with 12 detector streams.
+The synthetic source currently exposes one target site with 16 detector streams.
 
 The detectors represent directional traffic streams around the case-study intersection and are assigned stable synthetic detector IDs.
 
@@ -412,8 +412,8 @@ Example:
 ```json
 {
   "site_id": 9,
-  "count": 12,
-  "detector_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  "count": 16,
+  "detector_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 }
 ```
 

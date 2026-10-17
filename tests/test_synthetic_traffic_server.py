@@ -727,9 +727,9 @@ def test_detectors_returns_target_detector_ids(
 
     assert response.json() == {
         "site_id": 9,
-        "count": 12,
+        "count": 16,
         "detector_ids": list(
-            range(1, 13)
+            range(1, 17)
         ),
     }
 

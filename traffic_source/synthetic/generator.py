@@ -126,6 +126,12 @@ TARGET_DETECTORS = (
     TargetDetector(10, "SYN-WB-L2-L-STB"),
     TargetDetector(11, "SYN-WB-L3-T-STB"),
     TargetDetector(12, "SYN-WB-L4-T-STB"),
+
+    TargetDetector(13, "SYN-EB-L4-R-STB"),
+    TargetDetector(14, "SYN-SB-L4-R-STB"),
+    TargetDetector(15, "SYN-NB-L3-R-STB"),
+    TargetDetector(16, "SYN-NB-L4-R-STB"),
+
 )
 
 

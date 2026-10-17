@@ -44,15 +44,15 @@ def make_assignment_profiles(
         day_type_time_profile=pd.DataFrame(),
         temporal_autocorrelation_summary=pd.DataFrame(),
     )
-def test_target_detector_count_is_12() -> None:
-    assert len(TARGET_DETECTORS) == 12
-def test_target_detector_ids_are_1_to_12() -> None:
+def test_target_detector_count_is_16() -> None:
+    assert len(TARGET_DETECTORS) == 16
+def test_target_detector_ids_are_1_to_16() -> None:
     detector_ids = [
         detector.detector_id
         for detector in TARGET_DETECTORS
     ]
     assert detector_ids == list(
-        range(1, 13)
+        range(1, 17)
     )
 def test_target_detector_descriptions_are_unique() -> None:
     descriptions = [
@@ -62,7 +62,7 @@ def test_target_detector_descriptions_are_unique() -> None:
     assert len(descriptions) == len(
         set(descriptions)
     )
-def test_assignment_selects_12_unique_reference_profiles() -> None:
+def test_assignment_selects_16_unique_reference_profiles() -> None:
     profiles = make_assignment_profiles()
     mapping, _ = assign_reference_templates(
         profiles=profiles,
@@ -73,13 +73,13 @@ def test_assignment_selects_12_unique_reference_profiles() -> None:
     selected_reference_ids = list(
         mapping.values()
     )
-    assert len(mapping) == 12
+    assert len(mapping) == 16
     assert set(mapping.keys()) == set(
-        range(1, 13)
+        range(1, 17)
     )
     assert len(
         set(selected_reference_ids)
-    ) == 12
+    ) == 16
 def test_assignment_uses_only_available_reference_profiles() -> None:
     profiles = make_assignment_profiles()
     mapping, _ = assign_reference_templates(
@@ -294,7 +294,7 @@ def make_generation_generator(
             seed=seed
         ),
     )
-def test_generate_timestamp_returns_12_observations() -> None:
+def test_generate_timestamp_returns_16_observations() -> None:
     generator = make_generation_generator()
     timestamp = datetime(
         2026,
@@ -306,8 +306,8 @@ def test_generate_timestamp_returns_12_observations() -> None:
     observations = generator.generate_timestamp(
         timestamp
     )
-    assert len(observations) == 12
-def test_generated_detector_ids_are_1_to_12() -> None:
+    assert len(observations) == 16
+def test_generated_detector_ids_are_1_to_16() -> None:
     generator = make_generation_generator()
     timestamp = datetime(
         2026,
@@ -324,7 +324,7 @@ def test_generated_detector_ids_are_1_to_12() -> None:
         for observation in observations
     ]
     assert detector_ids == list(
-        range(1, 13)
+        range(1, 17)
     )
 def test_generated_site_id_is_target_site() -> None:
     generator = make_generation_generator()
@@ -775,7 +775,7 @@ def test_one_hour_range_produces_four_intervals() -> None:
             0,
         ),
     ]
-    assert len(observations) == 48
+    assert len(observations) == 64
 def test_single_interval_range_produces_one_timestamp() -> None:
     generator = make_time_generator()
     observations = generator.generate_range(
@@ -794,7 +794,7 @@ def test_single_interval_range_produces_one_timestamp() -> None:
             15,
         ),
     )
-    assert len(observations) == 12
+    assert len(observations) == 16
     assert {
         observation.timestamp
         for observation in observations
@@ -807,7 +807,7 @@ def test_single_interval_range_produces_one_timestamp() -> None:
             15,
         )
     }
-def test_range_returns_12_observations_per_timestamp() -> None:
+def test_range_returns_16_observations_per_timestamp() -> None:
     generator = make_time_generator()
     observations = generator.generate_range(
         start=datetime(
@@ -849,8 +849,8 @@ def test_range_returns_12_observations_per_timestamp() -> None:
             30,
         )
     ]
-    assert len(timestamp_0815) == 12
-    assert len(timestamp_0830) == 12
+    assert len(timestamp_0815) == 16
+    assert len(timestamp_0830) == 16
 def test_range_with_detector_filter_returns_only_requested_detectors() -> None:
     generator = make_time_generator()
     observations = generator.generate_range(
@@ -1254,7 +1254,7 @@ def test_temporal_state_is_stored_for_all_target_detectors() -> None:
     assert set(
         generator.previous_deviation.keys()
     ) == set(
-        range(1, 13)
+        range(1, 17)
     )
 def test_reset_clears_temporal_state() -> None:
     generator = make_repro_generator(
