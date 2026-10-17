@@ -83,6 +83,17 @@
   --scale-4: var(--blue);
   --scale-5: #1b3f86;
 
+    /* Alert types: current, forecast and pattern alerts */
+  --alert-current: var(--blue);          /* dots and accents */
+  --alert-current-bg: #e3ecf6;           /* tag background */
+  --alert-current-text: #1f518b;         /* tag text */
+  --alert-forecast: var(--teal);
+  --alert-forecast-bg: #dff1f5;
+  --alert-forecast-text: #1b6576;        /* teal is too pale to read as text */
+  --alert-pattern: var(--indigo);
+  --alert-pattern-bg: var(--lavender);
+  --alert-pattern-text: var(--indigo);
+
   /* Level of Service A to F, light to dark */
   --los-a: var(--lavender);
   --los-b: #c9c1ea;

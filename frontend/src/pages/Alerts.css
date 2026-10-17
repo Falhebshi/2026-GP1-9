@@ -1,0 +1,78 @@
+/* The count inside each jump button: "Current 3" */
+.alerts-jump-count {
+  font-weight: 700;
+}
+
+/* One section of alerts */
+.alerts-section {
+  margin-top: var(--space-xl);
+  /* When a jump button scrolls here, stop below the sticky nav bar */
+  scroll-margin-top: calc(var(--nav-height) + var(--space-md));
+}
+
+.alerts-section:first-of-type {
+  margin-top: 0;
+}
+
+/* Dot, title and count in one row */
+.alerts-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alerts-section-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.alerts-section-dot-current {
+  background: var(--alert-current);
+}
+
+.alerts-section-dot-forecast {
+  background: var(--alert-forecast);
+}
+
+.alerts-section-dot-pattern {
+  background: var(--alert-pattern);
+}
+
+.alerts-section-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+/* Lined up with the title, not the dot */
+.alerts-section-description {
+  margin: 2px 0 var(--space-md) 20px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The "Show all" button under a long section */
+.alerts-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-md);
+}
+
+/* Three cards per row, two on a medium page, one on a narrow page */
+.alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+@media (max-width: 1000px) {
+  .alerts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .alerts-grid {
+    grid-template-columns: 1fr;
+  }
+}

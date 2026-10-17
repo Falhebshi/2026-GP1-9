@@ -7,6 +7,7 @@ const links = [
   { to: '/current', label: 'Current Traffic' },
   { to: '/forecast', label: 'Traffic Forecast' },
   { to: '/trends', label: 'Traffic Patterns & Trends' },
+  { to: '/alerts', label: 'Alerts' },
 ]
 
 function NavBar() {
