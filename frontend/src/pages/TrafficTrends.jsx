@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
-import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
@@ -12,6 +11,7 @@ import Select from '../components/Select'
 import { EmptyPeriodError, getTrends } from '../services/trendsService'
 import { formatKpiValue, kpiTileProps } from '../utils/kpi'
 import { shortDate, timeOf, timeRange } from '../utils/format'
+import BreakdownTable from './trends/BreakdownTable'
 import CongestionHeatmap from './trends/CongestionHeatmap'
 import LosDistribution from './trends/LosDistribution'
 import ThresholdChart from './trends/ThresholdChart'
@@ -171,7 +171,10 @@ function TrafficTrends() {
             <LosDistribution rows={data.losDistribution} />
           </div>
 
-          <ChartPlaceholder title="Approach and movement breakdown" />
+          <BreakdownTable
+            filters={{ periodDays, dayType, approachId }}
+            windows={data.breakdownWindows}
+          />
         </div>
       </div>
     </>
@@ -224,15 +227,6 @@ function KpiRow({ summary, dayType, approachId, note }) {
         tag="Simulated"
       />
     </div>
-  )
-}
-
-// A card that holds the place of a chart until it is built
-function ChartPlaceholder({ title }) {
-  return (
-    <Card title={title}>
-      <EmptyState>Added in the next step.</EmptyState>
-    </Card>
   )
 }
 

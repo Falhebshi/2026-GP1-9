@@ -72,13 +72,17 @@
 //                                      share of 15-minute intervals per grade
 //   recurringAlerts: [{ id, title, location, when, daysSeen, daysTotal, rule,
 //                       status: 'active', interventionId }],
-//   breakdownWindows: [{ id, label }], choices for the breakdown table
+//   breakdownWindows: [{ id, label, default }], choices for the breakdown
+//     table. These are the SAME windows as thresholds.windows (same ids),
+//     plus 'whole-day'; default: true marks the one shown first.
 // }
 //
 // ---------------------------------------------------------------------------
 // getBreakdown({ periodDays, dayType, approachId, windowId })
 //
-// gives back the Approach and movement breakdown for one time window:
+// gives back the Approach and movement breakdown for one time window.
+// windowId is either an id from breakdownWindows or a single hour written
+// 'hour-HH' (e.g. 'hour-17' = 17:00–18:00).
 // {
 //   window: { id, label },
 //   approaches: [{ approach_id, label, results: RESULTS,
@@ -100,7 +104,7 @@ export async function getBreakdown({
   periodDays = 30,
   dayType = 'all',
   approachId = 'all',
-  windowId = 'pm-peak',
+  windowId = DEFAULT_WINDOW,
 } = {}) {
   await wait(250)
   checkDemo()
@@ -184,12 +188,36 @@ const CRITICAL_VC = 0.94 // intersection critical v/c (Xc), weekday PM peak
 
 // How much busier or quieter each choice is than the weekday PM peak
 const DAY_TYPE_FACTOR = { all: 0.86, weekdays: 0.9, weekends: 0.68 }
-const WINDOWS = [
-  { id: 'pm-peak', label: '17:00–18:00', factor: 1 },
-  { id: 'am-peak', label: '07:30–08:30', factor: 0.9 },
-  { id: 'midday', label: '12:00–13:00', factor: 0.7 },
-  { id: 'whole-day', label: 'Whole day', factor: 0.6 },
+
+// The time windows of the day. The threshold chart and the breakdown table
+// use the same list, so a window means the same slot in both.
+const TIME_WINDOWS = [
+  { id: 'early', start: '06:00', end: '07:00', factor: 0.7 },
+  { id: 'am-peak', start: '07:30', end: '09:00', factor: 0.95 },
+  { id: 'midday', start: '12:00', end: '15:00', factor: 0.85 },
+  { id: 'pm-peak', start: '16:30', end: '19:00', factor: 1.1 },
+  { id: 'evening', start: '20:00', end: '22:00', factor: 0.75 },
 ]
+const WHOLE_DAY = { id: 'whole-day', label: 'Whole day', factor: 0.6 }
+const DEFAULT_WINDOW = 'pm-peak'
+
+// How busy each hour is, from night (low) to the evening peak (high)
+const WEEKDAY_PROFILE = [0.25, 0.2, 0.18, 0.18, 0.2, 0.35, 0.7, 1.15, 1.0, 0.75, 0.65, 0.7, 0.85, 0.85, 0.8, 0.9, 1.05, 1.35, 1.25, 0.9, 0.75, 0.6, 0.45, 0.35]
+const WEEKEND_PROFILE = [0.4, 0.3, 0.25, 0.2, 0.2, 0.22, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.85, 0.85, 0.9, 0.95, 1.0, 1.05, 1.0, 0.9, 0.75, 0.55]
+
+const windowLabel = (w) => w.label ?? `${w.start}–${w.end}`
+
+// The window a windowId points to, including single hours ('hour-17')
+function findWindow(windowId) {
+  const hour = /^hour-(\d{2})$/.exec(windowId ?? '')
+  if (hour) {
+    const h = Number(hour[1])
+    const next = String((h + 1) % 24).padStart(2, '0')
+    return { id: windowId, label: `${hour[1]}:00–${next}:00`, factor: WEEKDAY_PROFILE[h] }
+  }
+  if (windowId === WHOLE_DAY.id) return WHOLE_DAY
+  return TIME_WINDOWS.find((w) => w.id === windowId) ?? TIME_WINDOWS.find((w) => w.id === DEFAULT_WINDOW)
+}
 
 // The thresholds the backend uses (HCM 6th edition, signalized)
 const LOS_LIMITS = [
@@ -353,7 +381,7 @@ function resultsFor(values, element, interval, sharedLane) {
 }
 
 function buildBreakdown(periodDays, dayType, approachId, windowId) {
-  const window = WINDOWS.find((w) => w.id === windowId) ?? WINDOWS[0]
+  const window = findWindow(windowId)
   const values = elementValues(window.factor * DAY_TYPE_FACTOR[dayType])
   const end = END_DATE
   const start = addDays(end, -(periodDays - 1))
@@ -373,7 +401,7 @@ function buildBreakdown(periodDays, dayType, approachId, windowId) {
     }))
 
   return {
-    window: { id: window.id, label: window.label },
+    window: { id: window.id, label: windowLabel(window) },
     approaches,
     intersection: {
       results: resultsFor(values.intersection, { level: 'intersection', id: INTERSECTION.id }, interval),
@@ -508,13 +536,10 @@ function buildTrends(periodDays, dayType, approachId) {
   }
 
   // ---- Congestion by hour and day -----------------------------------------
-  // How busy each hour is, from night (low) to the evening peak (high)
-  const weekdayProfile = [0.25, 0.2, 0.18, 0.18, 0.2, 0.35, 0.7, 1.15, 1.0, 0.75, 0.65, 0.7, 0.85, 0.85, 0.8, 0.9, 1.05, 1.35, 1.25, 0.9, 0.75, 0.6, 0.45, 0.35]
-  const weekendProfile = [0.4, 0.3, 0.25, 0.2, 0.2, 0.22, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.85, 0.85, 0.9, 0.95, 1.0, 1.05, 1.0, 0.9, 0.75, 0.55]
   const heatmap = []
   for (let day = 0; day < 7; day++) {
     const weekend = day === 5 || day === 6
-    const profile = weekend ? weekendProfile : weekdayProfile
+    const profile = weekend ? WEEKEND_PROFILE : WEEKDAY_PROFILE
     for (let hour = 0; hour < 24; hour++) {
       const hourText = String(hour).padStart(2, '0')
       const interval = [stamp(start, `${hourText}:00`), stamp(start, `${hourText}:59`)]
@@ -538,13 +563,17 @@ function buildTrends(periodDays, dayType, approachId) {
   const totalDays = days.length
   const recurrenceDays = Math.ceil(totalDays / 2)
   const dayWord = dayType === 'weekends' ? 'Weekends' : dayType === 'weekdays' ? 'Weekdays' : 'Weekdays'
-  const windows = [
-    { id: 'w1', start: '06:00', end: '07:00', rule: 'Control delay > 55 s', location: 'Intersection', title: 'Early delay at LOS E', daysExceeded: share(3), interventionId: null },
-    { id: 'w2', start: '07:30', end: '09:00', rule: 'Control delay > 55 s', location: 'Intersection', title: 'Morning peak delay at LOS E', daysExceeded: share(17), interventionId: 2 },
-    { id: 'w3', start: '12:00', end: '15:00', rule: 'v/c ≥ 0.90', location: 'East approach · left', title: 'East left near capacity', daysExceeded: share(16), interventionId: 3 },
-    { id: 'w4', start: '16:30', end: '19:00', rule: 'Storage ratio ≥ 1.0', location: 'West approach · left', title: 'Left-turn queue overflows its storage', daysExceeded: share(22), interventionId: 1 },
-    { id: 'w5', start: '20:00', end: '22:00', rule: 'Control delay > 55 s', location: 'Intersection', title: 'Evening delay at LOS E', daysExceeded: share(9), interventionId: null },
-  ].filter((w) => approachId === 'all' || w.location === 'Intersection' || w.location.toLowerCase().startsWith(approachId))
+  const thresholdRules = {
+    early: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Early delay at LOS E', days30: 3, interventionId: null },
+    'am-peak': { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Morning peak delay at LOS E', days30: 17, interventionId: 2 },
+    midday: { rule: 'v/c ≥ 0.90', location: 'East approach · left', title: 'East left near capacity', days30: 16, interventionId: 3 },
+    'pm-peak': { rule: 'Storage ratio ≥ 1.0', location: 'West approach · left', title: 'Left-turn queue overflows its storage', days30: 22, interventionId: 1 },
+    evening: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Evening delay at LOS E', days30: 9, interventionId: null },
+  }
+  const windows = TIME_WINDOWS.map((w) => {
+    const { days30, ...rest } = thresholdRules[w.id]
+    return { id: w.id, start: w.start, end: w.end, ...rest, daysExceeded: share(days30) }
+  }).filter((w) => approachId === 'all' || w.location === 'Intersection' || w.location.toLowerCase().startsWith(approachId))
 
   const recurringAlerts = windows
     .filter((w) => w.daysExceeded >= recurrenceDays)
@@ -607,6 +636,10 @@ function buildTrends(periodDays, dayType, approachId) {
     thresholds: { totalDays, recurrenceDays, windows },
     losDistribution,
     recurringAlerts,
-    breakdownWindows: WINDOWS.map((w) => ({ id: w.id, label: w.label })),
+    breakdownWindows: [WHOLE_DAY, ...TIME_WINDOWS].map((w) => ({
+      id: w.id,
+      label: windowLabel(w),
+      default: w.id === DEFAULT_WINDOW,
+    })),
   }
 }

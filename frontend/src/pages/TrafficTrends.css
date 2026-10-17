@@ -23,6 +23,13 @@
   min-width: 0;
 }
 
+/* Grid cells may shrink below their content's width, so a wide table
+   scrolls inside its card instead of stretching the whole page */
+.trends-side > *,
+.trends-main > * {
+  min-width: 0;
+}
+
 .trends-side-note {
   margin-top: var(--space-sm);
   padding: var(--space-sm) 12px;

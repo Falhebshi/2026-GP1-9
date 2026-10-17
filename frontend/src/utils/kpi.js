@@ -48,6 +48,22 @@ export const STATUS_LABELS = {
   not_applicable: 'Not applicable',
 }
 
+// Standard limits shown as a warning: v/c above 1.0 means demand is over
+// capacity; a storage ratio of 1.0 or more means the queue fills its
+// storage and spills back. These are fixed definitions, not calculations.
+//   inclusive: true means reaching the limit already counts (1.0 or more)
+export const OVER_LIMIT = {
+  volume_to_capacity_ratio: { limit: 1, inclusive: false, label: 'over capacity' },
+  queue_storage_ratio: { limit: 1, inclusive: true, label: 'queue fills its storage' },
+}
+
+// True when a result is at or above its standard limit (see inclusive)
+export function isOverLimit(result) {
+  const rule = OVER_LIMIT[result?.kpi]
+  if (!rule || !hasValue(result)) return false
+  return rule.inclusive ? result.value >= rule.limit : result.value > rule.limit
+}
+
 // The unit as shown next to a value. A ratio or a grade has none.
 export function displayUnit(unit) {
   return unit === 'ratio' || unit === 'grade' ? '' : unit ?? ''
