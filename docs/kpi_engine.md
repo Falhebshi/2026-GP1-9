@@ -30,11 +30,13 @@ backend/
         ├── parameters.py   constants and the level-of-service function
         ├── intervals.py    the 15-minute analysis intervals
         ├── throughput.py   vehicles served per movement
+        ├── queue.py        queue length and queue storage ratio per lane
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
             ├── test_intervals.py
-            └── test_throughput.py
+            ├── test_throughput.py
+            └── test_queue.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -175,3 +177,46 @@ When a run covered an interval and no vehicle of a movement crossed the stop lin
 ## 5.4 Input checks
 
 An error is raised when a record belongs to a different run, uses a movement that is not analysed, or when the same vehicle appears more than once. These indicate a problem in the simulation output and are never silently ignored.
+
+---
+
+# 6. Queue Length and Queue Storage Ratio
+
+Implemented in `backend/analytics/kpi/queue.py`.
+
+## 6.1 Source
+
+Queue length is measured per lane by lane-area (E2) detectors whose output period is one signal cycle, aligned with the cycle start. Each `CycleQueueRecord` therefore gives the longest queue on one lane in one cycle, in metres and in vehicles. Queue length is reported **in both units**, as two results: metres are used for the storage ratio, and vehicles are easier to read on the dashboard.
+
+Queue length is a lane KPI. Shared lanes are reported as described in section 2.1, and an approach's queue is its longest lane (section 2.4). Queue duration is measured per vehicle and is calculated with delay (section 2.3).
+
+## 6.2 Cycles that span an interval boundary
+
+With a 120 s cycle, a 15-minute interval holds 7.5 cycles, so every second interval boundary falls inside a cycle. A cycle belongs to the interval that **contains its `cycle_start`**, giving 7 or 8 cycles per interval. A cycle that starts during the warm-up or clearance is not used, even if it ends inside the analysis period.
+
+## 6.3 Queue per interval
+
+For each lane and interval, the reported queue is the **largest cycle queue** in that interval. Metres and vehicles are each the largest value of the interval's cycles.
+
+## 6.4 95th-percentile queue over the analysis period
+
+For the analysis page, each lane also receives the **95th-percentile cycle queue** over all cycles of the analysis period, calculated with the **nearest-rank method**: the cycle queues are sorted and the value at rank ⌈0.95 × n⌉ is taken. For example, with 20 cycles the 19th smallest queue is reported.
+
+The HCM 6th edition calculates its percentile back of queue analytically and does not prescribe a method for taking a percentile from measured cycles. The nearest-rank method was chosen because the result is always a queue that actually occurred, in whole vehicles, and is simple to explain and to check by hand.
+
+## 6.5 Queue storage ratio
+
+The queue storage ratio is a queue divided by the lane's storage length (`ApproachLane.storage_length_m`). A ratio above 1 means the queue was longer than the storage available, so it spilled back. It is reported:
+
+- **per interval**: the interval's largest cycle queue ÷ storage length;
+- **over the analysis period**: the 95th-percentile queue ÷ storage length.
+
+When the storage length of a lane is not known, the queue length is still reported and only the storage ratio is `unavailable`, with the reason "storage length not known".
+
+## 6.6 Missing records are not zero queues
+
+A detector reports every cycle, including cycles with no queue, which are recorded as 0 m. A reported 0 m is a measured zero and is reported as `ok` with a value of 0. When a lane has **no** cycle record in an interval, its data is missing, and its queue is `unavailable` with the reason "no cycle records for this lane in this interval"; it is never reported as 0.
+
+## 6.7 Input checks
+
+An error is raised when a record belongs to a different run, to a lane that is not analysed, or when a lane has two records for the same cycle.

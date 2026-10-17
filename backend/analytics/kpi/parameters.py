@@ -21,6 +21,15 @@ ANALYSIS_INTERVAL_S = 900
 
 
 # ============================================================
+# QUEUE
+# ============================================================
+
+# Percentile of the cycle maximum queues reported over the whole
+# analysis period (nearest-rank method, see queue.py).
+QUEUE_PERCENTILE = 95
+
+
+# ============================================================
 # SATURATION FLOW
 # ============================================================
 
