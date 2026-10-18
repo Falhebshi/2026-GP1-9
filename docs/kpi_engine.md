@@ -32,13 +32,15 @@ backend/
         ├── throughput.py   vehicles served per movement
         ├── queue.py        queue length and queue storage ratio per lane
         ├── delay.py        control delay and queue duration per movement
+        ├── lane_groups.py  HCM lane groups derived from the approach lanes
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
             ├── test_intervals.py
             ├── test_throughput.py
             ├── test_queue.py
-            └── test_delay.py
+            ├── test_delay.py
+            └── test_lane_groups.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -269,3 +271,41 @@ Simulation-based level of service is graded from the control delay with the thre
 ## 7.7 Input checks
 
 An error is raised when a record belongs to a different run, uses a movement that is not analysed, or when the same vehicle appears more than once in the completed and incomplete records together.
+
+---
+
+# 8. Lane Groups
+
+Implemented in `backend/analytics/kpi/lane_groups.py`.
+
+## 8.1 How lane groups are formed
+
+Lane groups follow HCM 6th edition (section 2.2). On each approach, the lanes are taken in order from the median outwards (`ApproachLane.lane_index`):
+
+- adjacent lanes that serve exactly the same single movement form one lane group (for example, three through lanes);
+- a lane shared by several movements is always its own lane group.
+
+Lane groups are derived from the `ApproachLane` records each time they are needed and are not stored.
+
+| East lanes (from the median) | Serve | Lane group |
+| --- | --- | --- |
+| 1 | left | `APP_E_L` |
+| 2 | left + through (shared) | `APP_E_LT` |
+| 3, 4, 5 | through | `APP_E_T` (3 lanes) |
+
+## 8.2 Lane group identifiers
+
+A lane group's ID is its approach's ID, an underscore, and the letters of the movements it serves (**L** left, **T** through, **R** right), always in the order L, T, R; the movement types come from `MovementAttributes`. The ID depends only on which movements the group serves, not on lane numbers, so it stays the same if a lane is added, and it can never disagree with the approach ID.
+
+## 8.3 Uncontrolled lanes
+
+Lanes whose movements are uncontrolled (the right-turn slip lanes) belong to **no lane group**: capacity, volume-to-capacity ratio and HCM level of service do not apply to them (section 1.2). Their lane-level KPIs (queue length, storage ratio) do not need lane groups.
+
+## 8.4 Input checks
+
+An error is raised, naming the lane or approach, when:
+
+- a lane serves a movement that has no `MovementAttributes`;
+- a lane serves both signalized and uncontrolled movements (a slip lane only serves its right turn, so this indicates wrong lane data);
+- two lanes of an approach have the same `lane_index`;
+- two lane groups of an approach would get the same ID (an unusual layout such as through, left, through).
