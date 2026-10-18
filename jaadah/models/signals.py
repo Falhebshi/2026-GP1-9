@@ -128,6 +128,9 @@ class SignalProgram(BaseModel):
     Jaadah currently models signal phases as sequential, non-overlapping
     phases. Concurrent or overlapping phase execution is not represented
     by this canonical model.
+
+    The intersection is found through scenario_id (Scenario), not
+    stored here.
     """
 
     model_config = ConfigDict(
@@ -137,7 +140,6 @@ class SignalProgram(BaseModel):
 
     signal_program_id: str
     scenario_id: str
-    intersection_id: str
 
     control_type: SignalControlType
 
@@ -150,7 +152,6 @@ class SignalProgram(BaseModel):
     @field_validator(
         "signal_program_id",
         "scenario_id",
-        "intersection_id",
     )
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
@@ -259,6 +260,11 @@ class CurrentSignalState(BaseModel):
 
     Converts the current SUMO traffic-light state into Jaadah's
     movement-level representation.
+
+    The scenario is found through run_id (SimulationRun) and the
+    intersection through signal_program_id (SignalProgram), not stored
+    here. That the program belongs to the run's scenario is checked
+    where both are available, not in this model.
     """
 
     model_config = ConfigDict(
@@ -266,9 +272,7 @@ class CurrentSignalState(BaseModel):
         allow_inf_nan=False,
     )
 
-    scenario_id: str
     run_id: str
-    intersection_id: str
     signal_program_id: str
 
     simulation_time_s: float = Field(ge=0)
@@ -285,9 +289,7 @@ class CurrentSignalState(BaseModel):
     movement_states: list[MovementSignalState]
 
     @field_validator(
-        "scenario_id",
         "run_id",
-        "intersection_id",
         "signal_program_id",
         "active_phase_id",
     )

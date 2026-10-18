@@ -162,36 +162,6 @@ class Movement(BaseModel):
         return value
 
 # ============================================================
-# SEGMENT
-# ============================================================
-
-class Segment(BaseModel):
-    """
-    A stable Jaadah road-segment identity.
-
-    SUMO edge IDs associated with the segment are stored separately
-    in SegmentMapping.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-
-    segment_id: str
-
-    @field_validator("segment_id")
-    @classmethod
-    def validate_segment_id(cls, value: str) -> str:
-        """Reject an empty or whitespace-only segment ID."""
-
-        value = value.strip()
-
-        if not value:
-            raise ValueError("identifier must not be empty")
-
-        return value
-
-# ============================================================
 # MOVEMENT AND LANE ENUMS
 # ============================================================
 
