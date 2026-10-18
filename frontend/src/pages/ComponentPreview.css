@@ -97,3 +97,15 @@
 .preview-box > .page-header {
   margin-bottom: 0;
 }
+
+/* Space above the row of KPI tiles (the row itself is .kpi-row) */
+.preview-kpi-row {
+  margin-top: var(--space-md);
+}
+
+/* Examples one under the other, full width */
+.preview-stack {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}

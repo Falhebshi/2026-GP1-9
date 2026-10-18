@@ -10,12 +10,15 @@ import HistoricalTimeline from '../components/HistoricalTimeline'
 import InfoList from '../components/InfoList'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
+import LosBadge, { GRADES } from '../components/LosBadge'
+import Notice from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import SimulationViewport from '../components/SimulationViewport'
 import usePlayback from '../hooks/usePlayback'
+import { kpiTileProps } from '../utils/kpi'
 import './ComponentPreview.css'
 
 // Example choices for the Select examples (fake data)
@@ -53,6 +56,35 @@ const speedOptions = [
   { value: '10', label: 'x10' },
   { value: '20', label: 'x20' },
 ]
+
+// Example KPI results, shaped exactly like the backend's KpiResult (fake data).
+// "current" is this period, "previous" the period before, for the change.
+const exampleResults = {
+  delay: {
+    current: { kpi: 'control_delay', method: 'simulation', unit: 's/veh', value: 31.4, status: 'ok' },
+    previous: { kpi: 'control_delay', method: 'simulation', unit: 's/veh', value: 30.2, status: 'ok' },
+  },
+  throughput: {
+    current: { kpi: 'throughput', method: 'simulation', unit: 'veh/h', value: 3210, status: 'ok' },
+    previous: { kpi: 'throughput', method: 'simulation', unit: 'veh/h', value: 3117, status: 'ok' },
+  },
+  vc: {
+    current: { kpi: 'volume_to_capacity_ratio', method: 'hcm', unit: 'ratio', value: 0.94, status: 'ok' },
+    previous: { kpi: 'volume_to_capacity_ratio', method: 'hcm', unit: 'ratio', value: 0.91, status: 'ok' },
+  },
+  storage: {
+    current: {
+      kpi: 'queue_storage_ratio', method: 'simulation', unit: 'ratio', value: null,
+      status: 'unavailable', reason: 'Storage length is not known for this lane.',
+    },
+  },
+  losRight: {
+    current: {
+      kpi: 'level_of_service', method: 'simulation', unit: 'grade', value: null,
+      status: 'not_applicable', reason: 'Right turns on the slip road are not signal controlled.',
+    },
+  },
+}
 
 // Example rows for the InfoList examples (fake data)
 const locationItems = [
@@ -523,6 +555,71 @@ function ComponentPreview() {
             value="07:45"
             className="preview-tile"
           />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>KpiTile from backend results</h2>
+
+        {/* Stacked tiles in a row line up: the change line sits at the bottom */}
+        <div className="kpi-row preview-kpi-row">
+          <KpiTile
+            layout="stacked"
+            label="Avg control delay"
+            detail="LOS C · simulation-based"
+            {...kpiTileProps(exampleResults.delay.current, exampleResults.delay.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Avg throughput"
+            detail="All signalized movements"
+            {...kpiTileProps(exampleResults.throughput.current, exampleResults.throughput.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Critical v/c, peak 15 min"
+            detail="Weekdays 17:15–17:30"
+            {...kpiTileProps(exampleResults.vc.current, exampleResults.vc.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Peak congestion window"
+            value="17:15"
+            unit="–17:30"
+            detail="Highest avg control delay, weekdays"
+            changeNote="Same window as prev. 30 days"
+            tag="Simulated"
+          />
+          <KpiTile
+            layout="stacked"
+            label="Storage ratio"
+            {...kpiTileProps(exampleResults.storage.current)}
+          />
+          <KpiTile
+            layout="stacked"
+            label="LOS, right slip lane"
+            {...kpiTileProps(exampleResults.losRight.current)}
+          />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>Notice</h2>
+        <div className="preview-stack">
+          <Notice variant="warning">
+            Sample data for layout only: all values on this page are illustrative.
+          </Notice>
+          <Notice>Results cover weekdays only.</Notice>
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>LosBadge</h2>
+        <div className="preview-row">
+          {GRADES.map((grade) => (
+            <LosBadge key={grade} grade={grade} />
+          ))}
+          <LosBadge />
         </div>
       </section>
 

@@ -1,6 +1,8 @@
 /* Label and button row, side by side */
 .segmented-field {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-sm);
 }
@@ -14,6 +16,8 @@
 /* The outlined box around the buttons */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap; /* on a phone the buttons wrap instead of running off */
+  max-width: 100%;
   gap: 2px;
   padding: 3px;
   background: var(--color-surface);

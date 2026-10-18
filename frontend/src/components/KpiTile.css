@@ -13,11 +13,52 @@
   align-items: baseline;
 }
 
-.kpi-tile-inline .kpi-label {
+.kpi-tile-inline .kpi-head,
+.kpi-tile-inline .kpi-info {
   grid-column: 1 / -1; /* stretch across both columns */
 }
 
-/* Stacked needs nothing extra: label, value and change each get a row */
+/* Stacked: one column, with the footer pushed to the bottom */
+.kpi-tile-stacked {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.kpi-tile-stacked .kpi-footer {
+  margin-top: auto;
+  padding-top: var(--space-sm);
+}
+
+/* A row of stacked tiles that line up with each other.
+   Each tile takes four rows of the shared grid (label, value, detail,
+   change), so the same line of every tile sits at the same height. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  column-gap: var(--space-md);
+  row-gap: var(--space-md); /* space between rows of tiles, when they wrap */
+}
+
+.kpi-row > .kpi-tile-stacked {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-xs); /* space between the lines inside a tile */
+  align-content: start;
+}
+
+.kpi-row > .kpi-tile-stacked .kpi-footer {
+  align-self: end;
+}
+
+/* Label on the left, tag on the right */
+.kpi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
 
 .kpi-label {
   font-size: var(--text-xs);
@@ -31,6 +72,13 @@
   white-space: nowrap;
 }
 
+/* The unit is smaller than the number, so the number stands out */
+.kpi-unit {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
 /* Smaller and grey, but the same line height so every tile stays equal */
 .kpi-value-unavailable {
   font-size: var(--text-md);
@@ -39,9 +87,20 @@
   color: var(--color-text-muted);
 }
 
+.kpi-detail {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* The reason a value is missing, under "Unavailable" */
+.kpi-reason {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .kpi-change {
   font-size: var(--text-xs);
-  white-space: nowrap;
 }
 
 .kpi-change-neutral {
@@ -54,4 +113,16 @@
 
 .kpi-change-bad {
   color: var(--color-danger-text);
+}
+
+/* "Simulated" or "HCM" */
+.kpi-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
