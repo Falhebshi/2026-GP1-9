@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0",
-  "mapping_version": "1.0-draft",
+  "schema_version": "2.0",
+  "mapping_version": "2.0-review",
   "network": {
     "version": "jaadah_network_v2",
     "path": "data/processed/road_network/jaadah_study_area.net.xml",
@@ -15,32 +15,30 @@
     {
       "approach_id": "APP_E",
       "intersection_id": "INT_001",
-      "direction": "east",
-      "source_detectors": [],
+      "approach_side": "east",
       "queue_detection_lane_ids": []
     },
     {
       "approach_id": "APP_S",
       "intersection_id": "INT_001",
-      "direction": "south",
-      "source_detectors": [],
+      "approach_side": "south",
       "queue_detection_lane_ids": []
     },
     {
       "approach_id": "APP_W",
       "intersection_id": "INT_001",
-      "direction": "west",
-      "source_detectors": [],
+      "approach_side": "west",
       "queue_detection_lane_ids": []
     },
     {
       "approach_id": "APP_N",
       "intersection_id": "INT_001",
-      "direction": "north",
-      "source_detectors": [],
+      "approach_side": "north",
       "queue_detection_lane_ids": []
     }
   ],
+  "approach_lanes": [],
+  "lane_mappings": [],
   "detector_mappings": [],
   "movement_mappings": [
     {

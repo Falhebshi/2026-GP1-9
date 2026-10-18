@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sys
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,20 +24,45 @@ def test_route_generation(tmp_path):
 
 def test_mapping_hash(tmp_path):
     net = tmp_path / "network.net.xml"
-    net.write_bytes(b"<net />")
+    net.write_bytes(b'''<net>
+      <edge id="A"><lane id="A_0" index="0"/></edge>
+      <edge id="B"><lane id="B_0" index="0"/></edge>
+      <connection from="A" to="B" fromLane="0" toLane="0"/>
+    </net>''')
     data = {
-        "network": {"sha256": hashlib.sha256(net.read_bytes()).hexdigest()},
+        "schema_version": "2.0", "mapping_version": "test",
+        "network": {"version": "test", "path": str(net), "sha256": hashlib.sha256(net.read_bytes()).hexdigest()},
+        "intersection_mapping": {"intersection_id": "TEST_INTERSECTION"},
         "movement_mappings": [
-            {"movement_id": f"MOV_{i}", "sumo_route_edge_ids": ["A", "B"]}
+            {"movement_id": f"MOV_{i}", "intersection_id": "TEST_INTERSECTION",
+             "sumo_route_edge_ids": ["A", "B"], "signal_controlled": False}
             for i in range(18)
         ],
     }
     mapping = tmp_path / "mapping.json"
     mapping.write_text(json.dumps(data), encoding="utf-8")
     assert len(require_mapping(mapping, net)) == 18
+    # Legacy CRLF digests and LF checkouts must use the same shared policy.
+    data['network']['sha256'] = hashlib.sha256(net.read_bytes().replace(b'\n', b'\r\n')).hexdigest()
+    mapping.write_text(json.dumps(data), encoding="utf-8")
+    assert len(require_mapping(mapping, net)) == 18
+    data['movement_mappings'][0]['sumo_route_edge_ids'] = ['A', 'MISSING']
+    mapping.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="route edge"):
+        require_mapping(mapping, net)
     net.write_bytes(b"<net changed='yes' />")
     with pytest.raises(ValueError, match="SHA-256"):
         require_mapping(mapping, net)
+
+
+def test_cli_help_can_run_from_outside_project(tmp_path):
+    script = Path(__file__).resolve().parents[1] / 'simulation/scripts/tests/run_movement_smoke.py'
+    result = subprocess.run(
+        [sys.executable, '-B', str(script), '--help'],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert '--mapping' in result.stdout
 
 
 @pytest.mark.parametrize("mode,expected", [

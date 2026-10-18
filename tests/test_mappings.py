@@ -7,6 +7,7 @@ from jaadah.models.mappings import (
     ApproachMapping,
     DetectorMapping,
     IntersectionMapping,
+    LaneMapping,
     MappingStatus,
     MovementMapping,
     NetworkMappingConfig,
@@ -18,15 +19,15 @@ from jaadah.models.traffic import TrafficObservationSource
 
 def valid_config():
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "mapping_version": "1.0",
         "network": {"version": "v2", "path": "study.net.xml", "sha256": "a" * 64},
         "intersection_mapping": {
             "intersection_id": "INT_001", "source_sites": ["1028"], "sumo_tls_id": "tls"
         },
         "approach_mappings": [
-            {"approach_id": "APP_E", "intersection_id": "INT_001", "direction": "east"},
-            {"approach_id": "APP_W", "intersection_id": "INT_001", "direction": "west"},
+            {"approach_id": "APP_E", "intersection_id": "INT_001", "approach_side": "east"},
+            {"approach_id": "APP_W", "intersection_id": "INT_001", "approach_side": "west"},
         ],
         "detector_mappings": [],
         "movement_mappings": [
@@ -40,7 +41,8 @@ def valid_config():
 VALID = {
     NetworkMetadata: {"version": "v2", "path": "study.net.xml", "sha256": "a" * 64},
     IntersectionMapping: {"intersection_id": "INT_001"},
-    ApproachMapping: {"approach_id": "APP_E", "intersection_id": "INT_001", "direction": "east"},
+    LaneMapping: {"lane_id": "TEST_LANE", "sumo_lane_ids": ["entry_0"]},
+    ApproachMapping: {"approach_id": "APP_E", "intersection_id": "INT_001", "approach_side": "east"},
     DetectorMapping: {"source": "synthetic", "detector_id": "D1", "intersection_id": "INT_001", "mapping_status": "unresolved"},
     SignalCrossingMapping: {"crossing_order": 0, "sumo_tls_id": "tls", "controlled_link_indices": [0]},
     MovementMapping: {"movement_id": "MOV_E_W", "intersection_id": "INT_001", "sumo_route_edge_ids": ["edge1", "edge2"], "signal_controlled": False},
@@ -81,7 +83,7 @@ def test_missing_required_field(model):
 @pytest.mark.parametrize("model,field", [
     (NetworkMetadata, "version"), (NetworkMetadata, "path"),
     (IntersectionMapping, "intersection_id"),
-    (ApproachMapping, "approach_id"), (ApproachMapping, "intersection_id"), (ApproachMapping, "direction"),
+    (ApproachMapping, "approach_id"), (ApproachMapping, "intersection_id"), (ApproachMapping, "approach_side"),
     (DetectorMapping, "detector_id"), (DetectorMapping, "intersection_id"),
     (SignalCrossingMapping, "sumo_tls_id"),
     (MovementMapping, "movement_id"), (MovementMapping, "intersection_id"),
@@ -96,6 +98,7 @@ def test_required_strings_reject_blank(model, field, blank):
 @pytest.mark.parametrize("model,field", [
     (IntersectionMapping, "sumo_tls_id"),
     (DetectorMapping, "site_id"), (DetectorMapping, "approach_id"),
+    (DetectorMapping, "lane_id"),
     (MovementMapping, "approach_id"), (MovementMapping, "sumo_tls_id"),
 ])
 @pytest.mark.parametrize("blank", ["", "   "])
@@ -106,7 +109,7 @@ def test_optional_identifiers_reject_blank_if_supplied(model, field, blank):
 
 @pytest.mark.parametrize("model,field", [
     (IntersectionMapping, "source_sites"),
-    (ApproachMapping, "source_detectors"), (ApproachMapping, "queue_detection_lane_ids"),
+    (ApproachMapping, "queue_detection_lane_ids"),
     (DetectorMapping, "movement_ids"),
     (MovementMapping, "sumo_lanes"),
 ])
@@ -118,7 +121,7 @@ def test_identifier_lists_reject_invalid_entries(model, field, items):
 
 @pytest.mark.parametrize("model,field", [
     (IntersectionMapping, "source_sites"),
-    (ApproachMapping, "source_detectors"), (ApproachMapping, "queue_detection_lane_ids"),
+    (ApproachMapping, "queue_detection_lane_ids"),
     (MovementMapping, "sumo_lanes"),
 ])
 def test_optional_lists_default_to_independent_empty_lists(model, field):
@@ -254,7 +257,7 @@ def test_config_valid_defaults_and_round_trip():
 
 
 @pytest.mark.parametrize("collection,duplicate", [
-    ("approach_mappings", {"approach_id": "APP_E", "intersection_id": "INT_001", "direction": "east"}),
+    ("approach_mappings", {"approach_id": "APP_E", "intersection_id": "INT_001", "approach_side": "east"}),
     ("movement_mappings", {"movement_id": "MOV_E_W", "intersection_id": "INT_001", "sumo_route_edge_ids": ["a", "b"], "signal_controlled": False}),
 ])
 def test_config_rejects_duplicate_entity_keys(collection, duplicate):
@@ -347,3 +350,185 @@ def test_config_does_not_mutate_input_data():
 
 def test_mapping_status_serializes_as_string():
     assert makes(DetectorMapping, mapping_status=MappingStatus.UNRESOLVED).model_dump(mode="json")["mapping_status"] == "unresolved"
+
+
+@pytest.mark.parametrize("side", ["east", "west", "north", "south"])
+def test_valid_approach_sides(side):
+    assert makes(ApproachMapping, approach_side=side).approach_side == side
+
+
+@pytest.mark.parametrize("side", ["EB", "WB", "NB", "SB", "East", "eastbound", " northeast ", ""])
+def test_travel_directions_and_invalid_sides_are_rejected(side):
+    with pytest.raises(ValidationError):
+        makes(ApproachMapping, approach_side=side)
+
+
+@pytest.mark.parametrize("field,value", [("source_detectors", []), ("direction", "east")])
+def test_removed_approach_fields_are_rejected(field, value):
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        makes(ApproachMapping, **{field: value})
+
+
+@pytest.mark.parametrize("version", ["1.0", "1.1", "3.0", "unknown"])
+def test_unsupported_mapping_schema_versions_are_rejected(version):
+    with pytest.raises(ValidationError, match="schema_version"):
+        makes(NetworkMappingConfig, schema_version=version)
+
+
+@pytest.mark.parametrize("values", [[], [""], [" "], ["a_0", "a_0"], ["a_0", " a_0 "]])
+def test_invalid_lane_mapping_segments(values):
+    with pytest.raises(ValidationError):
+        makes(LaneMapping, sumo_lane_ids=values)
+
+
+def test_lane_mapping_cleans_identifiers_and_preserves_path_order():
+    mapping = makes(LaneMapping, lane_id=" TEST_LANE ", sumo_lane_ids=[" b_0 ", "a_0"])
+    assert mapping.lane_id == "TEST_LANE"
+    assert mapping.sumo_lane_ids == ["b_0", "a_0"]
+
+
+def lane_config(shared=False):
+    """Artificial unit-test data, not approved study-area lane definitions."""
+    data = valid_config()
+    movement_ids = ["MOV_E_W"]
+    if shared:
+        data["movement_mappings"].append({
+            "movement_id": "MOV_E_S", "intersection_id": "INT_001", "approach_id": "APP_E",
+            "sumo_route_edge_ids": ["entry", "south_exit"], "signal_controlled": False,
+        })
+        movement_ids.append("MOV_E_S")
+    data["approach_lanes"] = [{
+        "lane_id": "TEST_LANE", "approach_id": "APP_E", "lane_index": 1,
+        "served_movement_ids": movement_ids, "lane_width_m": 3.5,
+    }]
+    data["lane_mappings"] = [{"lane_id": "TEST_LANE", "sumo_lane_ids": ["entry_0"]}]
+    data["detector_mappings"] = [{
+        "source": "synthetic", "site_id": "TEST_SITE", "detector_id": "TEST_DETECTOR",
+        "intersection_id": "INT_001", "approach_id": "APP_E", "lane_id": "TEST_LANE",
+        "movement_ids": list(movement_ids),
+        "mapping_status": "requires_allocation" if shared else "usable",
+    }]
+    return data
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_lane_linked_detector_preserves_m7_candidate_and_status_interface(shared):
+    obj = NetworkMappingConfig.model_validate(lane_config(shared))
+    detector = obj.detector_mappings[0]
+    assert set(detector.movement_ids) == set(obj.approach_lanes[0].served_movement_ids)
+    assert detector.mapping_status == ("requires_allocation" if shared else "usable")
+    assert NetworkMappingConfig.model_validate_json(obj.model_dump_json()) == obj
+
+
+def test_canonical_entities_are_views_without_duplicate_serialized_declarations():
+    from jaadah.models.network import Approach, Intersection, Movement
+
+    obj = NetworkMappingConfig.model_validate(lane_config())
+    assert isinstance(obj.canonical_intersection, Intersection)
+    assert isinstance(obj.canonical_approaches["APP_E"], Approach)
+    assert isinstance(obj.canonical_movements["MOV_E_W"], Movement)
+    assert obj.canonical_movements["MOV_E_W"].approach_id == "APP_E"
+    assert not hasattr(obj.canonical_movements["MOV_E_W"], "sumo_route_edge_ids")
+    assert not any(key.startswith("canonical_") for key in obj.model_dump())
+    # Mutating a returned snapshot must not change the authoritative declarations.
+    obj.canonical_movements["MOV_E_W"].approach_id = "APP_W"
+    assert obj.canonical_movements["MOV_E_W"].approach_id == "APP_E"
+
+
+@pytest.mark.parametrize("collection", ["approach_lanes", "lane_mappings"])
+def test_duplicate_lane_ids_are_rejected(collection):
+    data = lane_config()
+    data[collection].append(deepcopy(data[collection][0]))
+    with pytest.raises(ValidationError, match="duplicate"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_duplicate_lane_index_within_approach_is_rejected():
+    data = lane_config()
+    lane = deepcopy(data["approach_lanes"][0])
+    lane["lane_id"] = "ANOTHER_TEST_LANE"
+    data["approach_lanes"].append(lane)
+    with pytest.raises(ValidationError, match="duplicate approach lane index"):
+        NetworkMappingConfig.model_validate(data)
+
+
+@pytest.mark.parametrize("collection,field,value,match", [
+    ("approach_lanes", "approach_id", "UNKNOWN", "unknown approach_id"),
+    ("approach_lanes", "served_movement_ids", ["UNKNOWN"], "unmapped movement"),
+    ("approach_lanes", "approach_id", "APP_W", "lane/movement approach mismatch"),
+    ("lane_mappings", "lane_id", "UNKNOWN", "unknown lane_id"),
+    ("detector_mappings", "lane_id", "UNKNOWN", "unknown lane_id"),
+    ("detector_mappings", "approach_id", "APP_W", "detector/lane approach mismatch"),
+])
+def test_invalid_lane_references_and_ownership(collection, field, value, match):
+    data = lane_config()
+    data[collection][0][field] = value
+    with pytest.raises(ValidationError, match=match):
+        NetworkMappingConfig.model_validate(data)
+
+
+@pytest.mark.parametrize("status", ["usable", "requires_allocation", "unresolved"])
+def test_lane_linked_detector_allows_pending_sumo_mapping(status):
+    data = lane_config(shared=status == "requires_allocation")
+    data["lane_mappings"] = []
+    if status == "unresolved":
+        data["detector_mappings"][0].update(mapping_status=status, movement_ids=[])
+    config = NetworkMappingConfig.model_validate(data)
+    assert config.detector_mappings[0].lane_id == config.approach_lanes[0].lane_id
+    assert config.detector_mappings[0].mapping_status == status
+    assert config.lane_mappings == []
+
+
+@pytest.mark.parametrize("field,value,match", [
+    ("lane_id", "UNKNOWN", "unknown lane_id"),
+    ("approach_id", "APP_W", "detector/lane approach mismatch"),
+    ("movement_ids", ["UNKNOWN"], "must match the lane's served movements"),
+])
+def test_pending_sumo_mapping_keeps_detector_lane_checks(field, value, match):
+    data = lane_config()
+    data["lane_mappings"] = []
+    data["detector_mappings"][0][field] = value
+    with pytest.raises(ValidationError, match=match):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_shared_lane_cannot_claim_a_single_usable_candidate():
+    data = lane_config(shared=True)
+    data["detector_mappings"][0].update(mapping_status="usable", movement_ids=["MOV_E_W"])
+    with pytest.raises(ValidationError, match="must match the lane's served movements"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_shared_lane_candidates_are_compared_as_a_set():
+    data = lane_config(shared=True)
+    data["detector_mappings"][0]["movement_ids"].reverse()
+    NetworkMappingConfig.model_validate(data)
+
+
+def test_detector_approach_can_be_resolved_from_lane():
+    data = lane_config()
+    del data["detector_mappings"][0]["approach_id"]
+    assert NetworkMappingConfig.model_validate(data).detector_mappings[0].approach_id is None
+
+
+def test_unresolved_detector_can_reference_known_lane_without_asserting_candidates():
+    data = lane_config(shared=True)
+    data["detector_mappings"][0].update(mapping_status="unresolved", movement_ids=[])
+    NetworkMappingConfig.model_validate(data)
+
+
+def test_approach_owned_lane_cannot_serve_approachless_movement():
+    data = lane_config()
+    data["movement_mappings"][0]["approach_id"] = None
+    with pytest.raises(ValidationError, match="lane/movement approach mismatch"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_approach_detector_cannot_assert_approachless_movement():
+    data = lane_config()
+    data["approach_lanes"] = []
+    data["lane_mappings"] = []
+    data["detector_mappings"][0].pop("lane_id")
+    data["movement_mappings"][0]["approach_id"] = None
+    with pytest.raises(ValidationError, match="detector/movement approach mismatch"):
+        NetworkMappingConfig.model_validate(data)

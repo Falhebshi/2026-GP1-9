@@ -1,4 +1,5 @@
 import json
+import hashlib
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +11,7 @@ from jaadah.models.mappings import NetworkMappingConfig
 @pytest.fixture
 def valid_config():
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "mapping_version": "1.0",
         "network": {
             "version": "test_network_v1",
@@ -48,7 +49,7 @@ def test_load_with_movement(tmp_path, valid_config):
     valid_config["approach_mappings"] = [{
         "approach_id": "APP_E",
         "intersection_id": "INT_001",
-        "direction": "east",
+        "approach_side": "east",
         "queue_detection_lane_ids": [],
     }]
     valid_config["movement_mappings"] = [{
@@ -115,3 +116,33 @@ def test_json_array_not_config(tmp_path):
 def test_empty_json_object(tmp_path):
     with pytest.raises(ValidationError):
         load_network_mappings(write_json(tmp_path, {}))
+
+
+def test_loader_exposes_canonical_objects_without_sumo_fields(tmp_path, valid_config):
+    config = load_network_mappings(write_json(tmp_path, valid_config))
+    assert config.canonical_intersection.intersection_id == 'INT_001'
+    assert config.canonical_approaches == {}
+    assert config.canonical_movements == {}
+    assert config.approach_lanes == config.lane_mappings == []
+
+
+def test_loader_can_validate_the_actual_sumo_network(tmp_path, valid_config):
+    path = tmp_path / 'network.net.xml'
+    path.write_bytes(b'<net/>')
+    valid_config['network']['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    mapping_file = write_json(tmp_path, valid_config)
+    assert load_network_mappings(mapping_file, network_path=path).movement_mappings == []
+    path.write_bytes(b'<net changed="true"/>')
+    with pytest.raises(ValueError, match='SHA-256'):
+        load_network_mappings(mapping_file, network_path=path)
+
+
+def test_loader_rejects_missing_network_when_static_validation_requested(tmp_path, valid_config):
+    with pytest.raises(ValueError, match='SUMO network file not found'):
+        load_network_mappings(write_json(tmp_path, valid_config), network_path=tmp_path/'missing.xml')
+
+
+def test_loader_rejects_invalid_canonical_lane_reference(tmp_path, valid_config):
+    valid_config['lane_mappings'] = [{'lane_id': 'UNKNOWN', 'sumo_lane_ids': ['a_0']}]
+    with pytest.raises(ValidationError, match='unknown lane_id'):
+        load_network_mappings(write_json(tmp_path, valid_config))

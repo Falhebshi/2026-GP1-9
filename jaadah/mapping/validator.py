@@ -3,7 +3,22 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 
-from jaadah.models.mappings import NetworkMappingConfig
+from jaadah.models.mappings import LaneMapping, NetworkMappingConfig
+
+
+def require_lane_mapping(config: NetworkMappingConfig, lane_id: str) -> LaneMapping:
+    """Return the lane's SUMO mapping or raise if it is missing."""
+    for mapping in config.lane_mappings:
+        if mapping.lane_id == lane_id:
+            return mapping
+    raise ValueError(f"Missing SUMO lane mapping for lane {lane_id}")
+
+
+def network_checksum_matches(content: bytes, expected: str) -> bool:
+    """Accept LF/CRLF-equivalent checksums; all other bytes remain significant."""
+    lf_content = content.replace(b"\r\n", b"\n")
+    variants = (content, lf_content, lf_content.replace(b"\n", b"\r\n"))
+    return expected.lower() in {hashlib.sha256(value).hexdigest() for value in variants}
 
 
 def validate_network_mappings(config: NetworkMappingConfig, network_path: str | Path) -> list[str]:
@@ -14,23 +29,24 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
     if not path.is_file():
         return [f"SUMO network file not found: {path}"]
 
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest.lower() != config.network.sha256.lower():
-        errors.append("SUMO network SHA-256 does not match the mapping configuration")
-
     try:
-        root = ET.parse(path).getroot()
+        content = path.read_bytes()
+        root = ET.fromstring(content)
     except ET.ParseError as exc:
         return errors + [f"Invalid SUMO network XML: {exc}"]
     except OSError as exc:
         return errors + [f"Cannot read SUMO network: {exc}"]
+
+    if not network_checksum_matches(content, config.network.sha256):
+        errors.append("SUMO network SHA-256 does not match the mapping configuration")
 
     if root.tag != "net":
         return errors + ["Expected a SUMO <net> document"]
 
     edges = {}
     lanes = set()
-    edge_lanes = defaultdict(set)
+    lane_edges = {}
+    indexed_lanes = {}
     for edge in root.findall("edge"):
         edge_id = edge.get("id")
         if not edge_id:
@@ -40,9 +56,11 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
             lane_id = lane.get("id")
             if lane_id:
                 lanes.add(lane_id)
-                edge_lanes[edge_id].add(lane_id)
+                lane_edges[lane_id] = edge_id
+                indexed_lanes[(edge_id, lane.get("index"))] = lane_id
 
     connections = defaultdict(list)
+    lane_connections = set()
     controlled = defaultdict(set)
     controlled_edges = defaultdict(set)
     for connection in root.findall("connection"):
@@ -51,6 +69,10 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
             continue
         # SUMO connection records include the legal from-lane/to-lane pairing.
         connections[(from_edge, to_edge)].append(connection)
+        from_lane = indexed_lanes.get((from_edge, connection.get("fromLane")))
+        to_lane = indexed_lanes.get((to_edge, connection.get("toLane")))
+        if from_lane and to_lane:
+            lane_connections.add((from_lane, to_lane))
         tls = connection.get("tl")
         idx = connection.get("linkIndex")
         if tls is not None and idx is not None:
@@ -73,6 +95,57 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
             if lane not in lanes:
                 errors.append(f"Approach {approach.approach_id}: lane not found: {lane}")
 
+    def lane_supports_route(
+        lane_id: str, route: list[str], *, at_position: int | None = None
+    ) -> bool:
+        """Check whether the lane has a legal connection along the route."""
+        positions = range(len(route)) if at_position is None else [at_position]
+        for position in positions:
+            edge_id = route[position]
+            if lane_edges.get(lane_id) != edge_id:
+                continue
+            if position + 1 < len(route):
+                if any(
+                    indexed_lanes.get((edge_id, item.get("fromLane"))) == lane_id
+                    for item in connections[(edge_id, route[position + 1])]
+                ):
+                    return True
+            elif position > 0:
+                if any(
+                    indexed_lanes.get((edge_id, item.get("toLane"))) == lane_id
+                    for item in connections[(route[position - 1], edge_id)]
+                ):
+                    return True
+        return False
+
+    canonical_lanes = {item.lane_id: item for item in config.approach_lanes}
+    movements = {item.movement_id: item for item in config.movement_mappings}
+    for mapping in config.lane_mappings:
+        name = f"Lane {mapping.lane_id}"
+        for lane_id in mapping.sumo_lane_ids:
+            if lane_id not in lanes:
+                errors.append(f"{name}: lane not found: {lane_id}")
+            elif edges[lane_edges[lane_id]].get("function") == "internal":
+                errors.append(f"{name}: internal SUMO lane is not an approach lane: {lane_id}")
+        for left, right in zip(mapping.sumo_lane_ids, mapping.sumo_lane_ids[1:]):
+            if (left, right) not in lane_connections:
+                errors.append(f"{name}: no legal SUMO lane connection {left} -> {right}")
+        route_edges = [lane_edges.get(item) for item in mapping.sumo_lane_ids]
+        for movement_id in canonical_lanes[mapping.lane_id].served_movement_ids:
+            route = movements[movement_id].sumo_route_edge_ids
+            ends = [
+                start + len(route_edges) - 1
+                for start in range(len(route))
+                if route[start:start + len(route_edges)] == route_edges
+            ]
+            if not ends:
+                errors.append(f"{name}: lane segments are not on movement route {movement_id}")
+            elif not any(
+                lane_supports_route(mapping.sumo_lane_ids[-1], route, at_position=end)
+                for end in ends
+            ):
+                errors.append(f"{name}: terminal lane cannot serve movement {movement_id}")
+
     for movement in config.movement_mappings:
         name = f"Movement {movement.movement_id}"
         route = movement.sumo_route_edge_ids
@@ -85,6 +158,8 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
         for lane_id in movement.sumo_lanes:
             if lane_id not in lanes:
                 errors.append(f"{name}: lane not found: {lane_id}")
+            elif not lane_supports_route(lane_id, route):
+                errors.append(f"{name}: lane is not connected along the mapped route: {lane_id}")
         if movement.signal_controlled:
             if movement.sumo_tls_id not in tls_ids:
                 errors.append(f"{name}: TLS not found: {movement.sumo_tls_id}")

@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -9,6 +10,7 @@ from pydantic import (
     model_validator,
 )
 
+from .network import Approach, ApproachLane, Intersection, Movement
 from .traffic import TrafficObservationSource
 
 
@@ -22,6 +24,15 @@ class MappingStatus(str, Enum):
     USABLE = "usable"
     REQUIRES_ALLOCATION = "requires_allocation"
     UNRESOLVED = "unresolved"
+
+
+class ApproachSide(str, Enum):
+    """The intersection side where an approach is located."""
+
+    EAST = "east"
+    WEST = "west"
+    NORTH = "north"
+    SOUTH = "south"
 
 
 # ============================================================
@@ -107,11 +118,10 @@ class ApproachMapping(BaseModel):
 
     approach_id: str
     intersection_id: str
-    direction: str
-    source_detectors: list[str] = Field(default_factory=list)
+    approach_side: ApproachSide
     queue_detection_lane_ids: list[str] = Field(default_factory=list)
 
-    @field_validator("approach_id", "intersection_id", "direction")
+    @field_validator("approach_id", "intersection_id")
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
         """Reject empty required values."""
@@ -121,7 +131,7 @@ class ApproachMapping(BaseModel):
             raise ValueError("identifier must not be empty")
         return value
 
-    @field_validator("source_detectors", "queue_detection_lane_ids")
+    @field_validator("queue_detection_lane_ids")
     @classmethod
     def validate_identifiers(cls, values: list[str]) -> list[str]:
         """Reject blank and duplicate identifiers."""
@@ -135,11 +145,46 @@ class ApproachMapping(BaseModel):
 
 
 # ============================================================
+# LANE MAPPING
+# ============================================================
+
+class LaneMapping(BaseModel):
+    """Maps a Jaadah lane to SUMO segments, upstream to downstream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lane_id: str
+    sumo_lane_ids: list[str] = Field(min_length=1)
+
+    @field_validator("lane_id")
+    @classmethod
+    def validate_lane_id(cls, value: str) -> str:
+        """Reject an empty lane ID."""
+
+        value = value.strip()
+        if not value:
+            raise ValueError("identifier must not be empty")
+        return value
+
+    @field_validator("sumo_lane_ids")
+    @classmethod
+    def validate_sumo_lanes(cls, values: list[str]) -> list[str]:
+        """Reject blank or duplicate SUMO lane IDs."""
+
+        cleaned = [value.strip() for value in values]
+        if any(not value for value in cleaned):
+            raise ValueError("identifier must not be empty")
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("SUMO lane segments must be unique")
+        return cleaned
+
+
+# ============================================================
 # DETECTOR MAPPING
 # ============================================================
 
 class DetectorMapping(BaseModel):
-    """Connects a source detector to an approach or candidate movements."""
+    """Connects a source detector to a Jaadah lane, approach, or movements."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -148,6 +193,7 @@ class DetectorMapping(BaseModel):
     detector_id: str
     intersection_id: str
     approach_id: str | None = None
+    lane_id: str | None = None
     movement_ids: list[str] = Field(default_factory=list)
     mapping_status: MappingStatus
     mapping_note: str | None = None
@@ -162,7 +208,7 @@ class DetectorMapping(BaseModel):
             raise ValueError("identifier must not be empty")
         return value
 
-    @field_validator("site_id", "approach_id")
+    @field_validator("site_id", "approach_id", "lane_id")
     @classmethod
     def validate_optional_ids(cls, value: str | None) -> str | None:
         """Reject blank optional IDs when supplied."""
@@ -320,15 +366,17 @@ class MovementMapping(BaseModel):
 # ============================================================
 
 class NetworkMappingConfig(BaseModel):
-    """Groups network-versioned mappings and checks their relationships."""
+    """Defines study-area entities and their source/SUMO mappings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str
+    schema_version: Literal["2.0"]
     mapping_version: str
     network: NetworkMetadata
     intersection_mapping: IntersectionMapping
     approach_mappings: list[ApproachMapping] = Field(default_factory=list)
+    approach_lanes: list[ApproachLane] = Field(default_factory=list)
+    lane_mappings: list[LaneMapping] = Field(default_factory=list)
     detector_mappings: list[DetectorMapping] = Field(default_factory=list)
     movement_mappings: list[MovementMapping] = Field(default_factory=list)
 
@@ -342,13 +390,34 @@ class NetworkMappingConfig(BaseModel):
             raise ValueError("identifier must not be empty")
         return value
 
+    @property
+    def canonical_intersection(self) -> Intersection:
+        return Intersection(intersection_id=self.intersection_mapping.intersection_id)
+
+    @property
+    def canonical_approaches(self) -> dict[str, Approach]:
+        return {
+            item.approach_id: Approach(
+                approach_id=item.approach_id, intersection_id=item.intersection_id
+            )
+            for item in self.approach_mappings
+        }
+
+    @property
+    def canonical_movements(self) -> dict[str, Movement]:
+        return {
+            item.movement_id: Movement(
+                movement_id=item.movement_id,
+                intersection_id=item.intersection_id,
+                approach_id=item.approach_id,
+            )
+            for item in self.movement_mappings
+        }
+
     @model_validator(mode="after")
     def validate_references(self) -> "NetworkMappingConfig":
         """Reject duplicate records and invalid Jaadah mapping references."""
 
-        intersection_id = self.intersection_mapping.intersection_id
-        approaches = {item.approach_id: item for item in self.approach_mappings}
-        movements = {item.movement_id: item for item in self.movement_mappings}
         detector_keys = [
             (item.source, item.site_id, item.detector_id)
             for item in self.detector_mappings
@@ -357,10 +426,18 @@ class NetworkMappingConfig(BaseModel):
         for label, keys in (
             ("approach_id", [item.approach_id for item in self.approach_mappings]),
             ("movement_id", [item.movement_id for item in self.movement_mappings]),
+            ("canonical lane_id", [item.lane_id for item in self.approach_lanes]),
+            ("lane_id mapping", [item.lane_id for item in self.lane_mappings]),
+            ("approach lane index", [(item.approach_id, item.lane_index) for item in self.approach_lanes]),
             ("detector key", detector_keys),
         ):
             if len(keys) != len(set(keys)):
                 raise ValueError(f"duplicate {label} mapping")
+
+        intersection_id = self.canonical_intersection.intersection_id
+        approaches = self.canonical_approaches
+        movements = self.canonical_movements
+        lanes = {item.lane_id: item for item in self.approach_lanes}
 
         for item in [*self.approach_mappings, *self.movement_mappings, *self.detector_mappings]:
             if item.intersection_id != intersection_id:
@@ -374,11 +451,38 @@ class NetworkMappingConfig(BaseModel):
             if item.approach_id is not None and approaches[item.approach_id].intersection_id != item.intersection_id:
                 raise ValueError("movement/approach intersection mismatch")
 
+        for lane in self.approach_lanes:
+            if lane.approach_id not in approaches:
+                raise ValueError(f"lane refers to an unknown approach_id: {lane.approach_id}")
+            for movement_id in lane.served_movement_ids:
+                if movement_id not in movements:
+                    raise ValueError(f"lane refers to an unmapped movement: {movement_id}")
+                if movements[movement_id].approach_id != lane.approach_id:
+                    raise ValueError("lane/movement approach mismatch")
+
+        for mapping in self.lane_mappings:
+            if mapping.lane_id not in lanes:
+                raise ValueError(f"lane mapping refers to an unknown lane_id: {mapping.lane_id}")
+
         for detector in self.detector_mappings:
+            detector_approach = detector.approach_id
+            if detector.lane_id is not None:
+                # The canonical lane must exist; its SUMO mapping may be pending.
+                if detector.lane_id not in lanes:
+                    raise ValueError(f"detector refers to an unknown lane_id: {detector.lane_id}")
+                lane = lanes[detector.lane_id]
+                if detector_approach is not None and detector_approach != lane.approach_id:
+                    raise ValueError("detector/lane approach mismatch")
+                detector_approach = lane.approach_id
+                # Unresolved detectors assert no candidate movements.
+                if detector.mapping_status != MappingStatus.UNRESOLVED:
+                    if set(detector.movement_ids) != set(lane.served_movement_ids):
+                        raise ValueError("detector candidates must match the lane's served movements")
             for movement_id in detector.movement_ids:
                 if movement_id not in movements:
                     raise ValueError(f"detector refers to an unmapped movement: {movement_id}")
-                if detector.approach_id and movements[movement_id].approach_id not in (None, detector.approach_id):
+                # An approach-owned detector can only claim movements of that approach.
+                if detector_approach and movements[movement_id].approach_id != detector_approach:
                     raise ValueError("detector/movement approach mismatch")
 
         return self

@@ -1,5 +1,4 @@
 import argparse
-import hashlib
 import json
 import shutil
 import sys
@@ -7,20 +6,20 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Support direct invocation from any working directory without installing Jaadah.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from jaadah.mapping.loader import load_network_mappings
+
 DEFAULT_MAPPING = PROJECT_ROOT / "data/processed/road_network/network_mappings.json"
 DEFAULT_NETWORK = PROJECT_ROOT / "data/processed/road_network/jaadah_study_area.net.xml"
 DEFAULT_OUTPUT = PROJECT_ROOT / "simulation/outputs/tests/movement_smoke"
 
 
 def require_mapping(mapping_path: Path, network_path: Path) -> list[dict]:
-    with mapping_path.open("r", encoding="utf-8") as file:
-        mapping = json.load(file)
-
-    actual_hash = hashlib.sha256(network_path.read_bytes()).hexdigest()
-    if actual_hash.lower() != mapping["network"]["sha256"].lower():
-        raise ValueError("Network SHA-256 differs from mapping JSON. Review mappings before testing.")
-
-    movements = mapping["movement_mappings"]
+    config = load_network_mappings(mapping_path, network_path=network_path)
+    movements = [item.model_dump(mode="json") for item in config.movement_mappings]
     if len(movements) != 18 or len({m["movement_id"] for m in movements}) != 18:
         raise ValueError("Expected 18 unique movement mappings.")
 

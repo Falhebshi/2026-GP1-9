@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import json
 
 import pytest
 
@@ -23,7 +25,7 @@ APPROVED_MOVEMENTS = {
 @pytest.fixture(scope="module")
 def config():
     assert MAPPING_FILE.is_file(), f"Missing mapping file: {MAPPING_FILE}"
-    return load_network_mappings(MAPPING_FILE)
+    return load_network_mappings(MAPPING_FILE, network_path=NETWORK_FILE)
 
 
 def test_approved_movement_catalog(config):
@@ -61,3 +63,34 @@ def test_network_version_and_static_references(config):
     assert config.network.version == "jaadah_network_v2"
     errors = validate_network_mappings(config, NETWORK_FILE)
     assert errors == [], "\n".join(errors)
+
+
+def test_review_changes_preserve_all_original_movement_records():
+    # Frozen semantic digest of the reviewed pre-change 18-record catalog.
+    # Includes IDs, parents, edge order, lanes, control flags, TLS, and crossings.
+    # Only change this baseline after an independently reviewed routing change.
+    data = json.loads(MAPPING_FILE.read_text(encoding='utf-8'))
+    encoded = json.dumps(data['movement_mappings'], sort_keys=True, separators=(',', ':')).encode()
+    assert hashlib.sha256(encoded).hexdigest() == (
+        'e18cda9abdedcf1b352720086684a3e7698ba196735ef6aa72ebb2e7e8e69b08'
+    )
+
+
+def test_authoritative_config_contains_no_unapproved_lane_or_detector_data(config):
+    assert config.schema_version == '2.0'
+    assert config.approach_lanes == config.lane_mappings == config.detector_mappings == []
+    assert all(not item.queue_detection_lane_ids for item in config.approach_mappings)
+
+
+def test_canonical_views_preserve_declared_ownership(config):
+    assert config.canonical_intersection.intersection_id == 'INT_001'
+    assert set(config.canonical_approaches) == {'APP_E', 'APP_W', 'APP_N', 'APP_S'}
+    assert set(config.canonical_movements) == APPROVED_MOVEMENTS
+    assert config.canonical_movements['MOV_E_W'].approach_id == 'APP_E'
+    assert config.canonical_movements['MOV_N_S_TUNNEL'].approach_id is None
+
+
+def test_approach_side_describes_location_not_travel_direction(config):
+    assert {item.approach_id: item.approach_side.value for item in config.approach_mappings} == {
+        'APP_E': 'east', 'APP_W': 'west', 'APP_N': 'north', 'APP_S': 'south',
+    }
