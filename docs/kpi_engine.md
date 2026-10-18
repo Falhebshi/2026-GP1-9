@@ -291,7 +291,7 @@ Lane groups are derived from the `ApproachLane` records each time they are neede
 | --- | --- | --- |
 | 1 | left | `APP_E_L` |
 | 2 | left + through (shared) | `APP_E_LT` |
-| 3, 4, 5 | through | `APP_E_T` (3 lanes) |
+| 3, 4 | through | `APP_E_T` (2 lanes) |
 
 ## 8.2 Lane group identifiers
 
@@ -309,3 +309,94 @@ An error is raised, naming the lane or approach, when:
 - a lane serves both signalized and uncontrolled movements (a slip lane only serves its right turn, so this indicates wrong lane data);
 - two lanes of an approach have the same `lane_index`;
 - two lane groups of an approach would get the same ID (an unusual layout such as through, left, through).
+
+---
+
+# 9. Saturation Flow, Capacity and Volume-to-Capacity Ratio
+
+Implemented in `backend/analytics/kpi/capacity.py`.
+
+These KPIs are **calculated with the HCM method**, independently of the simulation: they describe how many vehicles each lane group could serve with the given lanes and signal timing, and how that compares with the demand. Saturation flow measured in SUMO is used only as a calibration check.
+
+All HCM values in this section are taken as the working assumption and are **to be verified against the HCM 7th edition** (Chapter 19, signalized intersections).
+
+## 9.1 Steps
+
+For each lane group (section 8) and interval:
+
+1. **Saturation flow:** s = s₀ × N × f_w × f_HV × f_g × f_p × f_bb × f_a × f_LU × f_LT × f_Lpb × f_Rpb × f_CAV (veh/h), with s₀ = 1,900 pc/h/ln (section 3.1) and N the number of lanes in the group.
+2. **Capacity:** c = s × g / C, with g the effective green of the group and C the cycle length, both from the scenario's `SignalProgram`. Effective green equals displayed green.
+3. **Volume-to-capacity ratio:** X = v / c, with v the demand flow assigned to the group (section 9.4).
+4. **Critical volume-to-capacity ratio of the intersection:** Xc = Σ(v/s)crit × C / (C − L), where (v/s)crit is the highest flow ratio among the lane groups served in each phase and L is the total lost time, 5 s per phase.
+
+## 9.2 Adjustment factors
+
+| Factor | Value | Reason |
+| --- | --- | --- |
+| Lane width f_w | 0.96 below 3.05 m (10 ft); 1.00 from 3.05 m to 3.93 m (12.9 ft); 1.04 above 3.93 m | HCM lane-width factor, applied to the **average width** of the group's lanes (`ApproachLane.lane_width_m`) |
+| Heavy vehicles f_HV | 1.0 | Jaadah simulates passenger cars only (`VehicleType` = `car`); the HCM side must assume the same traffic as the simulation (see 9.9) |
+| Grade f_g | 1.0 | no grade data; 0 % assumed |
+| Parking f_p | 1.0 | no on-street parking at the stop lines |
+| Bus blockage f_bb | 1.0 | buses are outside Jaadah's scope |
+| Area type f_a | 1.0 | the intersection is not in a central business district |
+| Lane utilisation f_LU | 1.000 for 1 lane, 0.952 for 2 lanes, 0.908 for 3 lanes | HCM default values for through lanes; a group with more than 3 lanes raises an error. The same values are used for the three exclusive left-turn lanes of the North approach, because HCM gives separate defaults for exclusive turning lanes and no verified value for three of them is available yet |
+| Left turns f_LT | 1 / (1 + P_LT × (E_L − 1)), E_L = 1.05 | protected left turns only (9.3); P_LT is the share of left-turning vehicles in the group (0.952 for an exclusive left-turn lane) |
+| Pedestrians and bicycles f_Lpb, f_Rpb | 1.0 | few pedestrians cross these approaches |
+| Connected and automated vehicles f_CAV | 1.0 | HCM 7th edition adjustment; the simulation contains no such vehicles |
+
+Signalized right turns are not in the analysis (right turns use uncontrolled slip lanes), so no right-turn factor is applied. Every factor that is not calculated from Jaadah data is labelled *modelled assumption* in `input_origins`.
+
+## 9.3 Left-turn phasing
+
+A left turn is treated as **protected** when no phase that serves it also serves a through movement of another approach (the opposing traffic it would have to cross); this is read from `SignalPhase.served_movement_ids` and `Movement.approach_id`. Protected left turns use the left-turn factor above.
+
+**Permitted** left turns (served together with opposing traffic, turning through gaps) are not supported: the capacity, volume-to-capacity ratio and HCM delay of their lane groups are `unavailable`, with the reason "permitted left turns are not supported".
+
+## 9.4 Distributing a movement's demand over its lane groups
+
+`SimulationDemand` gives demand per movement, but a movement can use more than one lane group (for example, East-left uses `APP_E_L` and the shared `APP_E_LT`). The demand of each movement is distributed over its lane groups on the assumption that **drivers choose the lane group that serves them best, so that every lane group a movement uses ends up with the same flow ratio v/s**. A lane group that would need a negative share of a movement receives none of it.
+
+This follows the principle of the HCM shared-lane procedure without its full steps. The calculation, per approach and interval:
+
+1. Start with each movement's demand split equally over the lane groups it may use.
+2. For each movement in turn, keep the other movements' flows fixed and redistribute this movement's demand over its lane groups so that their flow ratios become equal ("water filling": groups with spare capacity receive flow first).
+3. Recalculate the saturation flow of every shared lane group, because its left-turn factor depends on the share of left-turning vehicles it now carries.
+4. Repeat steps 2–3 until no lane group's flow changes by more than 0.01 veh/h; stop with an error if this has not happened after 100 rounds.
+
+As a consequence, when few vehicles turn left, they all use the exclusive left-turn lane and the shared lane carries only through traffic; when many turn left, the left-turn lane reaches the common flow ratio and the remaining left-turners use the shared lane.
+
+**Limitations.** The method assumes that drivers balance the lane groups perfectly, which real drivers do only approximately, and it does not model two effects included in the full HCM procedure: left-turning vehicles blocking the shared lane while they wait (relevant mainly for permitted left turns, which are not supported, 9.3) and a short left-turn lane overflowing into the adjacent lane. Queue overflow is still visible in the measured queue storage ratio (section 6.5). The distribution is labelled *modelled assumption*.
+
+A fixed split (such as 50/50 or 60/40) was not used, because it would not respond to the demand and could not be justified.
+
+## 9.5 Green time of a lane group
+
+A lane group's effective green g is the green of the phases that serve **all** of its movements. The case-study intersection uses one phase per approach, so every movement of an approach, including both movements of a shared lane, moves in the same phase.
+
+If the movements of a shared lane group are served in different phases, the lane group's capacity, volume-to-capacity ratio and HCM delay are `unavailable`, with the reason "shared lane whose movements are served in different phases is not supported".
+
+## 9.6 Values reported for movements
+
+Lane-group results are reported on their lane groups. Each movement also receives its own values, derived from the lane groups it actually uses (those that carry part of its demand, section 9.4):
+
+- **volume-to-capacity ratio**: the ratio of those lane groups. Because the demand is distributed so that their flow ratios are equal and they share one green, these ratios are equal; if they differ (for example under another phasing), the highest is reported;
+- **capacity**: the movement's demand divided by its volume-to-capacity ratio;
+- **saturation flow**: the movement's demand divided by its flow ratio v/s.
+
+When any lane group the movement uses is shared, the movement's values carry the "Shared lane" tag (section 2.1), with `measured_on_lane_group_id` naming the shared lane group.
+
+When any lane group of the movement has no capacity result (9.3, 9.5, 9.7), the movement's values are `unavailable`. When the movement has no demand in the interval, it uses no lane group, so its values are `not_applicable`, with the reason "no demand in this interval".
+
+The intersection's critical volume-to-capacity ratio Xc is `unavailable` when any lane group has no capacity result. A lane group belongs to a phase's critical-ratio calculation when that phase serves all of its movements.
+
+## 9.7 Demand
+
+The demand v of a movement in an interval is its `SimulationDemand` vehicle count for that interval converted to vehicles per hour (× 4 for 15 minutes). When a movement has no demand record for an interval, the capacity results that depend on it are `unavailable`, never calculated with zero demand.
+
+## 9.8 Origin of the signal timing
+
+The `input_origins` of capacity and volume-to-capacity results follow `SignalProgram.source`: a program with source `observed` is labelled *observed*; `baseline_model` and `intervention` are labelled *modelled assumption*.
+
+## 9.9 Scope limitation: passenger cars only
+
+Because heavy vehicles and buses are outside Jaadah's scope, both the simulation and the HCM calculation describe traffic made of passenger cars only. Real capacity, with trucks and buses present, would be somewhat lower.

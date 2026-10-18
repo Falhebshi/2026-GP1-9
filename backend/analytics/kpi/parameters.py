@@ -38,6 +38,38 @@ QUEUE_PERCENTILE = 95
 BASE_SATURATION_FLOW_PC_H_LN = 1900
 
 
+# Adjustment factors (HCM signalized intersections, to be verified
+# against the HCM 7th edition). See docs/kpi_engine.md section 9.2.
+
+# Lane width: below 10 ft the factor is 0.96, above 12.9 ft it is
+# 1.04, in between 1.00. Applied to the average width of a lane group.
+LANE_WIDTH_NARROW_LIMIT_M = 3.048   # 10 ft
+LANE_WIDTH_WIDE_LIMIT_M = 3.932     # 12.9 ft
+LANE_WIDTH_FACTOR_NARROW = 0.96
+LANE_WIDTH_FACTOR_NORMAL = 1.00
+LANE_WIDTH_FACTOR_WIDE = 1.04
+
+# Lane utilisation by number of lanes in the group (HCM defaults for
+# through lanes, also used for the North approach's three exclusive
+# left-turn lanes until a verified value is available).
+LANE_UTILIZATION_FACTORS = {1: 1.000, 2: 0.952, 3: 0.908}
+
+# A protected left-turning vehicle counts as 1.05 through vehicles.
+LEFT_TURN_EQUIVALENT = 1.05
+
+# Factors that have no effect at the case-study intersection.
+HEAVY_VEHICLE_FACTOR = 1.0       # passenger cars only (VehicleType)
+GRADE_FACTOR = 1.0               # no grade data; 0 % assumed
+PARKING_FACTOR = 1.0             # no on-street parking at stop lines
+BUS_BLOCKAGE_FACTOR = 1.0        # buses are outside Jaadah's scope
+AREA_TYPE_FACTOR = 1.0           # not a central business district
+PEDESTRIAN_BICYCLE_FACTOR = 1.0  # few pedestrians on these approaches
+CAV_FACTOR = 1.0                 # no connected or automated vehicles
+
+# Lost time per phase (start-up plus clearance), in seconds.
+LOST_TIME_PER_PHASE_S = 5.0
+
+
 # ============================================================
 # LEVEL OF SERVICE
 # ============================================================
