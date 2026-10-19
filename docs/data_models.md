@@ -30,7 +30,7 @@ jaadah/
     ├── scenario.py    scenarios, runs, configuration, replication
     ├── outputs.py     standardized simulation outputs
     ├── signals.py     signal programs and signal state
-    └── kpis.py        KPI results
+    └── kpis.py        KPI results and comparisons
 ```
 
 Their tests are located under:
@@ -48,10 +48,11 @@ tests/
 ├── test_cycle_queue_record.py
 ├── test_incomplete_passage.py
 ├── test_signal_models.py
-└── test_kpi_models.py
+├── test_kpi_models.py
+└── test_kpi_comparison.py
 ```
 
-The current implementation contains **23 canonical models**:
+The current implementation contains **24 canonical models**:
 
 | File | Models |
 | --- | --- |
@@ -60,7 +61,7 @@ The current implementation contains **23 canonical models**:
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
 | `outputs.py` | `VehicleState`, `EdgeTrafficState`, `ApproachTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord` |
 | `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
-| `kpis.py` | `KpiResult` |
+| `kpis.py` | `KpiResult`, `KpiComparison` |
 
 ---
 
@@ -212,16 +213,22 @@ Fields: `lane_id`, `approach_id`, `lane_index`, `served_movement_ids`, `lane_wid
 - A lane shared by several movements lists all of them in `served_movement_ids`, e.g. `["MOV_E_L", "MOV_E_T"]`.
 - `storage_length_m` is optional: when it is unknown, the queue storage ratio is reported as unavailable.
 
-**Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID such as `east_L`, `east_LT`, `east_T` (team decision, 17 Oct 2026).
+**Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID: the approach ID plus the movement letters in L/T/R order, e.g. `APP_E_L`, `APP_E_LT`, `APP_E_T` (team decision, 17 Oct 2026).
 
-Confirmed layout of the case-study intersection, from the median outward:
+Signal-entry lane subset (12 lanes), from the median outward. The complete
+canonical inventory contains 16 lanes, including four slip/bypass lanes; see
+the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 
 | Approach | Lanes |
 | --- | --- |
 | East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
 | West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
 | North | 3 lanes, all left |
-| South | 2 lanes, both through |
+| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
+
+The analytical left/signalized classification of `MOV_S_W` remains pending
+KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
+movement identity, physical routing, and signal behavior remain unchanged.
 
 ## 2.6 Canonical Identity vs. SUMO Identity
 
@@ -425,7 +432,7 @@ The scenario is found through `run_id` and the intersection through `signal_prog
 
 Implemented in `jaadah/models/kpis.py`.
 
-`KpiResult` is one KPI value for one element, one interval, and one run or set of runs. The KPI engine produces these; they are stored and sent to the dashboard.
+`KpiResult` is one KPI value for one element, one interval, and one run or set of runs. `KpiComparison` (section 6.9) is the change in one KPI between a baseline and an intervention scenario. The KPI engine produces both; they are stored and sent to the dashboard.
 
 ## 6.1 Fields
 
@@ -438,6 +445,7 @@ Implemented in `jaadah/models/kpis.py`.
 | Provenance | `input_origins` |
 | Runs | `scenario_id`, `run_ids`, `standard_deviation` |
 | Shared lanes | `measured_on_lane_id` or `measured_on_lane_group_id` |
+| Slips | `uncontrolled_movements` (section 6.7) |
 
 ## 6.2 Enums
 
@@ -451,6 +459,7 @@ Implemented in `jaadah/models/kpis.py`.
 | `ValueComputation` | `direct_summary`, `derived` |
 | `InputOrigin` | `observed`, `modelled_assumption`, `simulated` |
 | `LevelOfServiceGrade` | `A` … `F` |
+| `UncontrolledMovements` | `included`, `excluded` |
 
 ## 6.3 Missing values are never zero
 
@@ -492,6 +501,8 @@ The four provenance labels overlap (an HCM result can be derived from observed d
 
 KPIs measured per lane (queue length, storage ratio) or per lane group (HCM capacity measures) cannot be split between the movements of a shared lane. They are reported on their lane or lane group. A movement that uses a shared lane also shows that value, and records where it was measured in `measured_on_lane_id` or `measured_on_lane_group_id` (movement level only, at most one, and only for KPIs reportable on that kind of element). The computed field `is_shared_value` drives the dashboard's "Shared lane" tag; the tooltip text ("Measured on lane 2, shared with East-left") is looked up from `ApproachLane`, not stored.
 
+**Uncontrolled right-turn slips.** An approach or intersection value whose element has slips records whether it covers them in `uncontrolled_movements`: simulation results include them (`included`), HCM results exclude them (`excluded`), because a slip has no lane group. Each method accepts only its own value; the field is allowed only on approach and intersection results with status `ok`, and is empty when the element has no slip. The dashboard shows it as a tag.
+
 ## 6.8 Computed fields and storage
 
 `value_computation`, `replication_count` and `is_shared_value` are Pydantic computed fields: they appear in `model_dump()` and JSON output but cannot be passed in. **For storage, dump without them**, otherwise reloading fails, because unknown fields are forbidden:
@@ -502,7 +513,29 @@ result.model_dump()
 
 # for storage
 result.model_dump(exclude={"value_computation", "replication_count", "is_shared_value"})
+comparison.model_dump(exclude={"percent_change"})
 ```
+
+## 6.9 `KpiComparison`
+
+The change in one KPI for one element and one interval between a baseline and an intervention scenario. One record per KPI, element and interval.
+
+| Group | Fields |
+| --- | --- |
+| What, where, when | `kpi`, `method`, `unit`, `level` and one matching ID, `interval_start`, `interval_end` (same checks and tables as `KpiResult`) |
+| Scenarios | `baseline_scenario_id`, `intervention_scenario_id` (must differ), `replication_set_id` |
+| Pairs | `used_pairs`: the `ReplicationPair`s the change is based on |
+| Change | `status`, `reason`, `mean_change`, `standard_deviation`, `baseline_mean`; computed `percent_change` |
+| Level of service | `baseline_los_grade`, `intervention_los_grade` |
+| Provenance and slips | `input_origins`, `uncontrolled_movements` |
+
+- **Simulation comparisons** use matched pairs from a `ReplicationSet`: `mean_change` is the mean of the per-pair differences (intervention − baseline) and `standard_deviation` their spread (required with two or more pairs, not allowed with one). `replication_set_id` and at least one used pair are required. A negative change in delay or queue is an improvement.
+- **HCM comparisons** have no runs: no `replication_set_id`, no pairs, and `mean_change` is the plain difference.
+- **`mean_change` may be negative**, unlike `KpiResult.value`; the intervention mean (`baseline_mean + mean_change`) may not.
+- **`baseline_mean`** is the baseline mean over the used pairs, which can differ from the baseline `KpiResult` when pairs were left out. `percent_change` = 100 × `mean_change` / `baseline_mean`; it is empty when the baseline mean is 0.
+- **Level of service** has no numeric change: an `ok` LOS comparison holds both grades and no numbers.
+- Missing values follow section 6.3: without status `ok` there is no change, no grade, no pair, no origin, and a `reason` is required.
+- **Both scenario IDs are stored** (the same exception as `KpiResult.scenario_id`): an HCM comparison has no `ReplicationSet` to look them up from. For simulation comparisons the KPI engine checks that they agree with the set.
 
 ---
 
@@ -538,7 +571,7 @@ Rules that need several objects at once cannot live inside one model, and are ch
 
 ## 7.7 Calculated values are properties, not inputs
 
-Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`, `value_computation`, `is_shared_value`.
+Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`, `value_computation`, `is_shared_value`, `percent_change`.
 
 ---
 
@@ -586,6 +619,38 @@ The canonical model defines shared meanings and structures. It intentionally doe
 
 Canonical entities do not contain SUMO topology. A separate mapping layer links movements to SUMO routes, lanes to SUMO lanes, and detectors and traffic-light controlled links to their Jaadah identities. This keeps generated SUMO identifiers from becoming application-level identities.
 
+The study area's network IDs, parent relationships, and source/SUMO mappings
+live in `data/processed/road_network/network_mappings.json`. This is the single
+configuration used to define the network. `NetworkMappingConfig` builds
+canonical objects from those records through `canonical_intersection`,
+`canonical_approaches`, and `canonical_movements`.
+
+`approach_lanes` holds the canonical lane definitions, while `lane_mappings`
+connects them to SUMO lane segments. A known lane may still be waiting for its
+SUMO mapping. The checks catch inconsistent references and ownership; creating
+canonical objects from the same records does not independently confirm their
+geographic correctness. See [Network mapping](network_mapping.md) for the full
+rules, M7 usage, and test commands.
+
+`DetectorMapping.lane_id` is an optional canonical association. Its separate
+`sumo_lane_id` and `sumo_position_m` fields describe an exact modeled location:
+both may be absent/null, or both must be supplied. Lane IDs are trimmed and
+nonblank; positions must be finite, nonnegative numbers, excluding booleans,
+in metres from the SUMO lane start along travel direction. Network validation
+checks external lane existence, inclusive lane-length bounds, and membership
+in the canonical lane chain when that mapping is available. Any chain segment
+may be selected. Pending mappings cannot establish membership, and unresolved
+detectors may still omit exact locations.
+
+The populated 16-detector synthetic baseline uses 1 m before the selected lane endpoint.
+Detectors 1-12 reference modeled signal entries; 13-16 reference uncontrolled
+slip/bypass endpoints, not necessarily physical stop lines. These modeled
+assumptions are not surveyed RCRC locations or defaults for other sources.
+The configuration contains 16 synthetic detector mappings at site `"9"`.
+Shared detectors 2 and 10 require allocation; the other 14 are usable. These
+statuses do not define allocation algorithms or split proportions. Catalogue
+provenance and mapping scope are documented in [Network mapping](network_mapping.md).
+
 ## 9.2 Demand transformation is separate
 
 The models do not decide how observed detector counts become movement demand (e.g. splitting 100 detector vehicles 70/30 between two movements). That rule belongs to the Traffic Demand Transformation component, so traffic-domain assumptions are not hidden inside structural validation.
@@ -600,7 +665,7 @@ The simulation pipeline turns SUMO output files into canonical records: vehicle 
 
 ## 9.5 KPI calculation is separate
 
-The output records are simulation measurements. The KPI engine (`backend/services/kpi/`) turns them into `KpiResult`s: it derives lane groups, applies the HCM method, aggregates to 15-minute intervals and rolls movements up to approaches and the intersection. Anomaly detection, forecasting and recommendations are also separate application components.
+The output records are simulation measurements. The KPI engine (`backend/analytics/kpi/`, documented in `kpi_engine.md`) turns them into `KpiResult`s and `KpiComparison`s: it derives lane groups, applies the HCM method, aggregates to 15-minute intervals and rolls movements up to approaches and the intersection. Anomaly detection, forecasting and recommendations are also separate application components.
 
 ---
 
@@ -669,7 +734,7 @@ State         CycleQueueRecord        for live views)
 Visualization  KPI engine (+ ApproachLane, MovementAttributes,
                SignalProgram, SimulationDemand)
                  ↓
-             KpiResult
+     KpiResult, KpiComparison
                  ↓
         Storage, API, dashboard
 ```
@@ -685,3 +750,7 @@ Together, these structures form the common data language used across the Jaadah 
 | Oct 2026 (Sprint 1) | 16 initial models in five areas |
 | 14–17 Oct 2026 | Added `KpiResult` and its enums and tables (`kpis.py`); `MovementAttributes` and `ApproachLane`; `VehicleDelayRecord`, `IncompletePassage` and `CycleQueueRecord`; `ReplicationPair` and `ReplicationSet`; `SimulationConfig.clearance_duration_s`. Shared-lane reporting (Option C) with lane and lane-group levels |
 | 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
+| 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
+| 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
+| 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |
+| 20 Oct 2026 (KPI comparison) | Added `KpiComparison` (baseline vs intervention over matched pairs, computed `percent_change`) and `UncontrolledMovements` with `KpiResult.uncontrolled_movements`. Lane-group ID examples updated to the engine's format (`APP_E_LT`); KPI engine location updated to `backend/analytics/kpi/` |

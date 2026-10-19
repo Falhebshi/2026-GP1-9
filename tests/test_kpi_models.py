@@ -14,6 +14,7 @@ from jaadah.models.kpis import (
     KpiUnit,
     LevelOfServiceGrade,
     InputOrigin,
+    UncontrolledMovements,
     ValueComputation,
 )
 
@@ -935,3 +936,83 @@ def test_shared_value_storage_round_trip():
 
     assert reloaded == original
     assert reloaded.is_shared_value is True
+
+
+# ============================================================
+# UNCONTROLLED RIGHT-TURN TAG (kpi_engine.md section 11.3)
+# ============================================================
+
+def approach_data(**overrides):
+    """A valid approach-level simulation delay result."""
+
+    return valid_kpi_data(
+        level="approach",
+        movement_id=None,
+        approach_id="APP_S",
+        **overrides,
+    )
+
+
+def test_simulation_result_includes_slips():
+    result = KpiResult(**approach_data(uncontrolled_movements="included"))
+
+    assert result.uncontrolled_movements == UncontrolledMovements.INCLUDED
+
+
+def test_hcm_result_excludes_slips():
+    result = KpiResult(
+        **approach_data(
+            method="hcm",
+            run_ids=[],
+            input_origins=["observed", "modelled_assumption"],
+            uncontrolled_movements="excluded",
+        )
+    )
+
+    assert result.uncontrolled_movements == UncontrolledMovements.EXCLUDED
+
+
+def test_tag_is_optional():
+    assert KpiResult(**approach_data()).uncontrolled_movements is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"uncontrolled_movements": "excluded"},
+        {
+            "method": "hcm",
+            "run_ids": [],
+            "input_origins": ["observed"],
+            "uncontrolled_movements": "included",
+        },
+    ],
+)
+def test_tag_must_match_the_method(overrides):
+    with pytest.raises(ValidationError, match="cannot be"):
+        KpiResult(**approach_data(**overrides))
+
+
+def test_tag_not_allowed_on_movements():
+    with pytest.raises(ValidationError, match="only used on approach"):
+        KpiResult(**valid_kpi_data(uncontrolled_movements="included"))
+
+
+def test_tag_not_allowed_without_value():
+    with pytest.raises(ValidationError, match="must not have uncontrolled"):
+        KpiResult(
+            **approach_data(
+                status="unavailable",
+                value=None,
+                reason="a part of this element has no result",
+                input_origins=[],
+                uncontrolled_movements="included",
+            )
+        )
+
+
+def test_tag_survives_storage_round_trip():
+    original = KpiResult(**approach_data(uncontrolled_movements="included"))
+    reloaded = KpiResult(**original.model_dump(exclude=COMPUTED_FIELDS))
+
+    assert reloaded == original

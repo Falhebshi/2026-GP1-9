@@ -10,6 +10,8 @@ from pydantic import (
     model_validator,
 )
 
+from .scenario import ReplicationPair
+
 
 # ============================================================
 # ENUMS
@@ -118,6 +120,26 @@ class LevelOfServiceGrade(str, Enum):
     F = "F"
 
 
+class UncontrolledMovements(str, Enum):
+    """
+    Whether an approach or intersection value covers the uncontrolled
+    right-turn slips (docs/kpi_engine.md section 11.3). Simulation
+    results include them; HCM results exclude them, because a slip
+    has no lane group. The dashboard shows it as a tag.
+    """
+
+    INCLUDED = "included"
+    EXCLUDED = "excluded"
+
+
+# The only tag each method can carry: measured values always include
+# the slips, HCM values always exclude them.
+UNCONTROLLED_TAG_BY_METHOD: dict[KpiMethod, UncontrolledMovements] = {
+    KpiMethod.SIMULATION: UncontrolledMovements.INCLUDED,
+    KpiMethod.HCM: UncontrolledMovements.EXCLUDED,
+}
+
+
 # Units each KPI may be reported in (backlog requirement 37).
 ALLOWED_KPI_UNITS: dict[KpiName, set[KpiUnit]] = {
     KpiName.CONTROL_DELAY: {KpiUnit.SECONDS_PER_VEHICLE},
@@ -206,6 +228,10 @@ class KpiResult(BaseModel):
     in measured_on_lane_id or measured_on_lane_group_id; the dashboard
     shows such values with a "Shared lane" tag (is_shared_value).
 
+    An approach or intersection result whose element has uncontrolled
+    right-turn slips says whether its value includes or excludes them
+    in uncontrolled_movements (None when the element has no slip).
+
     value_computation, replication_count and is_shared_value are
     computed fields: they appear in model_dump() and JSON output but
     cannot be passed in. For storage, dump with exclude= those three
@@ -238,6 +264,7 @@ class KpiResult(BaseModel):
 
     measured_on_lane_id: str | None = None
     measured_on_lane_group_id: str | None = None
+    uncontrolled_movements: UncontrolledMovements | None = None
 
     interval_start: datetime
     interval_end: datetime
@@ -499,6 +526,39 @@ class KpiResult(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_uncontrolled_tag(self) -> "KpiResult":
+        """
+        The slip tag describes a combined value: approach or
+        intersection level, status 'ok', and the one tag its method
+        can carry.
+        """
+
+        tag = self.uncontrolled_movements
+
+        if tag is None:
+            return self
+
+        if self.level not in {KpiLevel.APPROACH, KpiLevel.INTERSECTION}:
+            raise ValueError(
+                "uncontrolled_movements is only used on approach and "
+                "intersection results"
+            )
+
+        if self.status != KpiStatus.OK:
+            raise ValueError(
+                "a result without a value must not have "
+                "uncontrolled_movements"
+            )
+
+        if tag != UNCONTROLLED_TAG_BY_METHOD[self.method]:
+            raise ValueError(
+                f"{self.method.value} results cannot be "
+                f"'{tag.value}' for uncontrolled movements"
+            )
+
+        return self
+
+    @model_validator(mode="after")
     def validate_runs_for_method(self) -> "KpiResult":
         """
         Simulation results summarize at least one run. HCM results may
@@ -596,3 +656,366 @@ class KpiResult(BaseModel):
             self.measured_on_lane_id is not None
             or self.measured_on_lane_group_id is not None
         )
+
+
+# ============================================================
+# KPI COMPARISON
+# ============================================================
+
+class KpiComparison(BaseModel):
+    """
+    The change in one KPI for one element and one interval between a
+    baseline and an intervention scenario (docs/kpi_engine.md
+    section 12).
+
+    Simulation comparisons use matched pairs from a ReplicationSet:
+    mean_change is the mean of the per-pair differences (intervention
+    minus baseline) over used_pairs, and standard_deviation is their
+    spread. A negative change in delay or queue is an improvement.
+    baseline_mean is the baseline mean over the same pairs, the
+    denominator of percent_change.
+
+    HCM comparisons have no runs: used_pairs and replication_set_id
+    are empty, and mean_change is the plain difference.
+
+    Level of service is a letter, so it has no change: a comparison of
+    LOS holds baseline_los_grade and intervention_los_grade instead.
+
+    Both scenario IDs are always stored (as KpiResult keeps
+    scenario_id): an HCM comparison has no ReplicationSet to look
+    them up from. For simulation comparisons the KPI engine checks
+    that they agree with the ReplicationSet.
+
+    percent_change is a computed field. For storage, dump with
+    exclude={"percent_change"}; otherwise reloading the dump fails,
+    because extra fields are forbidden.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    kpi: KpiName
+    level: KpiLevel
+
+    lane_id: str | None = None
+    lane_group_id: str | None = None
+    movement_id: str | None = None
+    approach_id: str | None = None
+    intersection_id: str | None = None
+
+    interval_start: datetime
+    interval_end: datetime
+
+    unit: KpiUnit
+    method: KpiMethod
+
+    baseline_scenario_id: str
+    intervention_scenario_id: str
+    replication_set_id: str | None = None
+    used_pairs: list[ReplicationPair] = Field(default_factory=list)
+
+    status: KpiStatus
+    reason: str | None = None
+
+    mean_change: float | None = None
+    standard_deviation: float | None = Field(default=None, ge=0)
+    baseline_mean: float | None = Field(default=None, ge=0)
+
+    baseline_los_grade: LevelOfServiceGrade | None = None
+    intervention_los_grade: LevelOfServiceGrade | None = None
+
+    input_origins: list[InputOrigin] = Field(default_factory=list)
+    uncontrolled_movements: UncontrolledMovements | None = None
+
+    @field_validator("baseline_scenario_id", "intervention_scenario_id")
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator(
+        "lane_id",
+        "lane_group_id",
+        "movement_id",
+        "approach_id",
+        "intersection_id",
+        "replication_set_id",
+        "reason",
+    )
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("value must not be empty")
+
+        return value
+
+    @field_validator("input_origins")
+    @classmethod
+    def validate_input_origins(
+        cls,
+        values: list[InputOrigin],
+    ) -> list[InputOrigin]:
+        if len(values) != len(set(values)):
+            raise ValueError("input_origins must not contain duplicates")
+
+        return values
+
+    @field_validator("interval_start", "interval_end")
+    @classmethod
+    def validate_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp must include timezone information")
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError("timestamp must use Riyadh time (UTC+03:00)")
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "KpiComparison":
+        if self.interval_end <= self.interval_start:
+            raise ValueError("interval_end must be later than interval_start")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_scenarios(self) -> "KpiComparison":
+        if self.baseline_scenario_id == self.intervention_scenario_id:
+            raise ValueError(
+                "baseline and intervention scenarios must be different"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_level_ids(self) -> "KpiComparison":
+        ids = {
+            KpiLevel.LANE: self.lane_id,
+            KpiLevel.LANE_GROUP: self.lane_group_id,
+            KpiLevel.MOVEMENT: self.movement_id,
+            KpiLevel.APPROACH: self.approach_id,
+            KpiLevel.INTERSECTION: self.intersection_id,
+        }
+
+        if ids[self.level] is None:
+            raise ValueError(
+                f"{self.level.value}-level comparisons require "
+                f"{self.level.value}_id"
+            )
+
+        for level, element_id in ids.items():
+            if level != self.level and element_id is not None:
+                raise ValueError(
+                    f"{self.level.value}-level comparisons must not have "
+                    f"{level.value}_id"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_kpi_definition(self) -> "KpiComparison":
+        """Unit, method and level follow the same tables as KpiResult."""
+
+        if self.unit not in ALLOWED_KPI_UNITS[self.kpi]:
+            raise ValueError(
+                f"unit '{self.unit.value}' is not allowed for {self.kpi.value}"
+            )
+
+        if (self.kpi, self.method) not in VALUE_COMPUTATIONS:
+            raise ValueError(
+                f"{self.kpi.value} is not calculated "
+                f"with the {self.method.value} method"
+            )
+
+        if self.level not in ALLOWED_KPI_LEVELS[(self.kpi, self.method)]:
+            raise ValueError(
+                f"{self.kpi.value} ({self.method.value}) is not "
+                f"reported at {self.level.value} level"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_pairs_for_method(self) -> "KpiComparison":
+        """
+        Simulation comparisons come from a ReplicationSet; HCM
+        comparisons have no runs.
+        """
+
+        if self.method == KpiMethod.SIMULATION:
+            if self.replication_set_id is None:
+                raise ValueError(
+                    "simulation comparisons require a replication_set_id"
+                )
+
+            if self.status == KpiStatus.OK and not self.used_pairs:
+                raise ValueError(
+                    "a simulation comparison with status 'ok' "
+                    "requires at least one used pair"
+                )
+
+        elif self.replication_set_id is not None or self.used_pairs:
+            raise ValueError(
+                "HCM comparisons have no replication set or pairs"
+            )
+
+        if self.status != KpiStatus.OK and self.used_pairs:
+            raise ValueError(
+                "a comparison without a value must not list used pairs"
+            )
+
+        run_ids = [
+            run_id
+            for pair in self.used_pairs
+            for run_id in (pair.baseline_run_id, pair.intervention_run_id)
+        ]
+
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError("each run may appear only once in used_pairs")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_status_and_values(self) -> "KpiComparison":
+        is_grade = self.kpi == KpiName.LEVEL_OF_SERVICE
+        numbers = (self.mean_change, self.standard_deviation, self.baseline_mean)
+        grades = (self.baseline_los_grade, self.intervention_los_grade)
+
+        if self.status != KpiStatus.OK:
+            if any(v is not None for v in numbers + grades):
+                raise ValueError(
+                    f"a comparison with status '{self.status.value}' "
+                    "must not have a value"
+                )
+
+            if self.reason is None:
+                raise ValueError(
+                    f"a comparison with status '{self.status.value}' "
+                    "requires a reason"
+                )
+
+            return self
+
+        if is_grade:
+            if any(v is not None for v in numbers):
+                raise ValueError(
+                    "level_of_service comparisons hold the two grades, "
+                    "not a numeric change"
+                )
+
+            if any(g is None for g in grades):
+                raise ValueError(
+                    "a level_of_service comparison with status 'ok' "
+                    "requires both grades"
+                )
+
+            return self
+
+        if any(g is not None for g in grades):
+            raise ValueError("grades are only allowed for level_of_service")
+
+        if self.mean_change is None or self.baseline_mean is None:
+            raise ValueError(
+                "a comparison with status 'ok' requires mean_change "
+                "and baseline_mean"
+            )
+
+        if self.baseline_mean + self.mean_change < -1e-9:
+            raise ValueError(
+                "the intervention mean (baseline_mean + mean_change) "
+                "must not be negative"
+            )
+
+        replicated = len(self.used_pairs) > 1
+
+        if replicated and self.standard_deviation is None:
+            raise ValueError(
+                "comparisons over more than one pair require "
+                "standard_deviation"
+            )
+
+        if not replicated and self.standard_deviation is not None:
+            raise ValueError(
+                "standard_deviation requires more than one pair"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_origins(self) -> "KpiComparison":
+        if self.status != KpiStatus.OK:
+            if self.input_origins:
+                raise ValueError(
+                    "a comparison without a value must not have input_origins"
+                )
+
+            return self
+
+        if not self.input_origins:
+            raise ValueError(
+                "a comparison with status 'ok' requires "
+                "at least one input origin"
+            )
+
+        if (
+            self.method == KpiMethod.SIMULATION
+            and InputOrigin.SIMULATED not in self.input_origins
+        ):
+            raise ValueError(
+                "a simulation-based comparison must include "
+                "'simulated' in input_origins"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_uncontrolled_tag(self) -> "KpiComparison":
+        tag = self.uncontrolled_movements
+
+        if tag is None:
+            return self
+
+        if self.level not in {KpiLevel.APPROACH, KpiLevel.INTERSECTION}:
+            raise ValueError(
+                "uncontrolled_movements is only used on approach and "
+                "intersection comparisons"
+            )
+
+        if self.status != KpiStatus.OK:
+            raise ValueError(
+                "a comparison without a value must not have "
+                "uncontrolled_movements"
+            )
+
+        if tag != UNCONTROLLED_TAG_BY_METHOD[self.method]:
+            raise ValueError(
+                f"{self.method.value} comparisons cannot be "
+                f"'{tag.value}' for uncontrolled movements"
+            )
+
+        return self
+
+    @computed_field
+    @property
+    def percent_change(self) -> float | None:
+        """
+        mean_change as a percentage of baseline_mean (e.g. -10.0 for a
+        10 % reduction). None without a value, for level of service,
+        and when the baseline mean is 0 (no percentage of zero).
+        """
+
+        if self.mean_change is None or not self.baseline_mean:
+            return None
+
+        return 100 * self.mean_change / self.baseline_mean
