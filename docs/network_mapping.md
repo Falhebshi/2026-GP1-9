@@ -4,10 +4,10 @@
 configuration for the study area. It defines the intersection, approaches,
 movements, and their links to source detectors and SUMO.
 
-The file contains four approaches and 18 movement mappings. The canonical lane,
-lane mapping, detector, and queue-detection lane collections are empty until
-verified definitions are available. Traffic-count allocation belongs to demand
-transformation.
+The file contains four approaches, 18 movement mappings, 16 canonical approach
+lanes, 16 ordered SUMO lane mappings, and 16 synthetic detector mappings at
+site `"9"`. Queue-detection lane lists remain empty pending their separate
+implementation decision.
 
 ## Canonical models
 
@@ -35,7 +35,7 @@ not independently verify their geographic correctness.
 
 `schema_version` identifies the JSON structure and must be `"2.0"`.
 `mapping_version` is a nonempty data revision label; the current value is
-`"2.0-review"`. It does not have to match the schema version.
+`"2.1-lanes"`. It does not have to match the schema version.
 
 | Field | Purpose |
 | --- | --- |
@@ -93,11 +93,178 @@ and `unresolved` requires none. A known lane may have an unresolved detector
 association. An approach-tagged detector cannot claim an approachless movement,
 such as a tunnel path.
 
-Detector identity is `(source, site_id, detector_id)`. Multiple detectors on the
-same lane do not automatically represent separate traffic contributions. Demand
+Detector identity is `(source, site_id, detector_id)`. `DetectorMapping.site_id`
+is required and must be a nonblank string, consistent with `TrafficObservation`.
+Surrounding whitespace is trimmed before identity/uniqueness checks. Missing,
+null, empty, and whitespace-only site IDs are rejected; there is no implicit
+site default or wildcard. A configuration may still have an empty
+`detector_mappings` collection.
+
+### Exact detector locations
+
+`DetectorMapping` optionally records `sumo_lane_id` and `sumo_position_m`.
+Supply both values together or leave both absent/null. The SUMO lane ID is
+trimmed and must not be blank. The position is a finite, nonnegative number
+(not a boolean), measured in metres from the selected SUMO lane's start,
+increasing along the direction of travel. There is no default lane or position.
+
+The canonical `lane_id` identifies a Jaadah lane; `sumo_lane_id` selects the
+specific simulator segment carrying the detector. With network validation,
+the selected lane must exist, must not be an internal junction connector,
+and must have a valid modeled length. Position bounds are inclusive:
+`0 <= sumo_position_m <= lane_length`.
+
+When a canonical lane mapping is available, the selected SUMO lane must belong
+to its chain. It may be any segment, not necessarily the terminal segment.
+When that mapping is pending, network validation still checks the explicit
+SUMO lane and position, but cannot establish canonical chain membership.
+Missing exact locations remain supported, including unresolved detector
+mappings. Location availability does not change candidate/status rules.
+These optional fields extend schema 2.0 without changing the current mapping
+data revision; configurations without them remain valid.
+
+For the 16 populated synthetic detectors, the approved modeled placement is
+1 m upstream of each selected lane endpoint: `sumo_position_m = lane_length - 1`.
+Detectors 1-12 use modeled signal-entry endpoints. Detectors 13-16 use selected
+uncontrolled slip/bypass lane endpoints, which are not automatically physical
+stop lines. These are synthetic assumptions, not surveyed RCRC locations.
+This convention is specific to the synthetic baseline, not a universal
+restriction or default. These records contain explicit lane IDs and positions.
+Detectors 2 and 10 are shared left/through lanes with
+`requires_allocation`; the other 14 are `usable`. No allocation algorithm or
+split proportions are defined by these mappings.
+
+Multiple detectors on the same lane do not automatically represent separate
+traffic contributions. Demand
 transformation decides how observations are combined or allocated, including
 ramp and U-turn counts. Candidate movements are not inferred from every route
 that crosses a lane.
+
+## Canonical lane inventory
+
+### Option A: local-maneuver attribution
+
+For these 16 approach lanes, `served_movement_ids` identifies the canonical
+movements representing the local maneuvers supported at this intersection.
+It is not an exhaustive list of complete SUMO routes using the lane. The
+assignments follow the verified lane connections, including the shared
+left/straight lanes `LANE_W_2` and `LANE_E_2`.
+
+For example, `LANE_W_3` serves `MOV_W_E`; it does not separately list
+`MOV_W_E_OFFRAMP` simply because some through vehicles later exit. Likewise,
+`LANE_E_3` and `LANE_E_4` serve `MOV_E_W` without adding `MOV_E_W_ONRAMP`.
+An east-origin U-turn passing a west lane does not become a west-owned local
+maneuver. Through-detector counts may include these route families.
+
+This attribution does not redefine all canonical `Movement` records as local
+maneuvers. All 18 established movement IDs, complete routes, and signal
+crossings are preserved. M3 declares identities and associations; M7 handles
+observation-to-demand transformation, and M8 handles simulation demand/route
+generation. Option A does not settle allocation rules, route splits, or the
+M7-M8 interpretation of `SimulationDemand.movement_id`. That contract remains
+an explicit downstream decision outside the mapping component.
+
+### Modeled width and storage provenance
+
+All 16 lanes use the approved `lane_width_m = 3.2` as a simulation-model value,
+not a surveyed physical measurement. The current `.net.xml` omits lane widths;
+the inspected network/configurations contain no width override. SUMO's
+[network loader](https://sumo.dlr.de/doxygen/d1/d34/_n_l_handler_8cpp_source.html#l00566)
+uses the
+[3.2 m default constant](https://sumo.dlr.de/doxygen/da/dbd/_std_defs_8h_source.html#l00052)
+when a lane width is omitted. This provenance belongs to the approved current
+network, not to all future network versions. `storage_length_m` is omitted
+because verified storage values are unavailable; summed SUMO segment lengths
+are not a substitute.
+
+### Bounded lane chains and detector compatibility
+
+The following chains run upstream to downstream. All adjacent segments have
+actual SUMO connections; the terminal lane supports the listed local maneuver.
+Internal connector lanes remain in the network topology, not in these lists.
+Indices 1-4 count from the median, including the separate slip/bypass lanes.
+
+The boundary rule is to begin each canonical lane where it becomes individually
+identifiable as one continuous lane within the approach scope. At an upstream
+merge or fan-out, the mapping starts downstream of that branching point rather
+than combining incoming branches or assigning a shared feeder to multiple
+independent lane identities. The chain then follows the lane toward the signal
+entry or slip/bypass endpoint.
+
+Mappings include upstream lane segments beyond the short stop-line segment so
+that future queue analysis can reference the approach's upstream extent. This
+does not establish a queue-measurement boundary, detector placement, or available
+storage length; those require their own decisions. In particular, the east
+approach's 2.27 m terminal segment alone would omit most of the approach where
+queues could form. The exact bounded chains below are modeled scope choices
+supported by network topology, not boundaries prescribed by the detector report.
+
+The detector column is a compatibility reference to the previously reviewed
+16 synthetic assignments at site `"9"`, supported by the Detector Mapping
+Report, Sprint 1 (17 October 2026). The locally stored
+`origin/feature/synthetic-traffic-source` branch at commit `8df8b3e` also
+contains the 16-detector catalogue in
+`traffic_source/synthetic/generator.py` (`TARGET_DETECTORS`). All 16 detector
+IDs, travel directions, and median-based lane numbers agree with this
+inventory. Detectors 2 and 10 use the source's `L` description for the shared
+lanes; detectors 3, 11, and 12 use `T` for straight traffic.
+
+That catalogue is not present in the current checkout and contains no SUMO
+lane IDs or candidate movement sets. All 16 terminal lanes and local movement
+sets match the previously reviewed report assignments, but a separate Hawra
+updated table specifying those fields was not found in the inspected checkout
+or locally stored branch tips. Its independent verification remains pending;
+the catalogue comparison alone does not establish those fields. No branches
+were fetched or switched. The populated detector records follow the approved
+table, with lanes, local movements, and positions verified against the current
+configuration and network. The catalogue establishes source identities
+and lane numbering, not surveyed or simulator-specific positions.
+
+| Canonical lane | Local movement IDs | Ordered SUMO lane IDs | Detector reference |
+| --- | --- | --- | --- |
+| `LANE_E_1` | `MOV_E_S` | `713369663#1.469_3` → `713369663#2-AddedOnRampEdge_3` → `713369663#2_3` | 9 |
+| `LANE_E_2` | `MOV_E_S`, `MOV_E_W` | `713369663#1.469_2` → `713369663#2-AddedOnRampEdge_2` → `713369663#2_2` | 10 |
+| `LANE_E_3` | `MOV_E_W` | `713369663#1.469_1` → `713369663#2-AddedOnRampEdge_1` → `713369663#2_1` | 11 |
+| `LANE_E_4` | `MOV_E_W` | `713369663#1.469_0` → `713369663#2-AddedOnRampEdge_0` → `713369663#2_0` | 12 |
+| `LANE_S_1` | `MOV_S_W` | `539502456#8_3` → `569790079#0_1` | 7 |
+| `LANE_S_2` | `MOV_S_W` | `539502456#8_2` → `569790079#0_0` | 8 |
+| `LANE_S_3` | `MOV_S_E_BYPASS` | `539502456#8_1` → `133973513_1` | 15 |
+| `LANE_S_4` | `MOV_S_E_BYPASS` | `539502456#8_0` → `133973513_0` | 16 |
+| `LANE_W_1` | `MOV_W_N` | `133793906#0-AddedOffRampEdge.26_3` → `133793906#2_2` | 1 |
+| `LANE_W_2` | `MOV_W_N`, `MOV_W_E` | `133793906#0-AddedOffRampEdge.26_2` → `133793906#2_1` | 2 |
+| `LANE_W_3` | `MOV_W_E` | `133793906#0-AddedOffRampEdge.26_1` → `133793906#2_0` | 3 |
+| `LANE_W_4` | `MOV_W_S_SLIP` | `133793906#0-AddedOffRampEdge.26_0` → `133973488#0_0` | 13 |
+| `LANE_N_1` | `MOV_N_E` | `133973525#1.51_3` → `569788806_2` | 4 |
+| `LANE_N_2` | `MOV_N_E` | `133973525#1.51_2` → `569788806_1` | 5 |
+| `LANE_N_3` | `MOV_N_E` | `133973525#1.51_1` → `569788806_0` | 6 |
+| `LANE_N_4` | `MOV_N_W_SLIP` | `133973525#1.51_0` → `1311808806_0` | 14 |
+
+The scope is 12 signal-entry lanes plus four slip/bypass lanes. Peripheral
+ramps, U-turn paths, tunnels, and outgoing roads are not extra canonical
+approach lanes. Boundaries deliberately avoid branching systems:
+
+- East chains start downstream of the mainline/E2 merge at `J1`, rather than
+  choosing one of its incoming branches. The terminal edge is only 2.27 m long;
+  it alone does not describe the upstream approach or queue storage.
+- W1 starts at `.26_3`, downstream of the E4 U-turn entry. Its continuation to
+  `133793906#2_2` is valid, but it must not be extended backward through E4.
+  Mainline vehicles can reach the lane through lateral changes on `.26`.
+- North chains start at `133973525#1.51`, after the fan-out where one upstream
+  lane feeds both the outer signal lane and slip feeder. South chains start
+  at `539502456#8`, after the corresponding signal-lane fan-out.
+- S4 begins at `539502456#8_0`, which has no incoming external connection but
+  has geometry and a legal outgoing connection to `133973513_0`. It is an
+  approved modeled lane beginning there, not evidence of a missing connection
+  that this task should repair.
+- West and north slips end at `133973488#0_0` and `1311808806_0`, respectively,
+  before their receiving-road merge systems. The south bypass chains end at
+  `133973513_0/1`, before the subsequent outgoing-road segments.
+
+These are approved modeled boundaries, not independent verification of road
+markings or surveyed lane formation. Queue-measurement policy and broader
+lane completeness checks remain deferred. The required detector `site_id`
+contract is finalized, and the 16 synthetic detector records are populated.
+No model or validator redesign was needed for this population.
 
 ## Loading and validation
 
@@ -126,6 +293,13 @@ mapping tests.
 `validate_network_mappings(config, network_path)` returns an empty list when
 its checks pass, or a list of errors. It checks the mappings that are present;
 it does not require every canonical lane to have a SUMO mapping.
+
+General runtime validation checks consistency of the supplied mappings and
+permits incomplete drafts. The existing integration tests enforce the approved
+synthetic baseline: exactly 16 canonical lanes, 16 lane mappings, 18 movement
+mappings, and 16 synthetic detectors, with the approved associations, allocation
+statuses, and modeled lane-end minus 1 m detector placement. Baseline
+completeness is enforced by these tests, not a mandatory runtime readiness check.
 
 Lane-based code can obtain a required mapping through
 `require_lane_mapping(config, lane_id)` in `jaadah.mapping.validator`. It returns
@@ -185,7 +359,7 @@ python -m pytest tests/test_mapping_validator.py
 | `tests/test_mapping_loader.py` | Loading, optional network checks, missing files, and invalid references. |
 | `tests/test_mapping_validator.py` | Lane connections and ordering, route loops, required-mapping lookup, and checksum portability. |
 | `tests/test_movement_smoke.py` | Runner preparation, mocked TraCI behavior, and direct CLI invocation. |
-| `tests/test_network_mapping_integration.py` | The actual configuration/network and a reference fingerprint of all 18 movement records, including routes and signal crossings. |
+| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings. |
 
 The Python suite includes static network checks and mocked runner tests.
 Live SUMO movement tests run separately; see

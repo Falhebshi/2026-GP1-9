@@ -189,16 +189,18 @@ class DetectorMapping(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source: TrafficObservationSource
-    site_id: str | None = None
+    site_id: str
     detector_id: str
     intersection_id: str
     approach_id: str | None = None
     lane_id: str | None = None
+    sumo_lane_id: str | None = None
+    sumo_position_m: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     movement_ids: list[str] = Field(default_factory=list)
     mapping_status: MappingStatus
     mapping_note: str | None = None
 
-    @field_validator("detector_id", "intersection_id")
+    @field_validator("site_id", "detector_id", "intersection_id")
     @classmethod
     def validate_required_ids(cls, value: str) -> str:
         """Reject empty required IDs."""
@@ -208,7 +210,7 @@ class DetectorMapping(BaseModel):
             raise ValueError("identifier must not be empty")
         return value
 
-    @field_validator("site_id", "approach_id", "lane_id")
+    @field_validator("approach_id", "lane_id", "sumo_lane_id")
     @classmethod
     def validate_optional_ids(cls, value: str | None) -> str | None:
         """Reject blank optional IDs when supplied."""
@@ -219,6 +221,23 @@ class DetectorMapping(BaseModel):
         if not value:
             raise ValueError("identifier must not be empty")
         return value
+
+    @field_validator("sumo_position_m", mode="before")
+    @classmethod
+    def reject_boolean_position(cls, value):
+        """A boolean is not a distance, even though Python treats it as numeric."""
+
+        if isinstance(value, bool):
+            raise ValueError("SUMO position must be numeric, not boolean")
+        return value
+
+    @model_validator(mode="after")
+    def validate_sumo_location(self) -> "DetectorMapping":
+        """An exact SUMO location needs both a lane and a position."""
+
+        if (self.sumo_lane_id is None) != (self.sumo_position_m is None):
+            raise ValueError("sumo_lane_id and sumo_position_m must be supplied together")
+        return self
 
     @field_validator("movement_ids")
     @classmethod
