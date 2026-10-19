@@ -480,7 +480,7 @@ A queue length or storage ratio names the lane it was measured on (`measured_on_
 
 ## 11.3 Uncontrolled right turns
 
-The uncontrolled right-turn slips (section 1) are **included** in the measured delay, queue duration, throughput, queue length and storage ratio of their approach and of the intersection; these results are tagged "includes uncontrolled right turns". They are **excluded** from the HCM delay, because they have no lane group (section 8.3); the HCM delays of an approach with a slip, and of the intersection, are tagged "excludes uncontrolled right turns". A slip has no volume-to-capacity ratio or capacity.
+The uncontrolled right-turn slips (section 1) are **included** in the measured delay, queue duration, throughput, queue length and storage ratio of their approach and of the intersection; these results carry `uncontrolled_movements = included` ("includes uncontrolled right turns" on the dashboard). They are **excluded** from the HCM delay, because they have no lane group (section 8.3); the HCM delays of an approach with a slip, and of the intersection, carry `uncontrolled_movements = excluded` ("excludes uncontrolled right turns"). The model accepts only `included` on simulation results and only `excluded` on HCM results. A slip has no volume-to-capacity ratio or capacity.
 
 ## 11.4 Missing and not-applicable parts
 

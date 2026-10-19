@@ -16,7 +16,7 @@ combined value is not applicable.
 Uncontrolled right-turn slips are included in the measured delay,
 queue duration, throughput, queue length and storage ratio of their
 approach and of the intersection, and excluded from the HCM delay; the
-results say so in uncontrolled_note.
+results say so in uncontrolled_movements (the KpiResult field).
 
 Level of service of measured delays is graded after the runs are
 combined (section 7.6); HCM levels of service are graded here.
@@ -31,7 +31,11 @@ from backend.analytics.kpi.intervals import AnalysisInterval
 from backend.analytics.kpi.lane_groups import LaneGroup
 from backend.analytics.kpi.parameters import level_of_service
 from backend.analytics.kpi.queue import LaneQueue, storage_ratio
-from jaadah.models.kpis import KpiStatus, LevelOfServiceGrade
+from jaadah.models.kpis import (
+    KpiStatus,
+    LevelOfServiceGrade,
+    UncontrolledMovements,
+)
 from jaadah.models.network import (
     ApproachLane,
     Movement,
@@ -40,8 +44,8 @@ from jaadah.models.network import (
 )
 
 
-INCLUDES_UNCONTROLLED = "includes uncontrolled right turns"
-EXCLUDES_UNCONTROLLED = "excludes uncontrolled right turns"
+INCLUDES_UNCONTROLLED = UncontrolledMovements.INCLUDED
+EXCLUDES_UNCONTROLLED = UncontrolledMovements.EXCLUDED
 PART_UNAVAILABLE_REASON = "a part of this element has no result"
 NOTHING_TO_COMBINE_REASON = "no part of this element has a result"
 
@@ -52,7 +56,7 @@ class RolledUp(NamedTuple):
 
     measured_on_lane_id names the lane a queue value comes from;
     is_shared is True when that lane is shared by several movements.
-    uncontrolled_note says whether uncontrolled right turns are
+    uncontrolled_movements says whether uncontrolled right turns are
     included or excluded (None when the element has none).
     """
 
@@ -61,7 +65,7 @@ class RolledUp(NamedTuple):
     reason: str | None = None
     measured_on_lane_id: str | None = None
     is_shared: bool = False
-    uncontrolled_note: str | None = None
+    uncontrolled_movements: UncontrolledMovements | None = None
     los_grade: LevelOfServiceGrade | None = None
 
 
@@ -202,7 +206,7 @@ def throughput_rollup(
 
 
 def _by_approach_and_intersection(
-    movements, movement_attributes, part, combine, uncontrolled_note
+    movements, movement_attributes, part, combine, tag
 ):
     """Combine movement parts per approach and for the intersection."""
 
@@ -222,14 +226,14 @@ def _by_approach_and_intersection(
             combine([part(m) for m in members]),
             members,
             movement_attributes,
-            uncontrolled_note,
+            tag,
         )
 
     results[("intersection", intersection_id)] = _with_note(
         combine([part(m) for m in analysed]),
         analysed,
         movement_attributes,
-        uncontrolled_note,
+        tag,
     )
 
     return results
@@ -404,7 +408,7 @@ def _graded(result: RolledUp, note: str | None) -> RolledUp:
         level_of_service(result.value) if result.status == KpiStatus.OK else None
     )
 
-    return result._replace(los_grade=grade, uncontrolled_note=note)
+    return result._replace(los_grade=grade, uncontrolled_movements=note)
 
 
 # ============================================================
@@ -430,4 +434,4 @@ def _with_note(result, members, movement_attributes, note):
         for m in members
     )
 
-    return result._replace(uncontrolled_note=note if has_slip else None)
+    return result._replace(uncontrolled_movements=note if has_slip else None)

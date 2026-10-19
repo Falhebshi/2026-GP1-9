@@ -205,14 +205,14 @@ def test_slips_are_included_in_measured_delay_with_a_note():
 
     # South: through 10 veh at 20 s, slip 30 veh at 2 s
     assert out[("approach", "APP_S")].value == pytest.approx((200 + 60) / 40)
-    assert out[("approach", "APP_S")].uncontrolled_note == INCLUDES_UNCONTROLLED
-    assert out[("intersection", "INT_01")].uncontrolled_note == INCLUDES_UNCONTROLLED
+    assert out[("approach", "APP_S")].uncontrolled_movements == INCLUDES_UNCONTROLLED
+    assert out[("intersection", "INT_01")].uncontrolled_movements == INCLUDES_UNCONTROLLED
 
 
 def test_approach_without_slip_has_no_note():
     out = measured_delay_rollup(MOVEMENTS, ALL_ATTRIBUTES, all_delays(), INTERVAL)
 
-    assert out[("approach", "APP_E")].uncontrolled_note is None
+    assert out[("approach", "APP_E")].uncontrolled_movements is None
 
 
 def test_unavailable_movement_makes_approach_and_intersection_unavailable():
@@ -409,9 +409,9 @@ def test_hcm_delay_excludes_slips_with_a_note():
     capacity, delays = hcm()
     out = hcm_rollup(GROUPS, MOVEMENTS, ALL_ATTRIBUTES, capacity, delays)
 
-    assert out[("control_delay", "approach", "APP_S")].uncontrolled_note == EXCLUDES_UNCONTROLLED
-    assert out[("control_delay", "approach", "APP_E")].uncontrolled_note is None
-    assert out[("control_delay", "intersection", "INT_01")].uncontrolled_note == EXCLUDES_UNCONTROLLED
+    assert out[("control_delay", "approach", "APP_S")].uncontrolled_movements == EXCLUDES_UNCONTROLLED
+    assert out[("control_delay", "approach", "APP_E")].uncontrolled_movements is None
+    assert out[("control_delay", "intersection", "INT_01")].uncontrolled_movements == EXCLUDES_UNCONTROLLED
 
 
 def test_approach_volume_to_capacity_is_the_highest_group():
