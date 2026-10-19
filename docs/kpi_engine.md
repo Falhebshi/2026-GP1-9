@@ -35,6 +35,7 @@ backend/
         ├── lane_groups.py  HCM lane groups derived from the approach lanes
         ├── capacity.py     HCM saturation flow, capacity, v/c and critical v/c
         ├── hcm_delay.py    HCM control delay and level of service
+        ├── rollup.py       approach and intersection values
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
@@ -44,7 +45,8 @@ backend/
             ├── test_delay.py
             ├── test_lane_groups.py
             ├── test_capacity.py
-            └── test_hcm_delay.py
+            ├── test_hcm_delay.py
+            └── test_rollup.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -105,7 +107,7 @@ Queue duration is measured per vehicle (the time it stood still inside the zone,
 
 ## 2.4 Roll-up
 
-Results are combined from lane and movement level up to approach and intersection level. An approach's queue length is the longest of its lanes; an approach's volume-to-capacity ratio is that of its critical (highest) lane group.
+Results are combined from lane and movement level up to approach and intersection level: delays are averaged, counts and capacities are added, and volume-to-capacity ratios, queue lengths and storage ratios take the worst value. The full rules are in section 11.
 
 ---
 
@@ -447,3 +449,42 @@ The HCM notes that Equation 19-19 does not give an accurate uniform delay for a 
 Each lane group's HCM level of service is graded from its control delay and its volume-to-capacity ratio with the thresholds of section 3.2, including the override of section 3.3 (LOS F when v/c > 1.0).
 
 A movement's HCM delay is the average of the delays of the lane groups it uses, weighted by the movement's flow in each (the weighting of Equation 19-28). Its level of service is graded from that delay and the movement's volume-to-capacity ratio (section 9.6). Approach and intersection HCM delays and levels of service are combined in the roll-up (section 2.4), from delay alone (section 3.3).
+
+---
+
+# 11. Roll-up to Approach and Intersection
+
+Implemented in `backend/analytics/kpi/rollup.py`. The roll-up combines the results of one interval of one run; results of several runs are combined afterwards.
+
+## 11.1 Rules
+
+| KPI | Movement | Approach | Intersection |
+|---|---|---|---|
+| Measured control delay | section 7 | mean of its movements, weighted by completed vehicles | mean of all movements, weighted by completed vehicles |
+| Queue duration | section 7 | as measured control delay | as measured control delay |
+| Throughput | section 5 | sum of its movements | sum of all movements |
+| Queue length (m and veh) | longest of the lanes it uses | longest of its lanes | longest of all lanes |
+| Queue storage ratio | highest of the lanes it uses | highest of its lanes | highest of all lanes |
+| HCM control delay | section 10.4 | mean of its lane groups, weighted by lane-group demand (Equation 19-28) | mean of all lane groups, weighted by demand (Equation 19-29) |
+| HCM level of service | section 10.4 | from the approach delay alone | from the intersection delay alone |
+| Volume-to-capacity ratio | section 9.6 | highest of its lane groups | critical v/c ratio Xc (section 9) |
+| Capacity | section 9.6 | sum of its lane groups | not reported |
+
+Averages are weighted so that a busy movement counts more than a quiet one: an approach where 300 vehicles waited 10 s and 100 vehicles waited 50 s has a mean delay of (300 × 10 + 100 × 50) / 400 = 20 s, the delay of the average vehicle, not 30 s. Ratios and queues are never averaged, because an average would hide the lane that overflows.
+
+Measured levels of service are graded after the runs are combined (section 7.6).
+
+## 11.2 Queue values and the lane they come from
+
+A queue length or storage ratio names the lane it was measured on (`measured_on_lane_id`). For a movement this is the longest of the lanes that serve it; the result is tagged **Shared lane** only when that lane is shared with another movement. Metres and vehicles are each the longest separately, so they can come from different lanes. When two lanes are equal, the first in lane order is named.
+
+## 11.3 Uncontrolled right turns
+
+The uncontrolled right-turn slips (section 1) are **included** in the measured delay, queue duration, throughput, queue length and storage ratio of their approach and of the intersection; these results are tagged "includes uncontrolled right turns". They are **excluded** from the HCM delay, because they have no lane group (section 8.3); the HCM delays of an approach with a slip, and of the intersection, are tagged "excludes uncontrolled right turns". A slip has no volume-to-capacity ratio or capacity.
+
+## 11.4 Missing and not-applicable parts
+
+- If **any** part of an approach or the intersection is `unavailable`, the combined value is `unavailable` ("a part of this element has no result"). A partial value would look complete but leave out the missing part.
+- Parts that are `not_applicable` (for example a movement with no arrivals) are left out. If no part is left, the combined value is `not_applicable`.
+- A lane with no cycle records, or with no known storage length, makes the queue or storage ratio of its movements, its approach and the intersection `unavailable`.
+- All movements must belong to one intersection; otherwise the roll-up raises an error.
