@@ -63,6 +63,11 @@ LANE_UTILIZATION_FACTORS = {
 # (Equation 19-14).
 LEFT_TURN_EQUIVALENT = 1.05
 
+# Critical merge headway for a lane change (Chapter 31, page 31-27);
+# the maximum flow rate at which a lane change can occur is
+# 3,600 / 3.7 = 973 veh/h/ln.
+LANE_CHANGE_CRITICAL_HEADWAY_S = 3.7
+
 # Factors that have no effect at the case-study intersection; each is
 # 1.0 when the condition is absent (pages 19-45 to 19-49).
 HEAVY_VEHICLE_GRADE_FACTOR = 1.0       # passenger cars only, 0 % grade

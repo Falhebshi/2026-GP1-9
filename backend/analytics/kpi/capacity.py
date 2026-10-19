@@ -25,6 +25,7 @@ from backend.analytics.kpi.parameters import (
     LANE_WIDTH_MINIMUM_M,
     LANE_WIDTH_NARROW_LIMIT_M,
     LANE_WIDTH_WIDE_LIMIT_M,
+    LANE_CHANGE_CRITICAL_HEADWAY_S,
     LEFT_TURN_EQUIVALENT,
     PARKING_FACTOR,
     PEDESTRIAN_BICYCLE_FACTOR,
@@ -47,8 +48,9 @@ from jaadah.models.signals import (
 
 
 # Demand distribution (section 9.4): stop when no lane group's flow
-# changes by more than this between two rounds.
-DISTRIBUTION_TOLERANCE_VEH_H = 0.01
+# changes by more than this between two rounds (HCM Chapter 31,
+# Step H: 0.1 veh/h).
+DISTRIBUTION_TOLERANCE_VEH_H = 0.1
 DISTRIBUTION_MAX_ROUNDS = 100
 
 # The product of the factors that do not depend on the lane group.
@@ -74,6 +76,8 @@ def saturation_flow(
     lanes_by_id: dict[str, ApproachLane],
     movement_attributes: dict[str, MovementAttributes],
     left_turn_share: float,
+    left_turn_equivalent: float = LEFT_TURN_EQUIVALENT,
+    include_lane_utilization: bool = True,
 ) -> float:
     """
     Saturation flow of one lane group, in veh/h: N times the adjusted
@@ -82,7 +86,10 @@ def saturation_flow(
 
     left_turn_share is the share of left-turning vehicles in the group
     (P_LT, from 0 to 1): 1 for an exclusive left-turn lane, 0 for a
-    through-only group.
+    through-only group. left_turn_equivalent is E_L (1.05), or the
+    modified E_L,m for a shared lane (Chapter 31, Equation 31-47).
+    include_lane_utilization is False for the lane-choice calculation
+    of Chapter 31, which uses per-lane saturation flows without f_LU.
     """
 
     if not 0 <= left_turn_share <= 1:
@@ -94,10 +101,14 @@ def saturation_flow(
         BASE_SATURATION_FLOW_PC_H_LN
         * group.lane_count
         * lane_width_factor(fmean(widths))
-        * lane_utilization_factor(
-            group.lane_count, _utilization_type(group, movement_attributes)
+        * (
+            lane_utilization_factor(
+                group.lane_count, _utilization_type(group, movement_attributes)
+            )
+            if include_lane_utilization
+            else 1.0
         )
-        * left_turn_factor(left_turn_share)
+        * left_turn_factor(left_turn_share, left_turn_equivalent)
         * FIXED_FACTORS
     )
 
@@ -164,13 +175,39 @@ def _utilization_type(
     return "through"
 
 
-def left_turn_factor(left_turn_share: float) -> float:
+def left_turn_factor(
+    left_turn_share: float,
+    left_turn_equivalent: float = LEFT_TURN_EQUIVALENT,
+) -> float:
     """
-    HCM protected left-turn factor: 1 / (1 + P_LT x (E_L - 1)).
-    1.0 with no left turns, 1 / 1.05 = 0.952 with only left turns.
+    Protected left-turn factor: 1 / (1 + P_LT x (E_L - 1)).
+    With only left turns this is 1 / E_L = 0.952 (Equation 19-14); for
+    a shared lane, E_L is replaced by the modified E_L,m (Equation
+    31-63 form).
     """
 
-    return 1 / (1 + left_turn_share * (LEFT_TURN_EQUIVALENT - 1))
+    return 1 / (1 + left_turn_share * (left_turn_equivalent - 1))
+
+
+def lane_change_probability(approach_flow_per_lane: float) -> float:
+    """
+    Probability of a lane change among the approach through lanes
+    (HCM Equation 31-50): 1 - (2 v_app / s_lc - 1)^2, at least 0, with
+    s_lc = 3,600 / 3.7 s. It is highest at medium flows and 0 at no
+    flow or at 973 veh/h/ln and above.
+    """
+
+    lane_change_flow = 3600 / LANE_CHANGE_CRITICAL_HEADWAY_S
+
+    return max(0.0, 1 - (2 * approach_flow_per_lane / lane_change_flow - 1) ** 2)
+
+
+def modified_left_turn_equivalent(approach_flow_per_lane: float) -> float:
+    """E_L,m = (E_L - 1) x P_lc + 1 (HCM Equation 31-47)."""
+
+    return (LEFT_TURN_EQUIVALENT - 1) * lane_change_probability(
+        approach_flow_per_lane
+    ) + 1
 
 
 # ============================================================
@@ -184,14 +221,20 @@ class DemandDistribution(NamedTuple):
     flows: veh/h of each (movement_id, lane_group_id) pair.
     group_flows: total veh/h of each lane group.
     left_turn_shares: share of left-turning vehicles in each group.
-    saturation_flows: saturation flow of each group (veh/h), using
-    its left-turn share.
+    saturation_flows: saturation flow of each group (veh/h) used for
+    capacity, with its left-turn share and lane utilisation.
+    lane_choice_saturation_flows: the per-lane saturation flows of the
+    Chapter 31 lane-choice calculation (no lane utilisation), over
+    which the flow ratios are equalized.
+    shared_left_turn_equivalent: E_L,m used for shared lanes.
     """
 
     flows: dict[tuple[str, str], float]
     group_flows: dict[str, float]
     left_turn_shares: dict[str, float]
     saturation_flows: dict[str, float]
+    lane_choice_saturation_flows: dict[str, float]
+    shared_left_turn_equivalent: float
 
 
 def distribute_demand(
@@ -232,6 +275,27 @@ def distribute_demand(
     }
     groups_by_id = {g.lane_group_id: g for g in groups}
 
+    # Chapter 31, Step A: modified through-car equivalent for the left
+    # turns in shared lanes, from the average flow per lane that can
+    # serve through traffic (Equation 31-51).
+    shared_equivalent = modified_left_turn_equivalent(
+        _approach_flow_per_through_lane(groups, movement_attributes, demand_veh_h)
+    )
+
+    def lane_choice_saturation(group, share):
+        """Per-lane saturation flows of Chapter 31 (no f_LU)."""
+
+        return saturation_flow(
+            group,
+            lanes_by_id,
+            movement_attributes,
+            share,
+            left_turn_equivalent=(
+                shared_equivalent if group.is_shared else LEFT_TURN_EQUIVALENT
+            ),
+            include_lane_utilization=False,
+        )
+
     # Step 1: split each movement equally over the groups it may use.
     flows = {
         (movement_id, group_id): demand_veh_h[movement_id] / len(group_ids)
@@ -245,9 +309,7 @@ def distribute_demand(
         # Step 3 (for the current flows): saturation flow of each group.
         shares = _left_turn_shares(groups, flows, movement_attributes)
         saturation = {
-            g.lane_group_id: saturation_flow(
-                g, lanes_by_id, movement_attributes, shares[g.lane_group_id]
-            )
+            g.lane_group_id: lane_choice_saturation(g, shares[g.lane_group_id])
             for g in groups
         }
 
@@ -288,15 +350,55 @@ def distribute_demand(
                         lanes_by_id,
                         movement_attributes,
                         shares[g.lane_group_id],
+                        left_turn_equivalent=(
+                            shared_equivalent
+                            if g.is_shared
+                            else LEFT_TURN_EQUIVALENT
+                        ),
                     )
                     for g in groups
                 },
+                lane_choice_saturation_flows={
+                    g.lane_group_id: lane_choice_saturation(
+                        g, shares[g.lane_group_id]
+                    )
+                    for g in groups
+                },
+                shared_left_turn_equivalent=shared_equivalent,
             )
 
     raise ValueError(
         "the demand distribution did not settle within "
         f"{DISTRIBUTION_MAX_ROUNDS} rounds"
     )
+
+
+def _approach_flow_per_through_lane(
+    groups: list[LaneGroup],
+    movement_attributes: dict[str, MovementAttributes],
+    demand_veh_h: dict[str, float],
+) -> float:
+    """
+    v_app of HCM Equation 31-51: the approach's demand divided by the
+    number of lanes that serve through traffic (shared or exclusive).
+    0 when no lane serves through traffic.
+    """
+
+    through_lanes = sum(
+        g.lane_count
+        for g in groups
+        if any(
+            movement_attributes[m].movement_type == MovementType.THROUGH
+            for m in g.movement_ids
+        )
+    )
+
+    if through_lanes == 0:
+        return 0.0
+
+    served = {m for g in groups for m in g.movement_ids}
+
+    return sum(demand_veh_h[m] for m in served) / through_lanes
 
 
 def _group_flow(

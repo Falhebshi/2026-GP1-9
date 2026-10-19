@@ -12,7 +12,9 @@ from backend.analytics.kpi.capacity import (
     lane_group_green,
     lane_utilization_factor,
     lane_width_factor,
+    lane_change_probability,
     left_turn_factor,
+    modified_left_turn_equivalent,
     phase_lost_time,
     saturation_flow,
     signal_timing_origin,
@@ -178,6 +180,26 @@ def test_lane_utilization_without_lanes_rejected():
         lane_utilization_factor(0, "through")
 
 
+@pytest.mark.parametrize(
+    "flow_per_lane, expected",
+    [(0, 0.0), (3600 / 3.7 / 2, 1.0), (3600 / 3.7, 0.0), (2000, 0.0)],
+)
+def test_lane_change_probability(flow_per_lane, expected):
+    """Equation 31-50: highest at medium flow, 0 at no or very high flow."""
+
+    assert lane_change_probability(flow_per_lane) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "flow_per_lane, expected",
+    [(0, 1.0), (3600 / 3.7 / 2, 1.05)],
+)
+def test_modified_left_turn_equivalent(flow_per_lane, expected):
+    """Equation 31-47: E_L,m between 1.0 and E_L = 1.05."""
+
+    assert modified_left_turn_equivalent(flow_per_lane) == pytest.approx(expected)
+
+
 def test_lane_width_below_eight_feet_rejected():
     with pytest.raises(ValueError, match="below 8.0 ft"):
         lane_width_factor(2.4)
@@ -267,24 +289,35 @@ def east(left, through):
 
 def test_few_left_turners_all_use_the_left_lane():
     """
-    300 lefts fit in the left lane (v/s 0.166), so the shared lane
-    carries only through traffic: 1,500 / (1,900 + 3,617.6) = 0.272
-    for both through groups.
+    300 lefts fit in the left lane (v/s 300 / 1,809.5 = 0.166), so the
+    shared lane carries only through traffic. Through spreads over the
+    shared lane and the two through lanes with the per-lane saturation
+    flows of Chapter 31 (no lane utilisation): 1,500 / (1,900 + 3,800)
+    = 0.263, so 500 in the shared lane and 1,000 in the through lanes.
     """
 
     result = east(300, 1500)
 
     assert result.flows[("MOV_E_L", "APP_E_L")] == pytest.approx(300)
     assert result.flows[("MOV_E_L", "APP_E_LT")] == pytest.approx(0)
+    assert result.flows[("MOV_E_T", "APP_E_LT")] == pytest.approx(500, abs=0.2)
+    assert result.flows[("MOV_E_T", "APP_E_T")] == pytest.approx(1000, abs=0.2)
 
-    level = 1500 / (1900 + 1900 * 2 * 0.952)
 
-    assert result.flows[("MOV_E_T", "APP_E_LT")] == pytest.approx(
-        level * 1900, abs=0.05
-    )
-    assert result.flows[("MOV_E_T", "APP_E_T")] == pytest.approx(
-        level * 1900 * 2 * 0.952, abs=0.05
-    )
+def test_left_lane_never_carries_more_than_left_demand():
+    """
+    The physical rule added to Chapter 31 Step G: with few left-turners
+    the exclusive left lane is simply less busy than the others.
+    """
+
+    result = east(300, 1500)
+    ratios = {
+        g: result.group_flows[g] / result.lane_choice_saturation_flows[g]
+        for g in ("APP_E_L", "APP_E_LT", "APP_E_T")
+    }
+
+    assert result.group_flows["APP_E_L"] == pytest.approx(300)
+    assert ratios["APP_E_L"] < ratios["APP_E_LT"]
 
 
 def test_many_left_turners_spill_into_the_shared_lane():
@@ -298,11 +331,11 @@ def test_all_groups_used_end_with_the_same_flow_ratio():
     result = east(600, 1500)
 
     ratios = [
-        result.group_flows[g] / result.saturation_flows[g]
+        result.group_flows[g] / result.lane_choice_saturation_flows[g]
         for g in ("APP_E_L", "APP_E_LT", "APP_E_T")
     ]
 
-    assert max(ratios) - min(ratios) < 1e-4
+    assert max(ratios) - min(ratios) < 1e-3
 
 
 def test_demand_is_kept():
@@ -319,10 +352,31 @@ def test_shared_lane_saturation_flow_follows_its_left_share():
     result = east(600, 1500)
 
     share = result.left_turn_shares["APP_E_LT"]
+    equivalent = result.shared_left_turn_equivalent
 
     assert result.saturation_flows["APP_E_LT"] == pytest.approx(
-        1900 / (1 + share * 0.05)
+        1900 / (1 + share * (equivalent - 1))
     )
+
+
+def test_shared_lane_uses_modified_equivalent():
+    """
+    v_app = (600 + 1,500) / 3 lanes serving through traffic = 700;
+    P_lc = 1 - (2 x 700 / 973 - 1)^2; E_L,m = 0.05 x P_lc + 1.
+    """
+
+    result = east(600, 1500)
+
+    p_lc = 1 - (2 * 700 / (3600 / 3.7) - 1) ** 2
+
+    assert result.shared_left_turn_equivalent == pytest.approx(0.05 * p_lc + 1)
+
+
+def test_exclusive_through_lanes_use_lane_utilization_for_capacity():
+    result = east(600, 1500)
+
+    assert result.lane_choice_saturation_flows["APP_E_T"] == pytest.approx(3800)
+    assert result.saturation_flows["APP_E_T"] == pytest.approx(3800 * 0.952)
 
 
 def test_no_flows_are_negative():
@@ -343,7 +397,7 @@ def test_movement_with_one_group_gets_all_its_demand():
 
     result = distribute_demand(north, LANES_BY_ID, ATTRIBUTES, {"MOV_N_L": 500})
 
-    assert result.group_flows["APP_N_L"] == 500
+    assert result.group_flows["APP_N_L"] == pytest.approx(500)
 
 
 def test_missing_demand_rejected():
@@ -455,11 +509,13 @@ def test_movement_not_using_shared_lane_is_not_tagged():
     assert results().movements["MOV_E_L"].shared_lane_group_id is None
 
 
-def test_movement_ratio_equals_its_lane_groups():
+def test_movement_ratio_is_highest_of_the_groups_it_uses():
     result = results()
 
+    used = ("APP_E_LT", "APP_E_T")
+
     assert result.movements["MOV_E_T"].volume_to_capacity == pytest.approx(
-        result.lane_groups["APP_E_T"].volume_to_capacity, abs=1e-4
+        max(result.lane_groups[g].volume_to_capacity for g in used)
     )
 
 
