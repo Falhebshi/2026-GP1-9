@@ -36,6 +36,7 @@ backend/
         ├── capacity.py     HCM saturation flow, capacity, v/c and critical v/c
         ├── hcm_delay.py    HCM control delay and level of service
         ├── rollup.py       approach and intersection values
+        ├── comparison.py   combining runs and comparing scenarios
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
@@ -46,7 +47,8 @@ backend/
             ├── test_lane_groups.py
             ├── test_capacity.py
             ├── test_hcm_delay.py
-            └── test_rollup.py
+            ├── test_rollup.py
+            └── test_comparison.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -99,7 +101,7 @@ These lane and lane-group KPIs are reported on the lane or lane group where they
 
 ## 2.2 Lane groups
 
-Lane groups follow HCM 7th edition (Chapter 19, page 19-43): adjacent lanes serving the same movements form one group, and a shared lane is always its own group. Lane groups are derived from the `ApproachLane` records each time they are needed, rather than stored, and receive stable identifiers such as `east_L`, `east_LT` and `east_T`.
+Lane groups follow HCM 7th edition (Chapter 19, page 19-43): adjacent lanes serving the same movements form one group, and a shared lane is always its own group. Lane groups are derived from the `ApproachLane` records each time they are needed, rather than stored, and receive stable identifiers such as `APP_E_L`, `APP_E_LT` and `APP_E_T` (section 8.2).
 
 ## 2.3 Queue duration
 
@@ -488,3 +490,68 @@ The uncontrolled right-turn slips (section 1) are **included** in the measured d
 - Parts that are `not_applicable` (for example a movement with no arrivals) are left out. If no part is left, the combined value is `not_applicable`.
 - A lane with no cycle records, or with no known storage length, makes the queue or storage ratio of its movements, its approach and the intersection `unavailable`.
 - All movements must belong to one intersection; otherwise the roll-up raises an error.
+
+---
+
+# 12. Combining Runs and Comparing Scenarios
+
+Implemented in `backend/analytics/kpi/comparison.py`. The results are the models `KpiResult` and `KpiComparison` (`data_models.md` section 6).
+
+## 12.1 Combining the runs of one scenario
+
+Each seed is one repetition of the experiment and counts once. For each KPI, element and interval:
+
+- **Value:** the mean over the runs that have a value.
+- **Spread:** the sample standard deviation (divided by n − 1) when two or more runs have a value; none with one run. Example: 30, 34 and 38 s give 34 ± 4.0 s.
+- **A run without a result:** if any run is `unavailable`, the combined result is `unavailable`, with a reason such as "unavailable in 1 of 10 runs". The missing run is usually the most congested one (vehicles still queued at the end of the run), so averaging the others would make the result look better than it was. The remedy is a longer clearance.
+- **A run with nothing to measure:** runs that are `not_applicable` (for example, no vehicles arrived) are left out, not counted as zero: a mean over no vehicles does not exist, and a zero would pull the mean down and widen the spread. The result is `not_applicable` only if no run has a value.
+- `run_ids` lists the runs behind the value; a result without a value lists every run that was looked at.
+
+Simulation-based level of service is graded from the combined delay (section 7.6). HCM results have no runs and need no combining.
+
+## 12.2 Order: roll up per run, or combine per lane
+
+Delay, queue duration and throughput are rolled up to approaches and the intersection within each run (section 11), and the runs are then combined.
+
+## 12.3 Queues: lanes first
+
+Queue length and storage ratio are combined over the runs **per lane first**; a movement, approach or intersection then takes its longest (highest) lane, with that lane's mean, standard deviation and runs. Example, East through over three runs: lane 3 has 80, 50 and 70 m (mean 66.7 m), lane 4 has 60, 90 and 60 m (mean 70 m), so East through is 70 m, measured on lane 4. Taking each run's longest lane first would give 80 m, a value no lane has. Combining per lane keeps the movement value equal to one lane result (one value in every view) and names one real lane for the "Shared lane" tag, which appears only when that lane is shared.
+
+## 12.4 Comparing a baseline and an intervention
+
+Simulation comparisons use the matched pairs of a `ReplicationSet` (common random numbers):
+
+1. For each pair, **difference = intervention − baseline**. A negative change in delay or queue is an improvement.
+2. **Change** = mean of the differences, with their sample standard deviation.
+3. **Percentage change** = change ÷ baseline mean over the same pairs (empty when the baseline mean is 0).
+
+Example (East delay): baseline 40, 50, 60 s; intervention 35, 44, 56 s; differences −5, −6, −4, so the change is −5 ± 1 s (−10 %). Comparing the two means instead (50 ± 10 against 45 ± 10.5) would hide the effect behind the variation between seeds, which is the same in both scenarios of a pair and cancels in the difference.
+
+- If either run of any pair is `unavailable`, the comparison is `unavailable` ("unavailable in 1 of 10 pairs").
+- Pairs in which a side is `not_applicable` are left out; `used_pairs` lists the pairs used. With no pair left, the comparison is `not_applicable`.
+- For a queue, each side uses the runs of the lane its reported value comes from (section 12.3), so the change equals the difference between the two reported values.
+- **Level of service** is a letter: the comparison shows both grades (e.g. D → C).
+- **HCM results** have no runs: the change is the plain difference, with no pairs and no standard deviation.
+
+## 12.5 Input origins
+
+`input_origins` are read from the inputs, not supplied by hand:
+
+| Input | Origin |
+| --- | --- |
+| Demand | `SimulationDemand.source`: `rcrc` → observed; `synthetic`, `forecast` → modelled assumption |
+| Signal timing | `SignalProgram.source`: `observed` → observed; otherwise modelled assumption (section 9.8) |
+| Lane geometry | modelled assumption (`GEOMETRY_INPUT_ORIGIN`): widths and storage lengths are SUMO defaults or modelled values |
+
+Simulation results add *simulated*; HCM results add *modelled assumption* for the HCM default factors (`HCM_DEFAULTS_INPUT_ORIGIN`). A comparison carries the origins of both scenarios. Demand split from a shared-lane detector count rests on an assumed split method; it will add *modelled assumption* once `SimulationDemand` marks such demand.
+
+## 12.6 Checking the runs of a comparison
+
+Before comparing, the engine checks the `ReplicationSet` against its `SimulationRun` and `Scenario` records and stops with an error if:
+
+- the two runs of a pair used different seeds, or two pairs used the same seed;
+- a run is not `completed`, or belongs to the wrong scenario;
+- the intervention scenario does not reference the baseline (`reference_scenario_id`);
+- the runs differ in network version, SUMO version or step length.
+
+A wrong pairing would produce a convincing but false comparison. Demand and mapping versions are not recorded on `SimulationRun` yet, so they cannot be checked.

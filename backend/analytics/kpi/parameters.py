@@ -8,7 +8,7 @@ these names instead of writing the numbers themselves.
 
 import math
 
-from jaadah.models.kpis import LevelOfServiceGrade
+from jaadah.models.kpis import InputOrigin, LevelOfServiceGrade
 
 
 # ============================================================
@@ -108,6 +108,20 @@ INCREMENTAL_DELAY_FACTOR = 0.5
 # Upstream filtering adjustment factor I for an isolated
 # intersection (Exhibit 19-11).
 UPSTREAM_FILTERING_FACTOR = 1.0
+
+
+# ============================================================
+# INPUT ORIGINS (docs/kpi_engine.md section 12.5)
+# ============================================================
+
+# Lane widths and storage lengths: SUMO defaults and modelled values,
+# not surveyed. ApproachLane has no source field, so the origin of the
+# geometry is fixed here.
+GEOMETRY_INPUT_ORIGIN = InputOrigin.MODELLED_ASSUMPTION
+
+# HCM results also rest on the HCM default factors (the 1.0 factors,
+# the left-turn equivalent, lost times), which are assumptions.
+HCM_DEFAULTS_INPUT_ORIGIN = InputOrigin.MODELLED_ASSUMPTION
 
 
 # ============================================================

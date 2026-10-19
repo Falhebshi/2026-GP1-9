@@ -301,7 +301,7 @@ A replicated experiment comparing an intervention scenario with its baseline usi
 - `ReplicationPair`: `baseline_run_id`, `intervention_run_id` (must differ). It does **not** store the seed; `SimulationRun` owns it.
 - `ReplicationSet`: `replication_set_id`, `baseline_scenario_id`, `intervention_scenario_id` (must differ), `pairs` (at least 2, because a standard deviation needs two values; no run may appear twice). Properties `replication_count`, `baseline_run_ids`, `intervention_run_ids` (in pair order).
 
-The replication runner, which has the `SimulationRun` and `Scenario` objects, confirms that both runs of each pair used the same seed, that each pair used a different seed, and that each run belongs to the stated scenario. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
+Before comparing, the KPI engine (`kpi_engine.md` section 12.6) checks with the `SimulationRun` and `Scenario` objects that both runs of each pair used the same seed, that each pair used a different seed, that each run is completed and belongs to the stated scenario, that the intervention references the baseline, and that all runs share the network version, SUMO version and step length. The replication runner may repeat these checks when it starts the runs. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
 
 ## 3.5 Scenario Validation
 
