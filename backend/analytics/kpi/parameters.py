@@ -1,7 +1,7 @@
 """
 Constants used by the KPI engine, and the level-of-service function.
 
-Every value taken from the Highway Capacity Manual (HCM) 6th edition
+Every value taken from the Highway Capacity Manual (HCM) 7th edition
 or chosen for Jaadah is defined here once. Other engine files import
 these names instead of writing the numbers themselves.
 """
@@ -30,53 +30,71 @@ QUEUE_PERCENTILE = 95
 
 
 # ============================================================
-# SATURATION FLOW
+# SATURATION FLOW (HCM 7th edition, Chapter 19)
 # ============================================================
 
-# HCM 6th edition base saturation flow for metropolitan areas of
-# 250,000 people or more (1,750 applies to smaller areas).
+# Base saturation flow for metropolitan areas of 250,000 people or
+# more; 1,750 applies to smaller areas (Exhibit 19-11).
 BASE_SATURATION_FLOW_PC_H_LN = 1900
 
+# Adjustment factors of Equation 19-8. See docs/kpi_engine.md 9.2.
 
-# Adjustment factors (HCM signalized intersections, to be verified
-# against the HCM 7th edition). See docs/kpi_engine.md section 9.2.
-
-# Lane width: below 10 ft the factor is 0.96, above 12.9 ft it is
-# 1.04, in between 1.00. Applied to the average width of a lane group.
-LANE_WIDTH_NARROW_LIMIT_M = 3.048   # 10 ft
+# Lane width (Exhibit 19-20): below 10.0 ft 0.96, above 12.9 ft 1.04,
+# in between 1.00, applied to the average width of a lane group. The
+# factor may not be used for an average width below 8.0 ft.
+LANE_WIDTH_MINIMUM_M = 2.4384       # 8.0 ft
+LANE_WIDTH_NARROW_LIMIT_M = 3.048   # 10.0 ft
 LANE_WIDTH_WIDE_LIMIT_M = 3.932     # 12.9 ft
 LANE_WIDTH_FACTOR_NARROW = 0.96
 LANE_WIDTH_FACTOR_NORMAL = 1.00
 LANE_WIDTH_FACTOR_WIDE = 1.04
 
-# Lane utilisation by number of lanes in the group (HCM defaults for
-# through lanes, also used for the North approach's three exclusive
-# left-turn lanes until a verified value is available).
-LANE_UTILIZATION_FACTORS = {1: 1.000, 2: 0.952, 3: 0.908}
+# Default lane utilisation by movement type and number of lanes
+# (Exhibit 19-15). For more lanes than listed, the smallest value of
+# the same type is used (note to Exhibit 19-15). A lane group with one
+# lane, exclusive or shared, has 1.0.
+LANE_UTILIZATION_FACTORS = {
+    "through": {1: 1.000, 2: 0.952, 3: 0.908},
+    "left": {1: 1.000, 2: 0.971},
+    "right": {1: 1.000, 2: 0.885},
+}
 
-# A protected left-turning vehicle counts as 1.05 through vehicles.
+# A protected left-turning vehicle counts as 1.05 through vehicles
+# (Equation 19-14).
 LEFT_TURN_EQUIVALENT = 1.05
 
-# Factors that have no effect at the case-study intersection.
-HEAVY_VEHICLE_FACTOR = 1.0       # passenger cars only (VehicleType)
-GRADE_FACTOR = 1.0               # no grade data; 0 % assumed
-PARKING_FACTOR = 1.0             # no on-street parking at stop lines
-BUS_BLOCKAGE_FACTOR = 1.0        # buses are outside Jaadah's scope
-AREA_TYPE_FACTOR = 1.0           # not a central business district
-PEDESTRIAN_BICYCLE_FACTOR = 1.0  # few pedestrians on these approaches
-CAV_FACTOR = 1.0                 # no connected or automated vehicles
+# Factors that have no effect at the case-study intersection; each is
+# 1.0 when the condition is absent (pages 19-45 to 19-49).
+HEAVY_VEHICLE_GRADE_FACTOR = 1.0       # passenger cars only, 0 % grade
+PARKING_FACTOR = 1.0                   # no on-street parking
+BUS_BLOCKAGE_FACTOR = 1.0              # buses are outside Jaadah's scope
+AREA_TYPE_FACTOR = 1.0                 # not a central business district
+PEDESTRIAN_BICYCLE_FACTOR = 1.0        # few pedestrians on these approaches
+WORK_ZONE_FACTOR = 1.0                 # no work zone
+DOWNSTREAM_LANE_BLOCKAGE_FACTOR = 1.0  # no downstream lane closure
+SUSTAINED_SPILLBACK_FACTOR = 1.0       # no spillback modelled
+CAV_FACTOR = 1.0                       # no connected or automated vehicles
 
-# Lost time per phase (start-up plus clearance), in seconds.
-LOST_TIME_PER_PHASE_S = 5.0
+
+# ============================================================
+# SIGNAL TIMING (HCM 7th edition, Chapter 19)
+# ============================================================
+
+# Start-up lost time l1 and extension of effective green e (Equations
+# 19-2 and 19-3). Effective green g = G + Y + Rc - l1 - l2, with
+# clearance lost time l2 = Y + Rc - e, so g = G - l1 + e; the phase
+# lost time is l1 + l2.
+START_UP_LOST_TIME_S = 2.0
+EFFECTIVE_GREEN_EXTENSION_S = 2.0
 
 
 # ============================================================
 # LEVEL OF SERVICE
 # ============================================================
 
-# HCM 6th edition thresholds for signalized intersections: the
-# highest control delay (s/veh) each grade allows, from best to
-# worst. A delay exactly on a threshold gets the better grade.
+# HCM 7th edition thresholds for signalized intersections (Exhibit
+# 19-8): the highest control delay (s/veh) each grade allows, from
+# best to worst. A delay exactly on a threshold gets the better grade.
 # Any delay above the last threshold is LOS F.
 LOS_THRESHOLDS: tuple[tuple[float, LevelOfServiceGrade], ...] = (
     (10.0, LevelOfServiceGrade.A),
@@ -88,7 +106,8 @@ LOS_THRESHOLDS: tuple[tuple[float, LevelOfServiceGrade], ...] = (
 
 # A lane group whose volume-to-capacity ratio is above this value is
 # LOS F whatever its delay. Applies only at lane-group and movement
-# level; approach and intersection LOS come from delay alone.
+# level; approach and intersection LOS come from delay alone
+# (note to Exhibit 19-8).
 VOLUME_TO_CAPACITY_LOS_F = 1.0
 
 

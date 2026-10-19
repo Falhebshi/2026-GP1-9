@@ -8,10 +8,12 @@ from backend.analytics.kpi.capacity import (
     SPLIT_PHASES_REASON,
     calculate_capacity,
     distribute_demand,
+    effective_green,
     lane_group_green,
     lane_utilization_factor,
     lane_width_factor,
     left_turn_factor,
+    phase_lost_time,
     saturation_flow,
     signal_timing_origin,
 )
@@ -144,16 +146,41 @@ def test_lane_width_factor(width, expected):
 
 
 @pytest.mark.parametrize(
-    "lanes, expected",
-    [(1, 1.000), (2, 0.952), (3, 0.908)],
+    "lanes, movement_type, expected",
+    [
+        (1, "through", 1.000),
+        (2, "through", 0.952),
+        (3, "through", 0.908),
+        (1, "left", 1.000),
+        (2, "left", 0.971),
+        (1, "right", 1.000),
+        (2, "right", 0.885),
+    ],
 )
-def test_lane_utilization_factor(lanes, expected):
-    assert lane_utilization_factor(lanes) == expected
+def test_lane_utilization_factor(lanes, movement_type, expected):
+    """HCM 7th edition, Exhibit 19-15."""
+
+    assert lane_utilization_factor(lanes, movement_type) == expected
 
 
-def test_lane_utilization_above_three_lanes_rejected():
-    with pytest.raises(ValueError, match="for 4 lanes"):
-        lane_utilization_factor(4)
+@pytest.mark.parametrize(
+    "lanes, movement_type, expected",
+    [(4, "through", 0.908), (3, "left", 0.971), (3, "right", 0.885)],
+)
+def test_more_lanes_than_listed_use_smallest_value(lanes, movement_type, expected):
+    """Note to Exhibit 19-15: the smallest value of the same type."""
+
+    assert lane_utilization_factor(lanes, movement_type) == expected
+
+
+def test_lane_utilization_without_lanes_rejected():
+    with pytest.raises(ValueError, match="at least 1"):
+        lane_utilization_factor(0, "through")
+
+
+def test_lane_width_below_eight_feet_rejected():
+    with pytest.raises(ValueError, match="below 8.0 ft"):
+        lane_width_factor(2.4)
 
 
 @pytest.mark.parametrize(
@@ -173,7 +200,7 @@ def test_saturation_flow_of_exclusive_left_lane():
 
     group = GROUPS_BY_ID["APP_E_L"]
 
-    assert saturation_flow(group, LANES_BY_ID, 1.0) == pytest.approx(
+    assert saturation_flow(group, LANES_BY_ID, ATTRIBUTES, 1.0) == pytest.approx(
         1900 / 1.05
     )
 
@@ -183,18 +210,18 @@ def test_saturation_flow_of_two_through_lanes():
 
     group = GROUPS_BY_ID["APP_E_T"]
 
-    assert saturation_flow(group, LANES_BY_ID, 0.0) == pytest.approx(
+    assert saturation_flow(group, LANES_BY_ID, ATTRIBUTES, 0.0) == pytest.approx(
         1900 * 2 * 0.952
     )
 
 
 def test_saturation_flow_of_three_left_lanes():
-    """North: 1,900 x 3 x 0.908 x 1/1.05."""
+    """North: 1,900 x 3 x 0.971 (exclusive left, smallest value) / 1.05."""
 
     group = GROUPS_BY_ID["APP_N_L"]
 
-    assert saturation_flow(group, LANES_BY_ID, 1.0) == pytest.approx(
-        1900 * 3 * 0.908 / 1.05
+    assert saturation_flow(group, LANES_BY_ID, ATTRIBUTES, 1.0) == pytest.approx(
+        1900 * 3 * 0.971 / 1.05
     )
 
 
@@ -207,7 +234,7 @@ def test_saturation_flow_uses_average_lane_width():
     }
 
     assert saturation_flow(
-        GROUPS_BY_ID["APP_E_T"], lanes, 0.0
+        GROUPS_BY_ID["APP_E_T"], lanes, ATTRIBUTES, 0.0
     ) == pytest.approx(1900 * 2 * 0.952)
 
 
@@ -215,14 +242,14 @@ def test_narrow_lanes_reduce_saturation_flow():
     lanes = {"LANE_E_1": lane("LANE_E_1", "APP_E", 1, ["MOV_E_L"], width=3.0)}
 
     assert saturation_flow(
-        GROUPS_BY_ID["APP_E_L"], lanes, 1.0
+        GROUPS_BY_ID["APP_E_L"], lanes, ATTRIBUTES, 1.0
     ) == pytest.approx(1900 * 0.96 / 1.05)
 
 
 @pytest.mark.parametrize("share", [-0.1, 1.1])
 def test_invalid_left_turn_share_rejected(share):
     with pytest.raises(ValueError, match="between 0 and 1"):
-        saturation_flow(GROUPS_BY_ID["APP_E_LT"], LANES_BY_ID, share)
+        saturation_flow(GROUPS_BY_ID["APP_E_LT"], LANES_BY_ID, ATTRIBUTES, share)
 
 
 # ============================================================
@@ -339,6 +366,28 @@ def test_distribution_that_does_not_settle_rejected(monkeypatch):
 # ============================================================
 # GREEN TIME (section 9.5)
 # ============================================================
+
+def test_effective_green_equals_displayed_green():
+    """g = G - l1 + e with l1 = e = 2.0 s (Equation 19-3)."""
+
+    assert effective_green(phase("P", 0, ["MOV_E_T"], 40)) == 40
+
+
+@pytest.mark.parametrize("yellow, all_red, expected", [(3, 2, 5), (4, 2, 6)])
+def test_phase_lost_time(yellow, all_red, expected):
+    """l1 + (Y + Rc - e) = 2 + (Y + Rc - 2)."""
+
+    timing = SignalPhase(
+        phase_id="P",
+        sequence_order=0,
+        served_movement_ids=["MOV_E_T"],
+        green_time_s=40,
+        yellow_time_s=yellow,
+        all_red_time_s=all_red,
+    )
+
+    assert phase_lost_time(timing) == expected
+
 
 def test_green_of_a_lane_group():
     assert lane_group_green(GROUPS_BY_ID["APP_E_LT"], program()) == 40

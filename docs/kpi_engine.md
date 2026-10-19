@@ -10,7 +10,7 @@ Three rules shape the engine:
 
 > **1. Pure calculation.** Every engine function takes canonical models and numbers as input and returns numbers or `KpiResult` records. The engine does not read files, run SUMO or access the database; the simulation pipeline prepares its inputs and the backend stores and serves its outputs. Every function can therefore be tested with values worked out by hand.
 
-> **2. One place for every constant.** Values taken from the Highway Capacity Manual (HCM) 6th edition or chosen for Jaadah are defined once, in `parameters.py`. No other file writes these numbers directly.
+> **2. One place for every constant.** Values taken from the Highway Capacity Manual (HCM) 7th edition or chosen for Jaadah are defined once, in `parameters.py`. No other file writes these numbers directly.
 
 > **3. Missing values are never zero.** When a KPI cannot be calculated, its result has status `unavailable` or `not_applicable` and a reason, never a value of 0.
 
@@ -93,7 +93,7 @@ These lane and lane-group KPIs are reported on the lane or lane group where they
 
 ## 2.2 Lane groups
 
-Lane groups follow HCM 6th edition: adjacent lanes serving the same movements form one group, and a shared lane is always its own group. Lane groups are derived from the `ApproachLane` records each time they are needed, rather than stored, and receive stable identifiers such as `east_L`, `east_LT` and `east_T`.
+Lane groups follow HCM 7th edition (Chapter 19, page 19-43): adjacent lanes serving the same movements form one group, and a shared lane is always its own group. Lane groups are derived from the `ApproachLane` records each time they are needed, rather than stored, and receive stable identifiers such as `east_L`, `east_LT` and `east_T`.
 
 ## 2.3 Queue duration
 
@@ -113,11 +113,11 @@ Implemented in `backend/analytics/kpi/parameters.py`.
 
 The base saturation flow s₀ is **1,900 passenger cars per hour per lane**.
 
-This is the HCM 6th edition value for metropolitan areas with a population of 250,000 or more (1,750 pc/h/ln applies to smaller areas); Riyadh is far above this limit. It is the starting point of the HCM saturation-flow calculation (s = s₀ × N × adjustment factors) and can later be compared with the saturation flow measured in SUMO on single-movement lanes.
+This is the HCM 7th edition value (Exhibit 19-11) for metropolitan areas with a population of 250,000 or more (1,750 pc/h/ln applies to smaller areas); Riyadh is far above this limit. It is the starting point of the HCM saturation-flow calculation (s = s₀ × N × adjustment factors) and can later be compared with the saturation flow measured in SUMO on single-movement lanes.
 
 ## 3.2 Level-of-service thresholds
 
-Level of service is assigned from control delay (seconds per vehicle), using the HCM 6th edition thresholds for signalized intersections:
+Level of service is assigned from control delay (seconds per vehicle), using the HCM 7th edition thresholds for signalized intersections (Exhibit 19-8):
 
 | LOS | Control delay (s/veh) |
 | --- | --- |
@@ -134,7 +134,7 @@ A delay exactly on a threshold receives the better grade (for example, 10.0 s/ve
 
 When a lane group's volume-to-capacity ratio is greater than 1.0, its level of service is F regardless of its delay, because demand exceeds what the lane group can serve.
 
-The override applies only at **lane-group and movement level**. Approach and intersection level of service are determined by control delay alone, as defined in HCM 6th edition (Exhibit 19-8).
+The override applies only at **lane-group and movement level**. Approach and intersection level of service are determined by control delay alone, as defined in the note to Exhibit 19-8 of the HCM 7th edition: "for approach-based and intersectionwide assessments, LOS is defined solely by control delay".
 
 ---
 
@@ -206,7 +206,7 @@ For each lane and interval, the reported queue is the **largest cycle queue** in
 
 For the analysis page, each lane also receives the **95th-percentile cycle queue** over all cycles of the analysis period, calculated with the **nearest-rank method**: the cycle queues are sorted and the value at rank ⌈0.95 × n⌉ is taken. For example, with 20 cycles the 19th smallest queue is reported.
 
-The HCM 6th edition calculates its percentile back of queue analytically and does not prescribe a method for taking a percentile from measured cycles. The nearest-rank method was chosen because the result is always a queue that actually occurred, in whole vehicles, and is simple to explain and to check by hand.
+The HCM 7th edition calculates its percentile back of queue analytically and does not prescribe a method for taking a percentile from measured cycles. The nearest-rank method was chosen because the result is always a queue that actually occurred, in whole vehicles, and is simple to explain and to check by hand.
 
 ## 6.5 Queue storage ratio
 
@@ -280,7 +280,7 @@ Implemented in `backend/analytics/kpi/lane_groups.py`.
 
 ## 8.1 How lane groups are formed
 
-Lane groups follow HCM 6th edition (section 2.2). On each approach, the lanes are taken in order from the median outwards (`ApproachLane.lane_index`):
+Lane groups follow HCM 7th edition (section 2.2; Chapter 19, page 19-43, Exhibit 19-19). On each approach, the lanes are taken in order from the median outwards (`ApproachLane.lane_index`):
 
 - adjacent lanes that serve exactly the same single movement form one lane group (for example, three through lanes);
 - a lane shared by several movements is always its own lane group.
@@ -318,31 +318,31 @@ Implemented in `backend/analytics/kpi/capacity.py`.
 
 These KPIs are **calculated with the HCM method**, independently of the simulation: they describe how many vehicles each lane group could serve with the given lanes and signal timing, and how that compares with the demand. Saturation flow measured in SUMO is used only as a calibration check.
 
-All HCM values in this section are taken as the working assumption and are **to be verified against the HCM 7th edition** (Chapter 19, signalized intersections).
+All HCM values in this section were checked against the **HCM 7th edition, Chapter 19 (Signalized Intersections)**; the exhibit or equation is given for each.
 
 ## 9.1 Steps
 
 For each lane group (section 8) and interval:
 
-1. **Saturation flow:** s = s₀ × N × f_w × f_HV × f_g × f_p × f_bb × f_a × f_LU × f_LT × f_Lpb × f_Rpb × f_CAV (veh/h), with s₀ = 1,900 pc/h/ln (section 3.1) and N the number of lanes in the group.
-2. **Capacity:** c = s × g / C, with g the effective green of the group and C the cycle length, both from the scenario's `SignalProgram`. Effective green equals displayed green.
-3. **Volume-to-capacity ratio:** X = v / c, with v the demand flow assigned to the group (section 9.4).
-4. **Critical volume-to-capacity ratio of the intersection:** Xc = Σ(v/s)crit × C / (C − L), where (v/s)crit is the highest flow ratio among the lane groups served in each phase and L is the total lost time, 5 s per phase.
+1. **Saturation flow:** s = N × s₀ × f_w × f_HVg × f_p × f_bb × f_a × f_LU × f_LT × f_Lpb × f_Rpb × f_wz × f_ms × f_sp × f_CAV (veh/h): N times the adjusted saturation flow per lane of Equation 19-8, with s₀ = 1,900 pc/h/ln (section 3.1) and N the number of lanes in the group.
+2. **Capacity:** c = s × g / C (Equation 19-16), with g the effective green of the group and C the cycle length, both from the scenario's `SignalProgram`. Effective green g = G + Y + Rc − l₁ − l₂ (Equation 19-3), with start-up lost time l₁ = 2.0 s, clearance lost time l₂ = Y + Rc − e and extension of effective green e = 2.0 s; so g = G − l₁ + e, which equals the displayed green G.
+3. **Volume-to-capacity ratio:** X = v / c (Equation 19-17), with v the demand flow assigned to the group (section 9.4).
+4. **Critical volume-to-capacity ratio of the intersection:** Xc = Σ(v/s)crit × C / (C − L) (Equation 19-30), where (v/s)crit is the highest flow ratio among the lane groups served in each phase and L is the total lost time of the critical phases, each phase losing l₁ + l₂ (5 s with 3 s yellow and 2 s all-red). Jaadah's phases run in sequence, so every phase is critical.
 
 ## 9.2 Adjustment factors
 
 | Factor | Value | Reason |
 | --- | --- | --- |
-| Lane width f_w | 0.96 below 3.05 m (10 ft); 1.00 from 3.05 m to 3.93 m (12.9 ft); 1.04 above 3.93 m | HCM lane-width factor, applied to the **average width** of the group's lanes (`ApproachLane.lane_width_m`) |
-| Heavy vehicles f_HV | 1.0 | Jaadah simulates passenger cars only (`VehicleType` = `car`); the HCM side must assume the same traffic as the simulation (see 9.9) |
-| Grade f_g | 1.0 | no grade data; 0 % assumed |
-| Parking f_p | 1.0 | no on-street parking at the stop lines |
-| Bus blockage f_bb | 1.0 | buses are outside Jaadah's scope |
-| Area type f_a | 1.0 | the intersection is not in a central business district |
-| Lane utilisation f_LU | 1.000 for 1 lane, 0.952 for 2 lanes, 0.908 for 3 lanes | HCM default values for through lanes; a group with more than 3 lanes raises an error. The same values are used for the three exclusive left-turn lanes of the North approach, because HCM gives separate defaults for exclusive turning lanes and no verified value for three of them is available yet |
-| Left turns f_LT | 1 / (1 + P_LT × (E_L − 1)), E_L = 1.05 | protected left turns only (9.3); P_LT is the share of left-turning vehicles in the group (0.952 for an exclusive left-turn lane) |
-| Pedestrians and bicycles f_Lpb, f_Rpb | 1.0 | few pedestrians cross these approaches |
-| Connected and automated vehicles f_CAV | 1.0 | HCM 7th edition adjustment; the simulation contains no such vehicles |
+| Lane width f_w | 0.96 below 3.05 m (10.0 ft); 1.00 from 3.05 m to 3.93 m (12.9 ft); 1.04 above 3.93 m | Exhibit 19-20, applied to the **average width** of the group's lanes (`ApproachLane.lane_width_m`). The factor may not be used for an average width below 2.44 m (8.0 ft); such a lane group raises an error |
+| Heavy vehicles and grade f_HVg | 1.0 | Equations 19-9 and 19-10 give 1.0 for 0 % heavy vehicles and 0 % grade. Jaadah simulates passenger cars only (`VehicleType` = `car`), and the HCM side must assume the same traffic as the simulation (see 9.9); no grade data, so 0 % is assumed |
+| Parking f_p | 1.0 | 1.00 when no parking is present (page 19-46); no on-street parking at the stop lines |
+| Bus blockage f_bb | 1.0 | Equation 19-12 applies only when stopping buses block the lane group; buses are outside Jaadah's scope |
+| Area type f_a | 1.0 | 0.90 is used only where geometry and traffic or pedestrian flows significantly increase headways, as in CBDs (page 19-47); not the case here |
+| Lane utilisation f_LU | exclusive through: 1.000 / 0.952 / 0.908 for 1 / 2 / 3 lanes; exclusive left: 1.000 / 0.971 for 1 / 2 lanes; exclusive right: 1.000 / 0.885 for 1 / 2 lanes | Exhibit 19-15 default values. For more lanes than listed, the smallest value of the same type is used (note to Exhibit 19-15), so the North approach's three exclusive left-turn lanes use 0.971. A lane group with one lane, exclusive or shared, has 1.0 |
+| Left turns f_LT | 1 / (1 + P_LT × (E_L − 1)), E_L = 1.05 | Equation 19-14 gives f_LT = 1 / E_L = 0.952 for an exclusive protected left-turn lane. For the shared lane, P_LT is the share of left-turning vehicles in the group; see 9.4 for how this relates to the HCM shared-lane procedure (Chapter 31). Protected left turns only (9.3) |
+| Pedestrians and bicycles f_Lpb, f_Rpb | 1.0 | 1.0 when no pedestrians or bicycles are present (page 19-48); few pedestrians cross these approaches |
+| Work zone f_wz, downstream lane blockage f_ms, sustained spillback f_sp | 1.0 | each is 1.0 when the condition is absent (page 19-49) |
+| Connected and automated vehicles f_CAV | 1.0 | HCM 7th edition adjustment (Chapter 31); the simulation contains no such vehicles |
 
 Signalized right turns are not in the analysis (right turns use uncontrolled slip lanes), so no right-turn factor is applied. Every factor that is not calculated from Jaadah data is labelled *modelled assumption* in `input_origins`.
 
@@ -356,7 +356,7 @@ A left turn is treated as **protected** when no phase that serves it also serves
 
 `SimulationDemand` gives demand per movement, but a movement can use more than one lane group (for example, East-left uses `APP_E_L` and the shared `APP_E_LT`). The demand of each movement is distributed over its lane groups on the assumption that **drivers choose the lane group that serves them best, so that every lane group a movement uses ends up with the same flow ratio v/s**. A lane group that would need a negative share of a movement receives none of it.
 
-This follows the principle of the HCM shared-lane procedure without its full steps. The calculation, per approach and interval:
+This is the principle of the HCM procedure for lane group flow rates on approaches with shared lanes: drivers "choose the lane that minimizes their service time at the intersection, where the lane volume-to-saturation flow ratio is used to estimate relative differences in this time among lanes" (Chapter 19, page 19-44), and the "equalization of flow ratios" of Equation 31-46 (Chapter 31, page 31-23). The calculation, per approach and interval:
 
 1. Start with each movement's demand split equally over the lane groups it may use.
 2. For each movement in turn, keep the other movements' flows fixed and redistribute this movement's demand over its lane groups so that their flow ratios become equal ("water filling": groups with spare capacity receive flow first).
@@ -365,7 +365,7 @@ This follows the principle of the HCM shared-lane procedure without its full ste
 
 As a consequence, when few vehicles turn left, they all use the exclusive left-turn lane and the shared lane carries only through traffic; when many turn left, the left-turn lane reaches the common flow ratio and the remaining left-turners use the shared lane.
 
-**Limitations.** The method assumes that drivers balance the lane groups perfectly, which real drivers do only approximately, and it does not model two effects included in the full HCM procedure: left-turning vehicles blocking the shared lane while they wait (relevant mainly for permitted left turns, which are not supported, 9.3) and a short left-turn lane overflowing into the adjacent lane. Queue overflow is still visible in the measured queue storage ratio (section 6.5). The distribution is labelled *modelled assumption*.
+**Limitations.** The full HCM procedure (Chapter 31, Section 2) adds refinements not yet included here: field observations showed that equalizing flow ratios overestimates the effect of turning vehicles at very low and very high approach flows, so HCM weights the turning equivalents by a probability of a lane change (Equations 31-47 to 31-51, Exhibit 31-5). The method here also assumes that drivers balance the lane groups perfectly, and it does not model two further effects: left-turning vehicles blocking the shared lane while they wait (relevant mainly for permitted left turns, which are not supported, 9.3) and a short left-turn lane overflowing into the adjacent lane. Queue overflow is still visible in the measured queue storage ratio (section 6.5). The distribution is labelled *modelled assumption*.
 
 A fixed split (such as 50/50 or 60/40) was not used, because it would not respond to the demand and could not be justified.
 

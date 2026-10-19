@@ -15,18 +15,22 @@ from backend.analytics.kpi.parameters import (
     BASE_SATURATION_FLOW_PC_H_LN,
     BUS_BLOCKAGE_FACTOR,
     CAV_FACTOR,
-    GRADE_FACTOR,
-    HEAVY_VEHICLE_FACTOR,
+    DOWNSTREAM_LANE_BLOCKAGE_FACTOR,
+    EFFECTIVE_GREEN_EXTENSION_S,
+    HEAVY_VEHICLE_GRADE_FACTOR,
     LANE_UTILIZATION_FACTORS,
     LANE_WIDTH_FACTOR_NARROW,
     LANE_WIDTH_FACTOR_NORMAL,
     LANE_WIDTH_FACTOR_WIDE,
+    LANE_WIDTH_MINIMUM_M,
     LANE_WIDTH_NARROW_LIMIT_M,
     LANE_WIDTH_WIDE_LIMIT_M,
     LEFT_TURN_EQUIVALENT,
-    LOST_TIME_PER_PHASE_S,
     PARKING_FACTOR,
     PEDESTRIAN_BICYCLE_FACTOR,
+    START_UP_LOST_TIME_S,
+    SUSTAINED_SPILLBACK_FACTOR,
+    WORK_ZONE_FACTOR,
 )
 from jaadah.models.kpis import InputOrigin, KpiStatus
 from jaadah.models.network import (
@@ -35,7 +39,11 @@ from jaadah.models.network import (
     MovementAttributes,
     MovementType,
 )
-from jaadah.models.signals import SignalProgram, SignalProgramSource
+from jaadah.models.signals import (
+    SignalPhase,
+    SignalProgram,
+    SignalProgramSource,
+)
 
 
 # Demand distribution (section 9.4): stop when no lane group's flow
@@ -45,12 +53,14 @@ DISTRIBUTION_MAX_ROUNDS = 100
 
 # The product of the factors that do not depend on the lane group.
 FIXED_FACTORS = (
-    HEAVY_VEHICLE_FACTOR
-    * GRADE_FACTOR
+    HEAVY_VEHICLE_GRADE_FACTOR
     * PARKING_FACTOR
     * BUS_BLOCKAGE_FACTOR
     * AREA_TYPE_FACTOR
     * PEDESTRIAN_BICYCLE_FACTOR
+    * WORK_ZONE_FACTOR
+    * DOWNSTREAM_LANE_BLOCKAGE_FACTOR
+    * SUSTAINED_SPILLBACK_FACTOR
     * CAV_FACTOR
 )
 
@@ -62,10 +72,12 @@ FIXED_FACTORS = (
 def saturation_flow(
     group: LaneGroup,
     lanes_by_id: dict[str, ApproachLane],
+    movement_attributes: dict[str, MovementAttributes],
     left_turn_share: float,
 ) -> float:
     """
-    Saturation flow of one lane group, in veh/h:
+    Saturation flow of one lane group, in veh/h: N times the adjusted
+    saturation flow per lane of HCM Equation 19-8,
     s = s0 x N x f_w x f_LU x f_LT x (the fixed factors).
 
     left_turn_share is the share of left-turning vehicles in the group
@@ -82,14 +94,26 @@ def saturation_flow(
         BASE_SATURATION_FLOW_PC_H_LN
         * group.lane_count
         * lane_width_factor(fmean(widths))
-        * lane_utilization_factor(group.lane_count)
+        * lane_utilization_factor(
+            group.lane_count, _utilization_type(group, movement_attributes)
+        )
         * left_turn_factor(left_turn_share)
         * FIXED_FACTORS
     )
 
 
 def lane_width_factor(average_width_m: float) -> float:
-    """HCM lane-width factor for a group's average lane width."""
+    """
+    HCM lane-width factor for a group's average lane width
+    (Exhibit 19-20). The factor may not be used below 8.0 ft.
+    """
+
+    if average_width_m < LANE_WIDTH_MINIMUM_M:
+        raise ValueError(
+            "the lane width factor does not apply to an average lane "
+            f"width below 8.0 ft ({LANE_WIDTH_MINIMUM_M} m); "
+            f"got {average_width_m} m"
+        )
 
     if average_width_m < LANE_WIDTH_NARROW_LIMIT_M:
         return LANE_WIDTH_FACTOR_NARROW
@@ -100,15 +124,44 @@ def lane_width_factor(average_width_m: float) -> float:
     return LANE_WIDTH_FACTOR_NORMAL
 
 
-def lane_utilization_factor(lane_count: int) -> float:
-    """HCM default lane-utilisation factor for a number of lanes."""
+def lane_utilization_factor(lane_count: int, movement_type: str) -> float:
+    """
+    HCM default lane-utilisation factor (Exhibit 19-15) for a number of
+    lanes of one movement type ("through", "left" or "right"). For more
+    lanes than the exhibit lists, the smallest value of that type is
+    used.
+    """
 
-    if lane_count not in LANE_UTILIZATION_FACTORS:
-        raise ValueError(
-            f"no lane utilisation factor for {lane_count} lanes"
-        )
+    factors = LANE_UTILIZATION_FACTORS[movement_type]
 
-    return LANE_UTILIZATION_FACTORS[lane_count]
+    if lane_count < 1:
+        raise ValueError("lane_count must be at least 1")
+
+    if lane_count in factors:
+        return factors[lane_count]
+
+    return min(factors.values())
+
+
+def _utilization_type(
+    group: LaneGroup,
+    movement_attributes: dict[str, MovementAttributes],
+) -> str:
+    """
+    Exhibit 19-15 row type of a lane group: "left" or "right" for an
+    exclusive turn lane group, otherwise "through". Shared groups have
+    one lane, so their type does not change the factor.
+    """
+
+    types = {movement_attributes[m].movement_type for m in group.movement_ids}
+
+    if types == {MovementType.LEFT}:
+        return "left"
+
+    if types == {MovementType.RIGHT}:
+        return "right"
+
+    return "through"
 
 
 def left_turn_factor(left_turn_share: float) -> float:
@@ -193,7 +246,7 @@ def distribute_demand(
         shares = _left_turn_shares(groups, flows, movement_attributes)
         saturation = {
             g.lane_group_id: saturation_flow(
-                g, lanes_by_id, shares[g.lane_group_id]
+                g, lanes_by_id, movement_attributes, shares[g.lane_group_id]
             )
             for g in groups
         }
@@ -231,7 +284,10 @@ def distribute_demand(
                 left_turn_shares=shares,
                 saturation_flows={
                     g.lane_group_id: saturation_flow(
-                        g, lanes_by_id, shares[g.lane_group_id]
+                        g,
+                        lanes_by_id,
+                        movement_attributes,
+                        shares[g.lane_group_id],
                     )
                     for g in groups
                 },
@@ -515,9 +571,9 @@ def _group_capacity(
 
 def lane_group_green(group: LaneGroup, program: SignalProgram) -> float | None:
     """
-    Effective green of a lane group: the total green of the phases
-    that serve all of its movements (effective green = displayed
-    green). None when no phase serves all of them.
+    Effective green of a lane group: the total effective green of the
+    phases that serve all of its movements. None when no phase serves
+    all of them.
     """
 
     phases = [
@@ -529,7 +585,29 @@ def lane_group_green(group: LaneGroup, program: SignalProgram) -> float | None:
     if not phases:
         return None
 
-    return sum(phase.green_time_s for phase in phases)
+    return sum(effective_green(phase) for phase in phases)
+
+
+def effective_green(phase: SignalPhase) -> float:
+    """
+    Effective green of one phase (HCM Equation 19-3):
+    g = G + Y + Rc - l1 - l2 with l2 = Y + Rc - e, so g = G - l1 + e.
+    """
+
+    return phase.green_time_s - START_UP_LOST_TIME_S + EFFECTIVE_GREEN_EXTENSION_S
+
+
+def phase_lost_time(phase: SignalPhase) -> float:
+    """
+    Lost time of one phase: l1 + l2, with clearance lost time
+    l2 = Y + Rc - e (page 19-14).
+    """
+
+    clearance_lost_time = (
+        phase.yellow_time_s + phase.all_red_time_s - EFFECTIVE_GREEN_EXTENSION_S
+    )
+
+    return START_UP_LOST_TIME_S + clearance_lost_time
 
 
 def _is_permitted_left(
@@ -644,8 +722,9 @@ def _critical_volume_to_capacity(
     program: SignalProgram,
 ) -> tuple[float | None, KpiStatus, str | None]:
     """
-    Xc = sum of each phase's highest flow ratio x C / (C - L), with
-    L = lost time per phase x number of phases.
+    Xc = sum of each phase's highest flow ratio x C / (C - L)
+    (HCM Equation 19-30), with L the total lost time of the phases.
+    Jaadah's phases run in sequence, so every phase is critical.
     """
 
     if any(r.status != KpiStatus.OK for r in group_results.values()):
@@ -665,6 +744,6 @@ def _critical_volume_to_capacity(
             total_critical += max(ratios)
 
     cycle = program.cycle_length_s
-    lost_time = LOST_TIME_PER_PHASE_S * len(program.phases)
+    lost_time = sum(phase_lost_time(phase) for phase in program.phases)
 
     return total_critical * cycle / (cycle - lost_time), KpiStatus.OK, None
