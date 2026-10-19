@@ -1,0 +1,103 @@
+/* "┆ Recurrence threshold (15 of 30 days)" in the header */
+.th-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.th-note-line {
+  width: 0;
+  height: 14px;
+  border-left: 2px dashed var(--color-text);
+}
+
+.th-rows {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Text on the left, bar in the middle, count on the right. The count
+   column has a fixed width, so every bar has the same length and the
+   dashed threshold line sits at the same place in every row. */
+.th-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.1fr) minmax(80px, 1.4fr) 92px;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.th-text {
+  display: grid;
+  min-width: 0;
+}
+
+.th-window {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.th-rule {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* The empty track, with the dashed threshold line drawn on top of it */
+.th-track {
+  position: relative;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--chart-track);
+}
+
+.th-track::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: var(--marker);
+  border-left: 2px dashed var(--color-text);
+}
+
+/* Below the threshold: the chart color. At or above: amber, a warning. */
+.th-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--chart-1);
+}
+
+.th-fill-recurring {
+  background: var(--color-warning);
+}
+
+.th-count {
+  display: grid;
+  justify-items: end;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.th-flag {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+@media (max-width: 520px) {
+  .th-row {
+    grid-template-columns: minmax(0, 1fr) 92px;
+  }
+
+  .th-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

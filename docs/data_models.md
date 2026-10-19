@@ -586,6 +586,19 @@ The canonical model defines shared meanings and structures. It intentionally doe
 
 Canonical entities do not contain SUMO topology. A separate mapping layer links movements to SUMO routes, lanes to SUMO lanes, and detectors and traffic-light controlled links to their Jaadah identities. This keeps generated SUMO identifiers from becoming application-level identities.
 
+The study area's network IDs, parent relationships, and source/SUMO mappings
+live in `data/processed/road_network/network_mappings.json`. This is the single
+configuration used to define the network. `NetworkMappingConfig` builds
+canonical objects from those records through `canonical_intersection`,
+`canonical_approaches`, and `canonical_movements`.
+
+`approach_lanes` holds the canonical lane definitions, while `lane_mappings`
+connects them to SUMO lane segments. A known lane may still be waiting for its
+SUMO mapping. The checks catch inconsistent references and ownership; creating
+canonical objects from the same records does not independently confirm their
+geographic correctness. See [Network mapping](network_mapping.md) for the full
+rules, M7 usage, and test commands.
+
 ## 9.2 Demand transformation is separate
 
 The models do not decide how observed detector counts become movement demand (e.g. splitting 100 detector vehicles 70/30 between two movements). That rule belongs to the Traffic Demand Transformation component, so traffic-domain assumptions are not hidden inside structural validation.
@@ -685,3 +698,4 @@ Together, these structures form the common data language used across the Jaadah 
 | Oct 2026 (Sprint 1) | 16 initial models in five areas |
 | 14–17 Oct 2026 | Added `KpiResult` and its enums and tables (`kpis.py`); `MovementAttributes` and `ApproachLane`; `VehicleDelayRecord`, `IncompletePassage` and `CycleQueueRecord`; `ReplicationPair` and `ReplicationSet`; `SimulationConfig.clearance_duration_s`. Shared-lane reporting (Option C) with lane and lane-group levels |
 | 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
+| 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
