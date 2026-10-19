@@ -1,0 +1,103 @@
+.losd-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Column headings: what the bars show, and the right-hand column */
+.losd-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.losd-rows {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Label, bar, percentage */
+.losd-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.losd-label {
+  font-size: var(--text-sm);
+}
+
+/* The bar: segments side by side with a 2px white gap between them */
+.losd-bar {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+}
+
+.losd-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2px;
+  flex-basis: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+.losd-seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.losd-seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+/* Level of service colors from the theme; white letters on the dark ones */
+.losd-los-a { background: var(--los-a); }
+.losd-los-b { background: var(--los-b); }
+.losd-los-c { background: var(--los-c); }
+.losd-los-d { background: var(--los-d); }
+.losd-los-e { background: var(--los-e); color: var(--color-text-on-dark); }
+.losd-los-f { background: var(--los-f); color: var(--color-text-on-dark); }
+
+.losd-poor {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.losd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: auto;
+  padding-top: var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.losd-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.losd-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.losd-readout {
+  margin-left: auto;
+  color: var(--color-text);
+}
