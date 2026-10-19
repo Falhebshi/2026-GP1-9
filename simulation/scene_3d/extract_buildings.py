@@ -44,6 +44,6 @@ for _, el in ET.iterparse(osm_file):
                                              "height_m": round(h, 1), "height_source": s},
                               "geometry": {"type": "Polygon", "coordinates": [[[round(x, 7), round(y, 7)] for x, y in ring]]}})
         el.clear()
-json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w"), separators=(",", ":"))
+json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w", encoding="utf-8"), separators=(",", ":"))
 print("buildings:", len(feats), "| height source:", dict(src))
 print("types:", Counter(f["properties"]["type"] for f in feats).most_common(8))

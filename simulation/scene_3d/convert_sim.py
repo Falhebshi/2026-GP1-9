@@ -69,7 +69,7 @@ sim = {"intersection_id": "turki_imamsaud", "scenario": "baseline", "source": SO
                          "bus": {"length": 12.0, "width": 2.5, "height": 3.1},
                          "truck": {"length": 9.0, "width": 2.4, "height": 3.3}},
        "trips": trips}
-json.dump(sim, open(os.path.join(out_dir, "sim.json"), "w"), separators=(",", ":"))
+json.dump(sim, open(os.path.join(out_dir, "sim.json"), "w", encoding="utf-8"), separators=(",", ":"))
 
 # ---------- traffic lights ----------
 ll = lambda x, y: [round(c, 7) for c in net.convertXY2LonLat(x, y)]
@@ -93,7 +93,7 @@ for tls in net.getTrafficLights():
                       "position": ll(x2, y2), "toward": ll(x2 + (x2 - x1) * 0.01, y2 + (y2 - y1) * 0.01)})
     tls_out.append({"tls_id": tls.getID(), "cycle_s": 120, "heads": heads, "states": states.get(tls.getID(), [])})
 json.dump({"t_start": 0, "t_end": T1 - T0, "state_chars": "r=red y=yellow g/G=green o=off", "traffic_lights": tls_out},
-          open(os.path.join(out_dir, "signals.json"), "w"), separators=(",", ":"))
+          open(os.path.join(out_dir, "signals.json"), "w", encoding="utf-8"), separators=(",", ":"))
 
 under = sum(1 for d in trips if min(d["z"]) < -0.5)
 print(f"vehicles: {len(trips)} | through the underpass: {under} | heads: {sum(len(t['heads']) for t in tls_out)}"

@@ -44,7 +44,7 @@ for _, el in ET.iterparse(osm_file):
                      [(m.get("ref"), m.get("role")) for m in el.findall("member") if m.get("type") == "way"]))
 
 # SUMO network footprint (in metres) and the OSM way ids it was built from
-surface = json.load(open(surface_file))["features"]
+surface = json.load(open(surface_file, encoding="utf-8"))["features"]
 road_xy = unary_union([Polygon([to_xy(c[0], c[1]) for c in f["geometry"]["coordinates"][0]]).buffer(0)
                        for f in surface]).buffer(2.0)           # incl. the underpass: its OSM ways must not reappear
 net_way_ids = {e.getID().split("#")[0].lstrip("-") for e in net.getEdges()}
@@ -96,6 +96,6 @@ for wid, (t, nds) in ways.items():
                       "geometry": {"type": "LineString", "coordinates": [list(to_ll(x, y)) for x, y in part.coords]}})
         kept += 1
 json.dump({"type": "FeatureCollection", "note": "Context only - not part of the SUMO simulation.", "features": feats},
-          open(out_file, "w"), separators=(",", ":"))
+          open(out_file, "w", encoding="utf-8"), separators=(",", ":"))
 from collections import Counter
 print("context features:", Counter((f["properties"]["kind"], f["properties"]["class"]) for f in feats))

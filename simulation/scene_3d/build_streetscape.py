@@ -19,8 +19,8 @@ to_ll = lambda x, y: [round(c, 7) for c in net.convertXY2LonLat(x, y)]
 def poly_xy(ring):
     return Polygon([to_xy(c[0], c[1]) for c in ring]).buffer(0)
 
-surface = json.load(open(surface_file))["features"]
-under = json.load(open(underpass_file))["features"]
+surface = json.load(open(surface_file, encoding="utf-8"))["features"]
+under = json.load(open(underpass_file, encoding="utf-8"))["features"]
 road = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in surface]).buffer(0.05).buffer(-0.05)
 openings = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in under if f["properties"]["kind"] == "ramp_floor"]).buffer(0.5)
 roof = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in under if f["properties"]["kind"] == "roof"]).buffer(0.5)
@@ -42,7 +42,7 @@ for kind, geom, h in (("sidewalk", sidewalk, 0.15), ("median", median, 0.2), ("k
         rings = [[to_ll(x, y) for x, y in g.exterior.coords]] + [[to_ll(x, y) for x, y in r.coords] for r in g.interiors]
         feats.append({"type": "Feature", "properties": {"kind": kind, "height_m": h}, "geometry": {"type": "Polygon", "coordinates": rings}})
 json.dump({"type": "FeatureCollection", "note": "Visual only: kerbs, sidewalks and medians derived from the road surface.",
-           "features": feats}, open(out_file, "w"), separators=(",", ":"))
+           "features": feats}, open(out_file, "w", encoding="utf-8"), separators=(",", ":"))
 from collections import Counter
 print("streetscape:", Counter(f["properties"]["kind"] for f in feats),
       "| areas m2: kerb %.0f sidewalk %.0f median %.0f" % (kerb.area, sidewalk.area, median.area))

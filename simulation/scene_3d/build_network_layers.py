@@ -474,7 +474,7 @@ for e in net.getEdges():
             under_parts.append(LineString(sh).buffer(ln.getWidth() / 2 + 4.0, cap_style=2))
 # and none along the tunnel structure (open ramps, walls and the covered roof), from underpass.geojson
 if os.path.exists(underpass_file):
-    for f in json.load(open(underpass_file))["features"]:
+    for f in json.load(open(underpass_file, encoding="utf-8"))["features"]:
         if f["properties"].get("kind") in ("ramp_floor", "wall", "roof"):
             ring = [net.convertLonLat2XY(c[0], c[1]) for c in f["geometry"]["coordinates"][0]]
             if len(ring) >= 3:
@@ -515,7 +515,7 @@ print("street edge lines: replaced", old_n, "lane-based pieces with", n_new, "tr
 
 
 def dump(name, feats):
-    json.dump({"type": "FeatureCollection", "features": feats}, open(os.path.join(out_dir, name), "w"), separators=(",", ":"))
+    json.dump({"type": "FeatureCollection", "features": feats}, open(os.path.join(out_dir, name), "w", encoding="utf-8"), separators=(",", ":"))
 
 dump("road_surface.geojson", surface)
 dump("road_markings.geojson", lines)

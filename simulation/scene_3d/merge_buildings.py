@@ -10,9 +10,9 @@ import sys, json
 from shapely.geometry import shape
 from shapely.strtree import STRtree
 osm_file, overture_file, landmarks_file, out_file = sys.argv[1:5]
-osm = json.load(open(osm_file))["features"]
-ovt = json.load(open(overture_file))["features"]
-lm = json.load(open(landmarks_file))["features"]
+osm = json.load(open(osm_file, encoding="utf-8"))["features"]
+ovt = json.load(open(overture_file, encoding="utf-8"))["features"]
+lm = json.load(open(landmarks_file, encoding="utf-8"))["features"]
 lm_g = [shape(f["geometry"]) for f in lm]
 out = []
 SPHERE_H = 20  # the CST sphere: OSM gives no height; estimated from imagery
@@ -45,6 +45,6 @@ for f in ovt:
     added += 1
 for f in lm:
     out.append({"type": "Feature", "properties": {"osm_id": "", "type": "landmark", **f["properties"]}, "geometry": f["geometry"]})
-json.dump({"type": "FeatureCollection", "features": out}, open(out_file, "w"), separators=(",", ":"))
+json.dump({"type": "FeatureCollection", "features": out}, open(out_file, "w", encoding="utf-8"), separators=(",", ":"))
 from collections import Counter
 print("total", len(out), Counter(f["properties"]["source"] for f in out), "| overture added", added)

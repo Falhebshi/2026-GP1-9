@@ -28,7 +28,7 @@ STEP = 3.0                                    # wall piece length (m)
 to_xy = lambda lon, lat: net.convertLonLat2XY(lon, lat)
 to_ll = lambda x, y: [round(c, 7) for c in net.convertXY2LonLat(x, y)]
 
-surface = json.load(open(surface_file))["features"]
+surface = json.load(open(surface_file, encoding="utf-8"))["features"]
 under_polys, depth_samples = [], []
 for f in surface:
     if f["properties"].get("level") != "underground":
@@ -121,6 +121,6 @@ for g in getattr(opening, "geoms", [opening]):
         feats.append({"type": "Feature", "properties": {"kind": kind, "height_m": round(height, 2)},
                       "geometry": {"type": "Polygon", "coordinates": [[to_ll(x, y) + [round(base, 2)] for x, y in quad]]}})
 
-json.dump({"type": "FeatureCollection", "features": feats}, open(out_file, "w"), separators=(",", ":"))
+json.dump({"type": "FeatureCollection", "features": feats}, open(out_file, "w", encoding="utf-8"), separators=(",", ":"))
 print(f"open ramp area {opening.area:.0f} m2 in {len(parts)} part(s) | covered tunnel hidden | "
       f"wall pieces {n_wall} | portal beam pieces {n_beam} | roof slats {n_slat}")

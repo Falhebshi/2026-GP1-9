@@ -36,9 +36,9 @@ for e in net.getEdges(withInternal=True):
 # ---- building aprons ----
 def poly_xy(ring):
     return Polygon([to_xy(c[0], c[1]) for c in ring]).buffer(0)
-road = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(surface_file))["features"]])
-ss = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(ss_file))["features"]])
-blds = [poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(bld_file))["features"] if not f["properties"].get("base_m")]
+road = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(surface_file, encoding="utf-8"))["features"]])
+ss = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(ss_file, encoding="utf-8"))["features"]])
+blds = [poly_xy(f["geometry"]["coordinates"][0]) for f in json.load(open(bld_file, encoding="utf-8"))["features"] if not f["properties"].get("base_m")]
 aprons = unary_union([b.buffer(3.0, join_style=2) for b in blds]).difference(unary_union(blds)).difference(road.buffer(0.5)).difference(ss)
 n_ap = 0
 for g in getattr(aprons, "geoms", [aprons]):
@@ -50,7 +50,7 @@ for g in getattr(aprons, "geoms", [aprons]):
                                [[to_ll(x, y) for x, y in r.coords] for r in g.interiors]}})
     n_ap += 1
 # ---- the whole street-level road surface as ONE outline (for large-scale tone variation without seams) ----
-surface_feats = json.load(open(surface_file))["features"]
+surface_feats = json.load(open(surface_file, encoding="utf-8"))["features"]
 street = unary_union([poly_xy(f["geometry"]["coordinates"][0]) for f in surface_feats if f["properties"].get("level") != "underground"])
 for g in getattr(street, "geoms", [street]):
     if g.geom_type == "Polygon" and g.area > 1:
@@ -59,5 +59,5 @@ for g in getattr(street, "geoms", [street]):
                       "geometry": {"type": "Polygon", "coordinates": [[to_ll(x, y) for x, y in g.exterior.coords]] +
                                    [[to_ll(x, y) for x, y in r.coords] for r in g.interiors]}})
 json.dump({"type": "FeatureCollection", "note": "Visual detail only. Aprons are an approximation (3 m paved strip around buildings).",
-           "features": feats}, open(out_file, "w"), separators=(",", ":"))
+           "features": feats}, open(out_file, "w", encoding="utf-8"), separators=(",", ":"))
 print("lane centres:", sum(1 for f in feats if f["properties"]["kind"] == "lane_centre"), "| aprons:", n_ap)
