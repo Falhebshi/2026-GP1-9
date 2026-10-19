@@ -224,7 +224,6 @@ def transform_observations(
                 ),
                 interval_start=interval_start,
                 interval_end=interval_end,
-                intersection_id=config.intersection_mapping.intersection_id,
                 movement_id=movement_id,
                 vehicle_count=sum(
                     observation.vehicle_count

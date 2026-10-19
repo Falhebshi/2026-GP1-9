@@ -79,7 +79,7 @@ def make_valid_config(
 
     return NetworkMappingConfig.model_validate(
         {
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "mapping_version": "test",
             "network": {
                 "version": "test",
@@ -94,12 +94,12 @@ def make_valid_config(
                 {
                     "approach_id": "APP_N",
                     "intersection_id": "INT_001",
-                    "direction": "north",
+                    "approach_side": "north",
                 },
                 {
                     "approach_id": "APP_W",
                     "intersection_id": "INT_001",
-                    "direction": "west",
+                    "approach_side": "west",
                 },
             ],
             "movement_mappings": [
@@ -199,7 +199,6 @@ def test_usable_detectors_are_summed_into_one_demand() -> None:
 
     assert demand.demand_id == "DEM_SYN_MOV_N_E_20261014T0815"
     assert demand.movement_id == "MOV_N_E"
-    assert demand.intersection_id == "INT_001"
     assert demand.vehicle_count == 29
     assert demand.source.value == "synthetic"
     assert demand.interval_start == FIRST_START

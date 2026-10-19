@@ -412,7 +412,6 @@ The following decisions are open and are not implemented:
 | East and west through detectors also counting ramp and U-turn traffic | Depends on how these detectors are mapped |
 | Movements with no detector (U-turns, tunnel, tunnel on-ramp) | No demand produced |
 | Filling missing detector intervals, and marking estimated demand | Reported, not filled |
-| Removal of `intersection_id` from `SimulationDemand` | Still filled from the mapping configuration |
 
 When a decision is adopted, it should be added as a separate documented rule with its own tests, without changing how usable detectors are handled.
 

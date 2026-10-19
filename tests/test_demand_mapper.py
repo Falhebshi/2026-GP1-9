@@ -18,7 +18,7 @@ def make_valid_config() -> NetworkMappingConfig:
 
     return NetworkMappingConfig.model_validate(
         {
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "mapping_version": "test",
             "network": {
                 "version": "test",
@@ -33,12 +33,12 @@ def make_valid_config() -> NetworkMappingConfig:
                 {
                     "approach_id": "APP_N",
                     "intersection_id": "INT_001",
-                    "direction": "north",
+                    "approach_side": "north",
                 },
                 {
                     "approach_id": "APP_W",
                     "intersection_id": "INT_001",
-                    "direction": "west",
+                    "approach_side": "west",
                 },
             ],
             "movement_mappings": [
