@@ -38,6 +38,29 @@ def test_load_valid_json(tmp_path, valid_config):
     assert isinstance(result, NetworkMappingConfig)
     assert result.network.version == "test_network_v1"
     assert result.movement_mappings == []
+    assert result.detector_mappings == []
+
+
+@pytest.mark.parametrize("site_fields", [
+    {}, {"site_id": None}, {"site_id": ""}, {"site_id": "   "},
+])
+def test_loader_rejects_detector_without_nonblank_site(tmp_path, valid_config, site_fields):
+    valid_config["detector_mappings"] = [{
+        "source": "synthetic", "detector_id": "D1", "intersection_id": "INT_001",
+        "mapping_status": "unresolved", **site_fields,
+    }]
+    with pytest.raises(ValidationError) as exc:
+        load_network_mappings(write_json(tmp_path, valid_config))
+    assert exc.value.errors()[0]["loc"] == ("detector_mappings", 0, "site_id")
+
+
+def test_loader_preserves_detector_with_explicit_site(tmp_path, valid_config):
+    valid_config["detector_mappings"] = [{
+        "source": "synthetic", "site_id": "9", "detector_id": "D1",
+        "intersection_id": "INT_001", "mapping_status": "unresolved",
+    }]
+    result = load_network_mappings(write_json(tmp_path, valid_config))
+    assert result.detector_mappings[0].site_id == "9"
 
 
 def test_load_from_string_path(tmp_path, valid_config):
