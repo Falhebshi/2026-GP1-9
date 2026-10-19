@@ -1,4 +1,5 @@
 import hashlib
+import math
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
@@ -45,6 +46,7 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
 
     edges = {}
     lanes = set()
+    lane_lengths = {}
     lane_edges = {}
     indexed_lanes = {}
     for edge in root.findall("edge"):
@@ -56,6 +58,7 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
             lane_id = lane.get("id")
             if lane_id:
                 lanes.add(lane_id)
+                lane_lengths[lane_id] = lane.get("length")
                 lane_edges[lane_id] = edge_id
                 indexed_lanes[(edge_id, lane.get("index"))] = lane_id
 
@@ -145,6 +148,33 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
                 for end in ends
             ):
                 errors.append(f"{name}: terminal lane cannot serve movement {movement_id}")
+
+    lane_mappings = {item.lane_id: item for item in config.lane_mappings}
+    for detector in config.detector_mappings:
+        if detector.sumo_lane_id is None:
+            continue
+        name = f"Detector {detector.source.value}/{detector.site_id}/{detector.detector_id}"
+        lane_id = detector.sumo_lane_id
+        mapping = lane_mappings.get(detector.lane_id)
+        # Pending canonical mappings remain valid drafts; membership is checked
+        # only when a chain is available. No terminal-segment rule is imposed.
+        if mapping is not None and lane_id not in mapping.sumo_lane_ids:
+            errors.append(f"{name}: SUMO lane {lane_id} is not in canonical lane {mapping.lane_id} chain")
+        if lane_id not in lanes:
+            errors.append(f"{name}: lane not found: {lane_id}")
+            continue
+        if edges[lane_edges[lane_id]].get("function") == "internal":
+            errors.append(f"{name}: internal SUMO lane is not a detector traffic lane: {lane_id}")
+            continue
+        try:
+            length = float(lane_lengths[lane_id])
+        except (TypeError, ValueError):
+            errors.append(f"{name}: missing or invalid SUMO lane length: {lane_id}")
+            continue
+        if not math.isfinite(length) or length < 0:
+            errors.append(f"{name}: invalid SUMO lane length: {lane_id}")
+        elif not 0 <= detector.sumo_position_m <= length:
+            errors.append(f"{name}: SUMO position {detector.sumo_position_m} outside lane {lane_id} bounds [0, {length}]")
 
     for movement in config.movement_mappings:
         name = f"Movement {movement.movement_id}"

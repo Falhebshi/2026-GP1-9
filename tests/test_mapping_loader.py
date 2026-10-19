@@ -169,3 +169,54 @@ def test_loader_rejects_invalid_canonical_lane_reference(tmp_path, valid_config)
     valid_config['lane_mappings'] = [{'lane_id': 'UNKNOWN', 'sumo_lane_ids': ['a_0']}]
     with pytest.raises(ValidationError, match='unknown lane_id'):
         load_network_mappings(write_json(tmp_path, valid_config))
+
+
+@pytest.mark.parametrize('position', [0, 4.5, 10])
+def test_loader_preserves_and_validates_explicit_detector_location(tmp_path, valid_config, position):
+    network = tmp_path / 'network.net.xml'
+    network.write_text('<net><edge id="a"><lane id="a_0" index="0" length="10"/></edge></net>')
+    valid_config['network']['sha256'] = hashlib.sha256(network.read_bytes()).hexdigest()
+    valid_config['detector_mappings'] = [{
+        'source': 'synthetic', 'site_id': '9', 'detector_id': 'D1',
+        'intersection_id': 'INT_001', 'mapping_status': 'unresolved',
+        'sumo_lane_id': ' a_0 ', 'sumo_position_m': position,
+    }]
+    mapping_file = write_json(tmp_path, valid_config)
+    for network_path in [None, network]:
+        detector = load_network_mappings(mapping_file, network_path=network_path).detector_mappings[0]
+        assert detector.sumo_lane_id == 'a_0'
+        assert detector.sumo_position_m == position
+        assert detector.movement_ids == []
+
+
+@pytest.mark.parametrize('location', [
+    {'sumo_lane_id': 'a_0'}, {'sumo_position_m': 0},
+    {'sumo_lane_id': 'a_0', 'sumo_position_m': True},
+])
+def test_loader_rejects_structurally_invalid_detector_location(tmp_path, valid_config, location):
+    valid_config['detector_mappings'] = [{
+        'source': 'synthetic', 'site_id': '9', 'detector_id': 'D1',
+        'intersection_id': 'INT_001', 'mapping_status': 'unresolved', **location,
+    }]
+    with pytest.raises(ValidationError):
+        load_network_mappings(write_json(tmp_path, valid_config))
+
+
+@pytest.mark.parametrize('lane,position,message', [
+    ('a_0', 10.01, 'outside lane'), ('missing_0', 1, 'lane not found'),
+])
+def test_loader_requires_network_for_detector_location_reference_checks(
+    tmp_path, valid_config, lane, position, message,
+):
+    network = tmp_path / 'network.net.xml'
+    network.write_text('<net><edge id="a"><lane id="a_0" index="0" length="10"/></edge></net>')
+    valid_config['network']['sha256'] = hashlib.sha256(network.read_bytes()).hexdigest()
+    valid_config['detector_mappings'] = [{
+        'source': 'synthetic', 'site_id': '9', 'detector_id': 'D1',
+        'intersection_id': 'INT_001', 'mapping_status': 'unresolved',
+        'sumo_lane_id': lane, 'sumo_position_m': position,
+    }]
+    mapping_file = write_json(tmp_path, valid_config)
+    assert load_network_mappings(mapping_file).detector_mappings[0].sumo_lane_id == lane
+    with pytest.raises(ValueError, match=message):
+        load_network_mappings(mapping_file, network_path=network)

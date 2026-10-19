@@ -599,6 +599,22 @@ canonical objects from the same records does not independently confirm their
 geographic correctness. See [Network mapping](network_mapping.md) for the full
 rules, M7 usage, and test commands.
 
+`DetectorMapping.lane_id` is an optional canonical association. Its separate
+`sumo_lane_id` and `sumo_position_m` fields describe an exact modeled location:
+both may be absent/null, or both must be supplied. Lane IDs are trimmed and
+nonblank; positions must be finite, nonnegative numbers, excluding booleans,
+in metres from the SUMO lane start along travel direction. Network validation
+checks external lane existence, inclusive lane-length bounds, and membership
+in the canonical lane chain when that mapping is available. Any chain segment
+may be selected. Pending mappings cannot establish membership, and unresolved
+detectors may still omit exact locations.
+
+The upcoming synthetic baseline uses 1 m before the selected lane endpoint.
+Detectors 1-12 reference modeled signal entries; 13-16 reference uncontrolled
+slip/bypass endpoints, not necessarily physical stop lines. These modeled
+assumptions are not surveyed RCRC locations or defaults for other sources.
+Task 5B adds the location contract only; detector records remain unpopulated.
+
 ## 9.2 Demand transformation is separate
 
 The models do not decide how observed detector counts become movement demand (e.g. splitting 100 detector vehicles 70/30 between two movements). That rule belongs to the Traffic Demand Transformation component, so traffic-domain assumptions are not hidden inside structural validation.
@@ -699,3 +715,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 14–17 Oct 2026 | Added `KpiResult` and its enums and tables (`kpis.py`); `MovementAttributes` and `ApproachLane`; `VehicleDelayRecord`, `IncompletePassage` and `CycleQueueRecord`; `ReplicationPair` and `ReplicationSet`; `SimulationConfig.clearance_duration_s`. Shared-lane reporting (Option C) with lane and lane-group levels |
 | 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
 | 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
+| 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |

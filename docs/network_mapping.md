@@ -99,6 +99,37 @@ null, empty, and whitespace-only site IDs are rejected; there is no implicit
 site default or wildcard. A configuration may still have an empty
 `detector_mappings` collection.
 
+### Exact detector locations
+
+`DetectorMapping` optionally records `sumo_lane_id` and `sumo_position_m`.
+Supply both values together or leave both absent/null. The SUMO lane ID is
+trimmed and must not be blank. The position is a finite, nonnegative number
+(not a boolean), measured in metres from the selected SUMO lane's start,
+increasing along the direction of travel. There is no default lane or position.
+
+The canonical `lane_id` identifies a Jaadah lane; `sumo_lane_id` selects the
+specific simulator segment carrying the detector. With network validation,
+the selected lane must exist, must not be an internal junction connector,
+and must have a valid modeled length. Position bounds are inclusive:
+`0 <= sumo_position_m <= lane_length`.
+
+When a canonical lane mapping is available, the selected SUMO lane must belong
+to its chain. It may be any segment, not necessarily the terminal segment.
+When that mapping is pending, network validation still checks the explicit
+SUMO lane and position, but cannot establish canonical chain membership.
+Missing exact locations remain supported, including unresolved detector
+mappings. Location availability does not change candidate/status rules.
+These optional fields extend schema 2.0 without changing the current mapping
+data revision; configurations without them remain valid.
+
+For the upcoming 16 synthetic detectors, the approved modeled placement is
+1 m upstream of each selected lane endpoint: `sumo_position_m = lane_length - 1`.
+Detectors 1-12 use modeled signal-entry endpoints. Detectors 13-16 use selected
+uncontrolled slip/bypass lane endpoints, which are not automatically physical
+stop lines. These are synthetic assumptions, not surveyed RCRC locations.
+This convention is specific to the synthetic baseline, not a universal
+restriction or default. Detector records remain unpopulated in Task 5B.
+
 Multiple detectors on the same lane do not automatically represent separate
 traffic contributions. Demand
 transformation decides how observations are combined or allocated, including

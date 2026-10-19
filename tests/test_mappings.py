@@ -166,6 +166,48 @@ def test_detector_enum_reuses_traffic_model():
     assert makes(DetectorMapping, source="rcrc").source is TrafficObservationSource.RCRC
 
 
+@pytest.mark.parametrize("fields", [{}, {"sumo_lane_id": None, "sumo_position_m": None}])
+def test_detector_location_can_be_unknown(fields):
+    detector = makes(DetectorMapping, **fields)
+    assert detector.sumo_lane_id is None
+    assert detector.sumo_position_m is None
+
+
+@pytest.mark.parametrize("position", [0, 1, 1.27, 110.71])
+def test_detector_location_accepts_finite_positions_and_normalizes_lane(position):
+    detector = makes(DetectorMapping, sumo_lane_id=" entry_0 \n", sumo_position_m=position)
+    assert detector.sumo_lane_id == "entry_0"
+    assert detector.sumo_position_m == position
+    assert detector.mapping_status == MappingStatus.UNRESOLVED
+    assert DetectorMapping.model_validate_json(detector.model_dump_json()) == detector
+
+
+@pytest.mark.parametrize("fields", [
+    {"sumo_lane_id": "entry_0"},
+    {"sumo_position_m": 0},
+    {"sumo_lane_id": "entry_0", "sumo_position_m": None},
+    {"sumo_lane_id": None, "sumo_position_m": 0},
+])
+def test_detector_location_requires_both_fields(fields):
+    with pytest.raises(ValidationError, match="must be supplied together"):
+        makes(DetectorMapping, **fields)
+
+
+@pytest.mark.parametrize("lane", ["", " \n\t", 9, False])
+def test_detector_location_rejects_invalid_lane_ids(lane):
+    with pytest.raises(ValidationError):
+        makes(DetectorMapping, sumo_lane_id=lane, sumo_position_m=1)
+
+
+@pytest.mark.parametrize("position", [
+    -1, -0.01, float("nan"), float("inf"), float("-inf"), True, False,
+    "not-a-number", "NaN", "Infinity",
+])
+def test_detector_location_rejects_invalid_positions(position):
+    with pytest.raises(ValidationError):
+        makes(DetectorMapping, sumo_lane_id="entry_0", sumo_position_m=position)
+
+
 def test_detector_site_id_is_required():
     data = deepcopy(VALID[DetectorMapping])
     del data["site_id"]

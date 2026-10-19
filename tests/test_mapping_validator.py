@@ -250,3 +250,85 @@ def test_checksum_policy_does_not_ignore_other_content_changes():
     assert network_checksum_matches(original.replace(b'\n', b'\r\n'), digest)
     assert not network_checksum_matches(original.replace(b'id="a"', b'id="b"'), digest)
     assert not network_checksum_matches(original.replace(b'<edge', b' <edge'), digest)
+
+
+def detector_location_case(tmp_path, *, lane='a_0', position=5, chain=None, pending=False):
+    config, path = case(tmp_path)
+    # Lengths are needed only for explicitly located detectors; retain the
+    # original topology fixture used by the pre-existing mapping tests.
+    network = NETWORK.replace('index="0"/>', 'index="0" length="10"/>')
+    network = network.replace('index="1"/>', 'index="1" length="10"/>')
+    network = network.replace('</net>', '''
+      <edge id=":junction" function="internal">
+        <lane id=":junction_0" index="0" length="2"/>
+      </edge>
+    </net>''')
+    path.write_text(network, encoding='utf-8')
+    config.network.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    if chain is not None or pending:
+        config = with_canonical_lane(config, chain or ['a_0', 'b_0'])
+    data = config.model_dump()
+    if pending:
+        data['lane_mappings'] = []
+    data['detector_mappings'] = [{
+        'source': 'synthetic', 'site_id': '9', 'detector_id': 'D1',
+        'intersection_id': 'INT_001', 'mapping_status': 'unresolved',
+        'sumo_lane_id': lane, 'sumo_position_m': position,
+        **({'lane_id': 'TEST_LANE'} if chain is not None or pending else {}),
+    }]
+    return NetworkMappingConfig.model_validate(data), path
+
+
+@pytest.mark.parametrize('position', [0, 1.27, 10])
+def test_detector_location_bounds_include_lane_start_and_end(tmp_path, position):
+    config, path = detector_location_case(tmp_path, position=position)
+    assert validate_network_mappings(config, path) == []
+
+
+@pytest.mark.parametrize('lane,message', [
+    ('missing_0', 'lane not found: missing_0'),
+    (':junction_0', 'internal SUMO lane'),
+])
+def test_detector_location_rejects_missing_or_internal_lane(tmp_path, lane, message):
+    config, path = detector_location_case(tmp_path, lane=lane)
+    errors = validate_network_mappings(config, path)
+    assert len(errors) == 1
+    assert 'Detector synthetic/9/D1' in errors[0]
+    assert message in errors[0]
+
+
+def test_detector_position_cannot_exceed_selected_lane_length(tmp_path):
+    config, path = detector_location_case(tmp_path, position=10.01)
+    assert 'outside lane a_0 bounds [0, 10.0]' in '\n'.join(validate_network_mappings(config, path))
+
+
+@pytest.mark.parametrize('lane', ['a_0', 'b_0'])
+def test_detector_can_use_any_segment_of_its_canonical_chain(tmp_path, lane):
+    config, path = detector_location_case(tmp_path, lane=lane, chain=['a_0', 'b_0'])
+    assert validate_network_mappings(config, path) == []
+
+
+def test_detector_location_rejects_conflict_with_canonical_chain(tmp_path):
+    config, path = detector_location_case(tmp_path, lane='c_0', chain=['a_0', 'b_0'])
+    assert 'SUMO lane c_0 is not in canonical lane TEST_LANE chain' in '\n'.join(
+        validate_network_mappings(config, path)
+    )
+
+
+@pytest.mark.parametrize('lane,expected', [('c_0', []), ('missing_0', ['lane not found'])])
+def test_pending_canonical_mapping_still_checks_explicit_location(tmp_path, lane, expected):
+    config, path = detector_location_case(tmp_path, lane=lane, pending=True)
+    errors = validate_network_mappings(config, path)
+    if expected:
+        assert expected[0] in '\n'.join(errors)
+    else:
+        assert errors == []
+
+
+@pytest.mark.parametrize('length', [None, 'bad', 'NaN', 'inf', '-1'])
+def test_detector_location_reports_unusable_network_lane_length(tmp_path, length):
+    config, path = detector_location_case(tmp_path)
+    replacement = '' if length is None else f'length="{length}"'
+    path.write_text(path.read_text().replace('length="10"', replacement), encoding='utf-8')
+    config.network.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert 'invalid SUMO lane length: a_0' in '\n'.join(validate_network_mappings(config, path))
