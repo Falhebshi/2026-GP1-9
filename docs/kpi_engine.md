@@ -33,6 +33,8 @@ backend/
         ├── queue.py        queue length and queue storage ratio per lane
         ├── delay.py        control delay and queue duration per movement
         ├── lane_groups.py  HCM lane groups derived from the approach lanes
+        ├── capacity.py     HCM saturation flow, capacity, v/c and critical v/c
+        ├── hcm_delay.py    HCM control delay and level of service
         └── kpi_tests/
             ├── __init__.py
             ├── test_parameters.py
@@ -40,7 +42,9 @@ backend/
             ├── test_throughput.py
             ├── test_queue.py
             ├── test_delay.py
-            └── test_lane_groups.py
+            ├── test_lane_groups.py
+            ├── test_capacity.py
+            └── test_hcm_delay.py
 ```
 
 Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
@@ -403,3 +407,43 @@ The `input_origins` of capacity and volume-to-capacity results follow `SignalPro
 ## 9.9 Scope limitation: passenger cars only
 
 Because heavy vehicles and buses are outside Jaadah's scope, both the simulation and the HCM calculation describe traffic made of passenger cars only. Real capacity, with trucks and buses present, would be somewhat lower.
+
+---
+
+# 10. HCM Control Delay and Level of Service
+
+Implemented in `backend/analytics/kpi/hcm_delay.py`.
+
+The HCM control delay is a **prediction** from the HCM formulas, calculated from the capacity results of section 9. It is a cross-check of the control delay **measured** in the simulation (section 7): similar values indicate that both are plausible, large differences point to something to check. The HCM notes that simulation tools often define delay differently, especially for oversaturated movements (Chapter 19, page 19-111), so some difference is expected.
+
+## 10.1 The three delay terms
+
+Control delay d = d1 + d2 + d3 (Equation 19-18), per lane group and interval:
+
+- **Uniform delay d1** (Equations 19-19 to 19-21): the delay if vehicles arrived evenly; vehicles arriving on red wait for green. d1 = PF × 0.5 C (1 − g/C)² / (1 − min(1, X) g/C).
+- **Progression factor PF** (Equation 19-20): calculated with the platoon ratio 1.0 of arrival type 3, random arrivals (Exhibit 19-13). Arrival type 3 applies to isolated signals or signals more than 3,200 ft apart (Exhibit 19-14); the nearest other signals are 1.3–2.1 km away. With a platoon ratio of 1.0 the equation gives PF = 1 exactly.
+- **Incremental delay d2** (Equations 19-26 and 19-27): the extra delay from random cycle-to-cycle variation and from demand exceeding capacity. d2 = 900 T [(X − 1) + √((X − 1)² + 8 k I X / (c T))], with T = 0.25 h, k = 0.50 for pretimed phases (page 19-51) and I = 1.0 for an isolated intersection (Exhibit 19-11).
+- **Initial queue delay d3** (Equations 19-44 to 19-49): the extra delay caused by a queue left over from the previous interval (section 10.2).
+
+## 10.2 Queues carried from one interval to the next
+
+The intervals of the analysis period are calculated **in order** (a multiple-period analysis, as the HCM advises when the volume-to-capacity ratio exceeds 1.0, Chapter 19, "Interpretation of Results"). For each lane group:
+
+1. The **first interval** starts with no initial queue (Q_b = 0). The warm-up exists so that the simulated analysis period starts in normal conditions, and the HCM's guidance for simulation analyses requires the first analysis period to be undersaturated.
+2. The queue left at the end of each interval, the **residual queue** Q_e = Q_b + t_A (v − c_A) (Equation 19-45), is the **initial queue** of the next interval.
+3. With an initial queue, the uniform delay is adjusted: for the part of the interval during which the initial queue is still being served (t, Equations 19-37 and 19-38), the lane group operates saturated, and d1 = d_s × t / T + d1,baseline × (T − t) / T (Equation 19-40), where d_s is the uniform delay at X = 1.
+4. d3 follows from Equation 19-44. It is 0 when there is no initial queue.
+
+With pretimed control and no permitted left turns, the saturated capacity of a lane group equals its capacity, so the average capacity c_A equals c (Equations 19-42 and 19-43), and the uniform delay of a lane group without an initial queue is its baseline d1 (Equation 19-41).
+
+When a lane group has no demand in an interval, its delay is `not_applicable` ("no demand in this interval"), but its queue still drains at capacity, so the next interval starts with the correct initial queue. When a lane group has no capacity result in an interval (section 9), its HCM delay is `unavailable`, and so is every later interval of that lane group, because its initial queue is then unknown.
+
+## 10.3 Shared lanes
+
+The HCM notes that Equation 19-19 does not give an accurate uniform delay for a shared-lane lane group or a lane group with permitted operation, and refers to the queue accumulation polygon (Chapter 19, page 19-51). That method is needed when the discharge rate changes during the green, as when left-turning vehicles in a shared lane wait for gaps in opposing traffic. At the case-study intersection each approach has its own phase, so left turns are protected and a shared lane discharges at one saturation flow during its green; the queue accumulation polygon is then a single triangle and gives the same uniform delay as Equation 19-19. Equation 19-19 is therefore used for the shared lanes, with their saturation flow from section 9.4. Permitted left turns, for which this would not hold, have no capacity result (section 9.3) and so never reach this calculation.
+
+## 10.4 Level of service and movement values
+
+Each lane group's HCM level of service is graded from its control delay and its volume-to-capacity ratio with the thresholds of section 3.2, including the override of section 3.3 (LOS F when v/c > 1.0).
+
+A movement's HCM delay is the average of the delays of the lane groups it uses, weighted by the movement's flow in each (the weighting of Equation 19-28). Its level of service is graded from that delay and the movement's volume-to-capacity ratio (section 9.6). Approach and intersection HCM delays and levels of service are combined in the roll-up (section 2.4), from delay alone (section 3.3).

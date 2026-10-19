@@ -551,13 +551,20 @@ class MovementCapacity(NamedTuple):
 
 
 class CapacityResults(NamedTuple):
-    """All HCM capacity results of the intersection in one interval."""
+    """
+    All HCM capacity results of the intersection in one interval.
+
+    flows gives the demand of each (movement_id, lane_group_id) pair
+    from the demand distribution (veh/h); hcm_delay.py uses it to
+    weight lane-group delays per movement.
+    """
 
     lane_groups: dict[str, LaneGroupCapacity]
     movements: dict[str, MovementCapacity]
     critical_volume_to_capacity: float | None
     critical_status: KpiStatus
     critical_reason: str | None
+    flows: dict[tuple[str, str], float]
 
 
 def signal_timing_origin(program: SignalProgram) -> InputOrigin:
@@ -632,6 +639,7 @@ def calculate_capacity(
         critical_volume_to_capacity=critical,
         critical_status=status,
         critical_reason=reason,
+        flows=flows,
     )
 
 

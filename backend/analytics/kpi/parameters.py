@@ -94,6 +94,23 @@ EFFECTIVE_GREEN_EXTENSION_S = 2.0
 
 
 # ============================================================
+# CONTROL DELAY (HCM 7th edition, Chapter 19, Step 8)
+# ============================================================
+
+# Platoon ratio 1.0 = arrival type 3, random arrivals (Exhibit 19-13);
+# arrival type 3 applies to isolated signals or signals more than
+# 3,200 ft apart (Exhibit 19-14). It gives a progression factor of 1.
+PLATOON_RATIO = 1.0
+
+# Incremental delay factor k for pretimed phases (page 19-51).
+INCREMENTAL_DELAY_FACTOR = 0.5
+
+# Upstream filtering adjustment factor I for an isolated
+# intersection (Exhibit 19-11).
+UPSTREAM_FILTERING_FACTOR = 1.0
+
+
+# ============================================================
 # LEVEL OF SERVICE
 # ============================================================
 
