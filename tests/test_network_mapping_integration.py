@@ -1,6 +1,9 @@
 from pathlib import Path
+from collections import Counter
+from decimal import Decimal
 import hashlib
 import json
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -22,9 +25,8 @@ APPROVED_MOVEMENTS = {
 }
 
 
-# Approved bounded lane identities, Option A maneuvers, and previously reviewed
-# synthetic detector locations. This is not an independently supplied updated
-# Hawra table, and these references do not populate production detectors.
+# Approved bounded lane identities, Option A maneuvers, and synthetic
+# detector assignments. Placement checks below apply only to this baseline.
 APPROVED_LANES = [
     ('LANE_E_1', ['MOV_E_S'], ['713369663#1.469_3', '713369663#2-AddedOnRampEdge_3', '713369663#2_3'], '9'),
     ('LANE_E_2', ['MOV_E_S', 'MOV_E_W'], ['713369663#1.469_2', '713369663#2-AddedOnRampEdge_2', '713369663#2_2'], '10'),
@@ -109,9 +111,26 @@ def test_approved_lane_catalog_and_deferred_collections(config):
     for approach in config.approach_mappings:
         assert {lane.lane_index for lane in config.approach_lanes
                 if lane.approach_id == approach.approach_id} == {1, 2, 3, 4}
-    assert config.detector_mappings == []
     assert config.intersection_mapping.source_sites == []
     assert all(not item.queue_detection_lane_ids for item in config.approach_mappings)
+
+
+def test_populated_synthetic_detector_catalog(config):
+    identities = [(d.source.value, d.site_id, d.detector_id) for d in config.detector_mappings]
+    assert len(identities) == len(set(identities)) == 16
+    assert set(identities) == {('synthetic', '9', str(i)) for i in range(1, 17)}
+    assert Counter(d.mapping_status.value for d in config.detector_mappings) == {
+        'usable': 14, 'requires_allocation': 2,
+    }
+    assert {d.detector_id for d in config.detector_mappings
+            if d.mapping_status.value == 'requires_allocation'} == {'2', '10'}
+
+
+@pytest.fixture(scope='module')
+def network_lanes():
+    root = ET.parse(NETWORK_FILE).getroot()
+    return {lane.get('id'): (edge, lane)
+            for edge in root.findall('edge') for lane in edge.findall('lane')}
 
 
 @pytest.mark.parametrize(
@@ -119,7 +138,7 @@ def test_approved_lane_catalog_and_deferred_collections(config):
     ids=[item[0] for item in APPROVED_LANES],
 )
 def test_approved_lane_definition_and_detector_location(
-    config, lane_id, movement_ids, sumo_lane_ids, detector_id,
+    config, network_lanes, lane_id, movement_ids, sumo_lane_ids, detector_id,
 ):
     lane = next(item for item in config.approach_lanes if item.lane_id == lane_id)
     mapping = next(item for item in config.lane_mappings if item.lane_id == lane_id)
@@ -130,6 +149,24 @@ def test_approved_lane_definition_and_detector_location(
     assert lane.lane_width_m == 3.2  # Approved modeled width, not a survey value.
     assert lane.storage_length_m is None
     assert mapping.sumo_lane_ids == sumo_lane_ids, f'detector {detector_id}'
+
+    detector = next(item for item in config.detector_mappings if item.detector_id == detector_id)
+    assert detector.intersection_id == config.intersection_mapping.intersection_id
+    assert detector.lane_id == lane_id
+    assert detector.approach_id == lane.approach_id
+    assert set(detector.movement_ids) == set(movement_ids)
+    expected_status = 'requires_allocation' if detector_id in {'2', '10'} else 'usable'
+    assert detector.mapping_status.value == expected_status
+    assert detector.sumo_lane_id == sumo_lane_ids[-1]
+    assert detector.sumo_lane_id in mapping.sumo_lane_ids
+    assert detector.sumo_position_m is not None
+    edge, sumo_lane = network_lanes[detector.sumo_lane_id]
+    assert edge.get('function') != 'internal'
+    length = Decimal(sumo_lane.get('length'))
+    position = Decimal(str(detector.sumo_position_m))
+    assert 0 <= position <= length
+    # Approved synthetic placement, not a general DetectorMapping restriction.
+    assert position == length - Decimal('1.0')
 
 
 def test_canonical_views_preserve_declared_ownership(config):

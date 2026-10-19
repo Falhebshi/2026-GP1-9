@@ -609,11 +609,14 @@ in the canonical lane chain when that mapping is available. Any chain segment
 may be selected. Pending mappings cannot establish membership, and unresolved
 detectors may still omit exact locations.
 
-The upcoming synthetic baseline uses 1 m before the selected lane endpoint.
+The populated 16-detector synthetic baseline uses 1 m before the selected lane endpoint.
 Detectors 1-12 reference modeled signal entries; 13-16 reference uncontrolled
 slip/bypass endpoints, not necessarily physical stop lines. These modeled
 assumptions are not surveyed RCRC locations or defaults for other sources.
-Task 5B adds the location contract only; detector records remain unpopulated.
+The configuration contains 16 synthetic detector mappings at site `"9"`.
+Shared detectors 2 and 10 require allocation; the other 14 are usable. These
+statuses do not define allocation algorithms or split proportions. Catalogue
+provenance and mapping scope are documented in [Network mapping](network_mapping.md).
 
 ## 9.2 Demand transformation is separate
 
@@ -716,3 +719,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
 | 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
 | 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
+| 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |

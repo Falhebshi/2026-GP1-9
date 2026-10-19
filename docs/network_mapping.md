@@ -5,8 +5,9 @@ configuration for the study area. It defines the intersection, approaches,
 movements, and their links to source detectors and SUMO.
 
 The file contains four approaches, 18 movement mappings, 16 canonical approach
-lanes, and 16 ordered SUMO lane mappings. Detector mappings and queue-detection
-lane lists remain empty pending their separate implementation decisions.
+lanes, 16 ordered SUMO lane mappings, and 16 synthetic detector mappings at
+site `"9"`. Queue-detection lane lists remain empty pending their separate
+implementation decision.
 
 ## Canonical models
 
@@ -122,13 +123,16 @@ mappings. Location availability does not change candidate/status rules.
 These optional fields extend schema 2.0 without changing the current mapping
 data revision; configurations without them remain valid.
 
-For the upcoming 16 synthetic detectors, the approved modeled placement is
+For the 16 populated synthetic detectors, the approved modeled placement is
 1 m upstream of each selected lane endpoint: `sumo_position_m = lane_length - 1`.
 Detectors 1-12 use modeled signal-entry endpoints. Detectors 13-16 use selected
 uncontrolled slip/bypass lane endpoints, which are not automatically physical
 stop lines. These are synthetic assumptions, not surveyed RCRC locations.
 This convention is specific to the synthetic baseline, not a universal
-restriction or default. Detector records remain unpopulated in Task 5B.
+restriction or default. These records contain explicit lane IDs and positions.
+Detectors 2 and 10 are shared left/through lanes with
+`requires_allocation`; the other 14 are `usable`. No allocation algorithm or
+split proportions are defined by these mappings.
 
 Multiple detectors on the same lane do not automatically represent separate
 traffic contributions. Demand
@@ -136,7 +140,7 @@ transformation decides how observations are combined or allocated, including
 ramp and U-turn counts. Candidate movements are not inferred from every route
 that crosses a lane.
 
-## Approved M3 lane population (Tasks 2-3)
+## Canonical lane inventory
 
 ### Option A: local-maneuver attribution
 
@@ -158,7 +162,7 @@ crossings are preserved. M3 declares identities and associations; M7 handles
 observation-to-demand transformation, and M8 handles simulation demand/route
 generation. Option A does not settle allocation rules, route splits, or the
 M7-M8 interpretation of `SimulationDemand.movement_id`. That contract remains
-an explicit downstream decision outside Tasks 2-3.
+an explicit downstream decision outside the mapping component.
 
 ### Modeled width and storage provenance
 
@@ -211,7 +215,10 @@ sets match the previously reviewed report assignments, but a separate Hawra
 updated table specifying those fields was not found in the inspected checkout
 or locally stored branch tips. Its independent verification remains pending;
 the catalogue comparison alone does not establish those fields. No branches
-were fetched or switched, and no detector records have been populated.
+were fetched or switched. The populated detector records follow the approved
+table, with lanes, local movements, and positions verified against the current
+configuration and network. The catalogue establishes source identities
+and lane numbering, not surveyed or simulator-specific positions.
 
 | Canonical lane | Local movement IDs | Ordered SUMO lane IDs | Detector reference |
 | --- | --- | --- | --- |
@@ -254,11 +261,10 @@ approach lanes. Boundaries deliberately avoid branching systems:
   `133973513_0/1`, before the subsequent outgoing-road segments.
 
 These are approved modeled boundaries, not independent verification of road
-markings or surveyed lane formation. Queue-measurement policy, detector
-population and broader lane completeness checks remain deferred. The required
-detector `site_id` contract is finalized; detector records remain unpopulated.
-No model or validator redesign is needed
-for this population.
+markings or surveyed lane formation. Queue-measurement policy and broader
+lane completeness checks remain deferred. The required detector `site_id`
+contract is finalized, and the 16 synthetic detector records are populated.
+No model or validator redesign was needed for this population.
 
 ## Loading and validation
 
