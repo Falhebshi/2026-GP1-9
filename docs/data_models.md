@@ -214,14 +214,20 @@ Fields: `lane_id`, `approach_id`, `lane_index`, `served_movement_ids`, `lane_wid
 
 **Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID such as `east_L`, `east_LT`, `east_T` (team decision, 17 Oct 2026).
 
-Confirmed layout of the case-study intersection, from the median outward:
+Signal-entry lane subset (12 lanes), from the median outward. The complete
+canonical inventory contains 16 lanes, including four slip/bypass lanes; see
+the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 
 | Approach | Lanes |
 | --- | --- |
 | East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
 | West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
 | North | 3 lanes, all left |
-| South | 2 lanes, both through |
+| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
+
+The analytical left/signalized classification of `MOV_S_W` remains pending
+KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
+movement identity, physical routing, and signal behavior remain unchanged.
 
 ## 2.6 Canonical Identity vs. SUMO Identity
 

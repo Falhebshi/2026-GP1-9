@@ -294,6 +294,13 @@ mapping tests.
 its checks pass, or a list of errors. It checks the mappings that are present;
 it does not require every canonical lane to have a SUMO mapping.
 
+General runtime validation checks consistency of the supplied mappings and
+permits incomplete drafts. The existing integration tests enforce the approved
+synthetic baseline: exactly 16 canonical lanes, 16 lane mappings, 18 movement
+mappings, and 16 synthetic detectors, with the approved associations, allocation
+statuses, and modeled lane-end minus 1 m detector placement. Baseline
+completeness is enforced by these tests, not a mandatory runtime readiness check.
+
 Lane-based code can obtain a required mapping through
 `require_lane_mapping(config, lane_id)` in `jaadah.mapping.validator`. It returns
 the mapping or raises `ValueError` if it is missing. This checks availability;
@@ -352,7 +359,7 @@ python -m pytest tests/test_mapping_validator.py
 | `tests/test_mapping_loader.py` | Loading, optional network checks, missing files, and invalid references. |
 | `tests/test_mapping_validator.py` | Lane connections and ordering, route loops, required-mapping lookup, and checksum portability. |
 | `tests/test_movement_smoke.py` | Runner preparation, mocked TraCI behavior, and direct CLI invocation. |
-| `tests/test_network_mapping_integration.py` | The actual configuration/network and a reference fingerprint of all 18 movement records, including routes and signal crossings. |
+| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings. |
 
 The Python suite includes static network checks and mocked runner tests.
 Live SUMO movement tests run separately; see
