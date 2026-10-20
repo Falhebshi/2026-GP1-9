@@ -38,6 +38,7 @@ The implementation is located under:
 backend/
 └── demand/
     ├── __init__.py
+    ├── imputation.py
     ├── mapper.py
     └── service.py
 ```
@@ -48,7 +49,9 @@ Tests are located under:
 tests/
 ├── test_demand_mapper.py
 ├── test_demand_service.py
-└── test_demand_integration.py
+├── test_demand_imputation.py
+├── test_demand_integration.py
+└── test_demand_ingestion_integration.py
 ```
 
 Each module has a separate responsibility:
@@ -56,6 +59,7 @@ Each module has a separate responsibility:
 | Module | Responsibility |
 |---|---|
 | `mapper.py` | Finds the detector mapping of one observation and returns its movement ID, or rejects it |
+| `imputation.py` | Estimates the count of a detector that did not report, from its neighbours or its past counts |
 | `service.py` | Groups mapped observations by movement and interval, builds `SimulationDemand`, and reports everything that could not become demand. Also loads the network mappings for a batch |
 
 This separation keeps the decision for a single observation independent of the batch-level checks.
@@ -201,10 +205,11 @@ Its workflow is:
 1. Map each observation to its movement, or set it aside if it comes from a shared-lane detector
 2. Record observations that cannot be mapped
 3. Group mapped observations by source, movement and interval
-4. Split each shared-lane count between its movements
-5. Check each group for conflicting or missing detectors
-6. Sum the vehicle counts of each complete group, including its parts of shared-lane counts
-7. Return demands and transformation errors
+4. Estimate the counts of usable detectors that did not report, when history is given
+5. Split each shared-lane count between its movements
+6. Check each group for conflicting or missing detectors
+7. Sum the vehicle counts of each complete group, including its parts of shared-lane counts and its estimated counts
+8. Return demands and transformation errors
 ```
 
 For example, if the north left turn `MOV_N_E` is counted by detectors `4`, `5` and `6`:
@@ -359,6 +364,64 @@ The agreed runs use −0.2 and +0.2 on the left movements (for example, a share 
 
 ---
 
+## Missing Detector Imputation
+
+### Why Missing Counts Are Estimated
+
+A demand needs every detector of its movement. Without estimation, one detector missing for 15 minutes leaves its movement without demand, and the KPI engine then reports the whole approach and intersection as unavailable for that interval.
+
+There is no single recommended method. The FHWA Traffic Monitoring Guide does not recommend any imputation method, and practice has no clear consensus; where data is imputed, the process should be documented and labelled, and summaries should not be reported below a minimum data completeness (National Academies, 2024). The team chose the combination used for California's freeway detectors: estimates from neighbouring detectors, with the historical mean as the fallback (Chen et al., 2003).
+
+Estimation needs past observations, passed as `history`. Without history, nothing is estimated and missing detectors are reported as before.
+
+### Neighbours First
+
+A detector's neighbours are the other `usable` detectors on the same approach that count the same movement, for example detectors `4`, `5` and `6` of the north left turn.
+
+For each neighbour that reported in the interval, a straight line is fitted on the history between the two detectors (Chen et al., 2003):
+
+```text
+detector 6 = intercept + slope x neighbour
+```
+
+Each line gives one estimate, and the median of the estimates is used. Example, with lines fitted on the history:
+
+```text
+Detector 4   reported 32   line gives 27.6
+Detector 5   reported 30   line gives 28.0
+Detector 6   missing       estimate = median(27.6, 28.0) = 28
+```
+
+A line needs at least 480 intervals in which both detectors reported (five days, the history length used by Chen et al.) and a neighbour count that is not constant.
+
+### Historical Average Second
+
+When no neighbour gives an estimate, for example a detector that is the only lane of its movement, the estimate is the average of the detector's past counts in the same 15-minute time slot and day type. The day types are those of the RCRC sample analysis: workday (Sunday to Thursday), Friday and Saturday. At least three past values are needed, so about three weeks of history cover Fridays and Saturdays.
+
+### Limits
+
+| Limit | Value | Reason |
+|---|---|---|
+| Longest gap | 4 intervals (1 hour) | Chosen by the team; longer gaps stay missing |
+| Shared-lane detectors | Never estimated | Their count is split by an assumption; estimating it first would stack two estimates |
+| Regression history | 480 common intervals | Five days (Chen et al., 2003) |
+| Average history | 3 values per time slot and day type | Chosen by the team |
+
+Estimates are rounded to whole vehicles and are never negative. An estimated exclusive-lane count may be used to split a shared lane; both movements of that lane then list the estimated detector.
+
+### Marking Imputed Demand
+
+Every demand that contains an estimated count lists the detector in `imputed_detectors`, with its site, detector ID and method (`neighbour_regression` or `historical_average`), and its computed `is_imputed` is true (see [Data models](data_models.md), section 1.2). A demand whose detectors were all estimated has no source observation IDs. The KPI engine uses `is_imputed` to label its results *modelled assumption*.
+
+With synthetic data, the regression lines describe how the synthetic generator relates its detectors, not real drivers. They should be fitted again on RCRC history.
+
+### References
+
+- Chen, C., Kwon, J., Rice, J., Skabardonis, A., and Varaiya, P. (2003). Detecting errors and imputing missing data for single-loop surveillance systems. *Transportation Research Record*, 1855, 160–167.
+- National Academies of Sciences, Engineering, and Medicine (2024). *Guide on Methods for Assigning Counts to Adjustment Factor Groups*, Chapter 2. The National Academies Press.
+
+---
+
 ## Missing and Duplicate Observations
 
 ### Missing Detector
@@ -384,7 +447,7 @@ Error: no observation from detector(s) 6
 
 Summing only detectors `4` and `5` would give `22`, which looks like a valid total but understates the real traffic. A missing detector is therefore reported rather than treated as zero.
 
-This means SUMO receives no demand for that movement and interval. Filling such gaps with a documented estimation method is an open team decision.
+This means SUMO receives no demand for that movement and interval, unless the missing count can be estimated (see [Missing Detector Imputation](#missing-detector-imputation)).
 
 ### Shared-Lane Detector
 
@@ -469,7 +532,14 @@ result = build_simulation_demand(
 )
 ```
 
-For sensitivity runs, `share_adjustments` is passed on to the split (see [Sensitivity Runs](#sensitivity-runs)).
+For sensitivity runs, `share_adjustments` is passed on to the split (see [Sensitivity Runs](#sensitivity-runs)). To estimate detectors that did not report, the past observations are passed as `history`, for example the previous month ingested from the same source (see [Missing Detector Imputation](#missing-detector-imputation)):
+
+```python
+result = build_simulation_demand(
+    observations=batch.observations,
+    history=history.observations,
+)
+```
 
 By default it reads:
 
@@ -528,10 +598,12 @@ Run all transformation tests with:
 python -m pytest -v \
   tests/test_demand_mapper.py \
   tests/test_demand_service.py \
-  tests/test_demand_integration.py
+  tests/test_demand_imputation.py \
+  tests/test_demand_integration.py \
+  tests/test_demand_ingestion_integration.py
 ```
 
-The mapper and service tests use small mapping configurations built inside the test files. The integration tests use the real mapping file with one observation from each of the 16 synthetic detectors. No test needs the SUMO network.
+The mapper, service and imputation tests use small mapping configurations built inside the test files. The integration tests use the real mapping file with one observation from each of the 16 synthetic detectors. The ingestion integration tests run the real synthetic source, its storage and API, and the ingestion client, with the artificial profiles of the ingestion tests, and pass the ingested batch and history to the transformation. No test needs the SUMO network.
 
 The tests cover:
 
@@ -553,7 +625,11 @@ The tests cover:
 - empty batches;
 - rejection of detector mappings that reference unknown movements;
 - the real mappings: demand for all nine movements with detectors, the four shared-lane movements marked as allocated, and sensitivity runs that keep the approach totals;
-- every observation either used in demand or reported.
+- every observation either used in demand or reported;
+- estimating a missing detector from its neighbours, using the median, or from its average in the same time slot and day type;
+- the history minimums, the one-hour gap limit, and shared-lane detectors never being estimated;
+- marking imputed demand, including an estimated lane used by the shared-lane split;
+- the full path from the synthetic source through ingestion to demand, with and without a missing detector.
 
 The transformation tests are also included in the full Jaadah project test suite.
 
@@ -568,9 +644,8 @@ The following decisions are open and are not implemented:
 | Decision | Current behavior |
 |---|---|
 | Observed turning proportions for the shared lanes (Gholami and Tian, 2016, Section 3.4) | Not available; the proportional split is used |
-| East and west through detectors also counting ramp and U-turn traffic | Depends on how these detectors are mapped |
+| East and west through detectors also counting ramp and U-turn traffic | Each through movement is one local maneuver; how it is turned into SUMO routes is decided in SUMO input generation (M8) |
 | Movements with no detector (U-turns, tunnel, tunnel on-ramp) | No demand produced |
-| Filling missing detector intervals, and marking estimated demand | Reported, not filled |
 
 When a decision is adopted, it should be added as a separate documented rule with its own tests, without changing how usable detectors are handled.
 
@@ -585,11 +660,11 @@ Its main design principles are:
 - detectors are matched exactly on source, site and detector;
 - detectors that serve exactly one movement are summed directly;
 - shared-lane counts are split by a documented modelled assumption, and the split demand is marked;
-- missing data is reported, never treated as zero;
+- missing data is never treated as zero: it is estimated by a documented method and marked, or reported;
 - repeated observations are never counted twice;
 - every demand keeps the IDs of the observations it came from;
 - demand IDs are stable and readable;
 - valid observations are kept when others fail;
 - the transformation remains independent of SUMO files.
 
-This gives SUMO demand generation a consistent movement-level input whose every value can be traced back to measured traffic, with the assumed part of shared-lane demand marked.
+This gives SUMO demand generation a consistent movement-level input whose every value can be traced back to measured traffic, with the assumed parts of shared-lane and estimated demand marked.

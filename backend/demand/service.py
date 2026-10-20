@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from backend.demand.imputation import (
+    ImputedCount,
+    build_history_index,
+    impute_count,
+)
 from backend.demand.mapper import (
     find_detector_mapping,
     map_observation_to_movement,
@@ -14,6 +19,7 @@ from jaadah.models.mappings import (
     NetworkMappingConfig,
 )
 from jaadah.models.traffic import (
+    ImputedDetector,
     SimulationDemand,
     SimulationDemandSource,
     TrafficObservation,
@@ -348,10 +354,123 @@ def add_observation(
     return False
 
 
+def find_neighbour_detectors(
+    config: NetworkMappingConfig,
+) -> dict[tuple, list[tuple]]:
+    """
+    Return the neighbours of each usable detector, keyed by source, site
+    and detector ID: the other usable detectors on the same approach
+    that count the same movement.
+    """
+
+    usable = [
+        mapping
+        for mapping in config.detector_mappings
+        if mapping.mapping_status == MappingStatus.USABLE
+    ]
+
+    return {
+        (mapping.source, mapping.site_id, mapping.detector_id): sorted(
+            (other.source, other.site_id, other.detector_id)
+            for other in usable
+            if other is not mapping
+            and other.source == mapping.source
+            and other.approach_id == mapping.approach_id
+            and other.movement_ids[0] == mapping.movement_ids[0]
+        )
+        for mapping in usable
+    }
+
+
+def impute_missing_detectors(
+    observations: list[TrafficObservation],
+    history: list[TrafficObservation],
+    config: NetworkMappingConfig,
+    groups: dict,
+    conflicted_detectors: set,
+) -> dict[tuple, dict[tuple, ImputedCount]]:
+    """
+    Estimate the counts of usable detectors that did not report in an
+    interval of the batch, at a site that did report.
+
+    Returns the estimates keyed like the movement groups: source,
+    movement and interval, then site and detector ID. Shared-lane
+    detectors are never estimated.
+    """
+
+    history_index = build_history_index(history + observations)
+    known = [
+        interval
+        for counts in history_index.values()
+        for interval in counts
+    ]
+    first_known, last_known = min(known), max(known)
+    neighbours = find_neighbour_detectors(config)
+
+    reporting_sites = defaultdict(set)
+    current_counts = defaultdict(dict)
+
+    for group_key, group in groups.items():
+        source, _, interval_start, interval_end = group_key
+
+        for detector_key, observation in group.items():
+            reporting_sites[(source, interval_start, interval_end)].add(
+                detector_key[0]
+            )
+
+            if (
+                (source, interval_start, interval_end) + detector_key
+                not in conflicted_detectors
+            ):
+                current_counts[(source, interval_start)][
+                    (source,) + detector_key
+                ] = observation.vehicle_count
+
+    imputed = defaultdict(dict)
+
+    for interval_key, sites in reporting_sites.items():
+        source, interval_start, interval_end = interval_key
+
+        for mapping in config.detector_mappings:
+            if (
+                mapping.mapping_status != MappingStatus.USABLE
+                or mapping.source != source
+                or mapping.site_id not in sites
+            ):
+                continue
+
+            group_key = (
+                source,
+                mapping.movement_ids[0],
+                interval_start,
+                interval_end,
+            )
+            detector_key = (mapping.site_id, mapping.detector_id)
+
+            if detector_key in groups.get(group_key, {}):
+                continue
+
+            estimate = impute_count(
+                target=(source,) + detector_key,
+                interval_start=interval_start,
+                neighbours=neighbours[(source,) + detector_key],
+                current_counts=current_counts[(source, interval_start)],
+                history_index=history_index,
+                first_known=first_known,
+                last_known=last_known,
+            )
+
+            if estimate is not None:
+                imputed[group_key][detector_key] = estimate
+
+    return imputed
+
+
 def transform_observations(
     observations: list[TrafficObservation],
     config: NetworkMappingConfig,
     share_adjustments: dict[str, float] | None = None,
+    history: list[TrafficObservation] | None = None,
 ) -> DemandTransformationResult:
     """
     Turn detector observations into movement demand for each interval.
@@ -364,6 +483,11 @@ def transform_observations(
 
     share_adjustments changes the share of one movement of a shared
     lane, e.g. {"MOV_W_N": -0.2}, for sensitivity runs.
+
+    history holds past observations. When it is given, a usable
+    detector that did not report is estimated from its neighbours or
+    its past counts (see imputation.py), and the demand records it in
+    imputed_detectors.
 
     Observations that cannot be mapped, and movement intervals with a
     missing or conflicting detector, are reported instead of becoming
@@ -455,8 +579,32 @@ def transform_observations(
                 )
             )
 
+    imputed = (
+        impute_missing_detectors(
+            observations=observations,
+            history=history,
+            config=config,
+            groups=groups,
+            conflicted_detectors=conflicted_detectors,
+        )
+        if history
+        else {}
+    )
+
+    def counted(group_key, detector_key):
+        """The reported or estimated count of a detector, or None."""
+
+        if detector_key in groups.get(group_key, {}):
+            return groups[group_key][detector_key].vehicle_count
+
+        if detector_key in imputed.get(group_key, {}):
+            return imputed[group_key][detector_key].vehicle_count
+
+        return None
+
     references = find_reference_detectors(config)
     allocated = defaultdict(dict)
+    split_estimates = defaultdict(dict)
     blocked = {}
 
     for shared_key, shared_group in shared_groups.items():
@@ -493,7 +641,7 @@ def transform_observations(
                     key[1]
                     for movement_id, detector_keys in by_movement.items()
                     for key in detector_keys
-                    if key not in groups.get(movement_keys[movement_id], {})
+                    if counted(movement_keys[movement_id], key) is None
                     or shared_key + key in conflicted_detectors
                 )
 
@@ -515,11 +663,17 @@ def transform_observations(
 
             volumes_per_lane = {
                 movement_id: sum(
-                    groups[movement_keys[movement_id]][key].vehicle_count
+                    counted(movement_keys[movement_id], key)
                     for key in detector_keys
                 )
                 / len(detector_keys)
                 for movement_id, detector_keys in by_movement.items()
+            }
+            estimates_used = {
+                key: imputed[movement_keys[movement_id]][key]
+                for movement_id, detector_keys in by_movement.items()
+                for key in detector_keys
+                if key in imputed.get(movement_keys[movement_id], {})
             }
             shares = adjust_shares(
                 shares=calculate_shares(volumes_per_lane),
@@ -535,13 +689,16 @@ def transform_observations(
                     observation,
                     part,
                 )
+                split_estimates[movement_keys[movement_id]].update(
+                    estimates_used
+                )
 
     movement_detectors = find_movement_detectors(config)
     shared_detectors = find_shared_detectors(config)
     demands: list[SimulationDemand] = []
 
     for group_key in sorted(
-        set(groups) | set(allocated) | set(blocked),
+        set(groups) | set(allocated) | set(blocked) | set(imputed),
         key=lambda key: (key[2], key[1], key[0].value),
     ):
         if group_key in conflicted_groups:
@@ -550,6 +707,7 @@ def transform_observations(
         source, movement_id, interval_start, interval_end = group_key
         group = groups.get(group_key, {})
         shared_parts = allocated.get(group_key, {})
+        estimates = imputed.get(group_key, {})
 
         observation_ids = sorted(
             [observation.observation_id for observation in group.values()]
@@ -584,6 +742,7 @@ def transform_observations(
                 )
                 - group.keys()
                 - shared_parts.keys()
+                - estimates.keys()
             )
         )
 
@@ -618,6 +777,10 @@ def transform_observations(
                         for observation in group.values()
                     )
                     + sum(part for _, part in shared_parts.values())
+                    + sum(
+                        estimate.vehicle_count
+                        for estimate in estimates.values()
+                    )
                 ),
                 source=SimulationDemandSource(source.value),
                 source_observation_ids=observation_ids,
@@ -625,6 +788,19 @@ def transform_observations(
                     observation.observation_id
                     for observation, _ in shared_parts.values()
                 ),
+                imputed_detectors=[
+                    ImputedDetector(
+                        site_id=estimate.site_id,
+                        detector_id=estimate.detector_id,
+                        method=estimate.method,
+                    )
+                    for _, estimate in sorted(
+                        (
+                            estimates
+                            | split_estimates.get(group_key, {})
+                        ).items()
+                    )
+                ],
             )
         )
 
@@ -638,14 +814,16 @@ def build_simulation_demand(
     observations: list[TrafficObservation],
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
     share_adjustments: dict[str, float] | None = None,
+    history: list[TrafficObservation] | None = None,
 ) -> DemandTransformationResult:
     """
     Load the network mappings and transform a batch of observations
     into movement demand.
 
     The observations are usually the accepted observations of one
-    ingestion batch. share_adjustments is passed on for sensitivity
-    runs (see transform_observations).
+    ingestion batch. share_adjustments (sensitivity runs) and history
+    (estimating detectors that did not report) are passed on to
+    transform_observations.
     """
 
     config = load_network_mappings(mapping_path)
@@ -654,4 +832,5 @@ def build_simulation_demand(
         observations=observations,
         config=config,
         share_adjustments=share_adjustments,
+        history=history,
     )
