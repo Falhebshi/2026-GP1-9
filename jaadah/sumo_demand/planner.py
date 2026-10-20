@@ -105,28 +105,32 @@ class RunWindow(BaseModel):
 
 
 class PlannedDeparture(BaseModel):
-    """One vehicle to be created in SUMO, traceable to its demand record."""
+    """
+    One vehicle to be created in SUMO.
+
+    Stores only the facts M8 creates. The movement and interval are
+    found through demand_id, and the stop-line time is depart_s plus the
+    movement's free-flow time, so neither is stored a second time.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     vehicle_id: str
     demand_id: str
-    movement_id: str
-    interval_start: datetime
-    interval_end: datetime
     depart_s: float = Field(ge=0)
-    stop_line_target_s: float = Field(ge=0)
 
 
 class DemandPlan(BaseModel):
-    """All planned departures of one run, sorted by departure time."""
+    """
+    All planned departures of one run, sorted by departure time.
+
+    The run window, seed, routes and free-flow times used to make the
+    plan belong to Scenario, SimulationConfig, SimulationRun and the
+    mapping, and are not stored here.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    window: RunWindow
-    seed: int = Field(ge=0)
-    routes: dict[str, list[str]]
-    free_flow_s: dict[str, float]
     departures: list[PlannedDeparture]
 
 
@@ -393,11 +397,7 @@ def _record_departures(
         PlannedDeparture(
             vehicle_id=vehicle_id(demand.movement_id, demand.interval_end, number),
             demand_id=demand.demand_id,
-            movement_id=demand.movement_id,
-            interval_start=demand.interval_start,
-            interval_end=demand.interval_end,
             depart_s=cs / CENTISECONDS_PER_SECOND,
-            stop_line_target_s=round(cs / CENTISECONDS_PER_SECOND + offset_s, 2),
         )
         for number, cs in enumerate(depart_cs, start=1)
     ]
@@ -429,11 +429,4 @@ def plan_departures(
         )
     departures.sort(key=lambda item: (item.depart_s, item.vehicle_id))
 
-    used = {demand.movement_id for demand in demands}
-    return DemandPlan(
-        window=window,
-        seed=seed,
-        routes={key: list(routes[key]) for key in sorted(used)},
-        free_flow_s={key: free_flow_s[key] for key in sorted(used)},
-        departures=departures,
-    )
+    return DemandPlan(departures=departures)

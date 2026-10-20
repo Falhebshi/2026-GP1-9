@@ -65,9 +65,13 @@ def make_window(start=at(8, 0), end=at(8, 15), warmup=900, clearance=900, total=
     return build_run_window(scenario, config)
 
 
+def demand_id_of(movement_id, start):
+    return f"DEM_{movement_id}_{start:%H%M}"
+
+
 def demand(movement_id, start, count, minutes=15, demand_id=None):
     return SimulationDemand(
-        demand_id=demand_id or f"DEM_{movement_id}_{start:%H%M}",
+        demand_id=demand_id or demand_id_of(movement_id, start),
         interval_start=start,
         interval_end=start + timedelta(minutes=minutes),
         movement_id=movement_id,
@@ -93,10 +97,10 @@ def plan(demands=None, seed=42):
 
 
 def departures_of(result, movement_id, start):
-    return [
-        item for item in result.departures
-        if item.movement_id == movement_id and item.interval_start == start
-    ]
+    """The cars of one record, found through demand_id."""
+
+    wanted = demand_id_of(movement_id, start)
+    return [item for item in result.departures if item.demand_id == wanted]
 
 
 def problems_of(exc_info):
@@ -166,10 +170,10 @@ def test_window_requires_end_time():
 
 def test_every_record_produces_exactly_its_vehicle_count():
     result = plan()
-    counted = Counter((item.movement_id, item.interval_start) for item in result.departures)
+    counted = Counter(item.demand_id for item in result.departures)
 
-    for key, count in COUNTS.items():
-        assert counted[key] == count
+    for (movement_id, start), count in COUNTS.items():
+        assert counted[demand_id_of(movement_id, start)] == count
     assert len(result.departures) == sum(COUNTS.values()) == 68
 
 
@@ -196,12 +200,9 @@ def test_departures_are_shifted_by_free_flow_time():
     # depart in [1743, 2643) and reach the stop line in [1800, 2700).
     items = departures_of(plan(), "MOV_B", at(8, 15))
 
+    assert len(items) == 12
     assert all(1743 <= item.depart_s < 2643 for item in items)
-    assert all(1800 <= item.stop_line_target_s < 2700 for item in items)
-    assert all(
-        item.stop_line_target_s == pytest.approx(item.depart_s + 57.0)
-        for item in items
-    )
+    assert all(1800 <= item.depart_s + FREE_FLOW["MOV_B"] < 2700 for item in items)
 
 
 def test_first_warmup_interval_is_not_shifted_before_second_zero():
@@ -278,12 +279,11 @@ def test_vehicle_ids_are_unique_and_keep_their_demand_record():
     assert {item.demand_id for item in first} == {"DEM_MOV_A_0800"}
 
 
-def test_plan_keeps_routes_and_free_flow_of_used_movements_only():
-    result = plan()
+def test_planned_car_stores_only_its_own_facts():
+    car = plan().departures[0]
 
-    assert result.routes == {"MOV_A": ROUTES["MOV_A"], "MOV_B": ROUTES["MOV_B"]}
-    assert result.free_flow_s == {"MOV_A": 0.0, "MOV_B": 57.0}
-    assert result.seed == 42
+    assert set(car.model_dump()) == {"vehicle_id", "demand_id", "depart_s"}
+    assert set(plan().model_dump()) == {"departures"}
 
 
 # ============================================================
