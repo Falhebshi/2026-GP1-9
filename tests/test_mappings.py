@@ -43,7 +43,7 @@ VALID = {
     IntersectionMapping: {"intersection_id": "INT_001"},
     LaneMapping: {"lane_id": "TEST_LANE", "sumo_lane_ids": ["entry_0"]},
     ApproachMapping: {"approach_id": "APP_E", "intersection_id": "INT_001", "approach_side": "east"},
-    DetectorMapping: {"source": "synthetic", "detector_id": "D1", "intersection_id": "INT_001", "mapping_status": "unresolved"},
+    DetectorMapping: {"source": "synthetic", "site_id": "9", "detector_id": "D1", "intersection_id": "INT_001", "mapping_status": "unresolved"},
     SignalCrossingMapping: {"crossing_order": 0, "sumo_tls_id": "tls", "controlled_link_indices": [0]},
     MovementMapping: {"movement_id": "MOV_E_W", "intersection_id": "INT_001", "sumo_route_edge_ids": ["edge1", "edge2"], "signal_controlled": False},
     NetworkMappingConfig: valid_config(),
@@ -84,7 +84,7 @@ def test_missing_required_field(model):
     (NetworkMetadata, "version"), (NetworkMetadata, "path"),
     (IntersectionMapping, "intersection_id"),
     (ApproachMapping, "approach_id"), (ApproachMapping, "intersection_id"), (ApproachMapping, "approach_side"),
-    (DetectorMapping, "detector_id"), (DetectorMapping, "intersection_id"),
+    (DetectorMapping, "site_id"), (DetectorMapping, "detector_id"), (DetectorMapping, "intersection_id"),
     (SignalCrossingMapping, "sumo_tls_id"),
     (MovementMapping, "movement_id"), (MovementMapping, "intersection_id"),
     (NetworkMappingConfig, "schema_version"), (NetworkMappingConfig, "mapping_version"),
@@ -97,7 +97,7 @@ def test_required_strings_reject_blank(model, field, blank):
 
 @pytest.mark.parametrize("model,field", [
     (IntersectionMapping, "sumo_tls_id"),
-    (DetectorMapping, "site_id"), (DetectorMapping, "approach_id"),
+    (DetectorMapping, "approach_id"),
     (DetectorMapping, "lane_id"),
     (MovementMapping, "approach_id"), (MovementMapping, "sumo_tls_id"),
 ])
@@ -164,6 +164,73 @@ def test_detector_status_inconsistent(status, ids):
 def test_detector_enum_reuses_traffic_model():
     assert makes(DetectorMapping).source is TrafficObservationSource.SYNTHETIC
     assert makes(DetectorMapping, source="rcrc").source is TrafficObservationSource.RCRC
+
+
+@pytest.mark.parametrize("fields", [{}, {"sumo_lane_id": None, "sumo_position_m": None}])
+def test_detector_location_can_be_unknown(fields):
+    detector = makes(DetectorMapping, **fields)
+    assert detector.sumo_lane_id is None
+    assert detector.sumo_position_m is None
+
+
+@pytest.mark.parametrize("position", [0, 1, 1.27, 110.71])
+def test_detector_location_accepts_finite_positions_and_normalizes_lane(position):
+    detector = makes(DetectorMapping, sumo_lane_id=" entry_0 \n", sumo_position_m=position)
+    assert detector.sumo_lane_id == "entry_0"
+    assert detector.sumo_position_m == position
+    assert detector.mapping_status == MappingStatus.UNRESOLVED
+    assert DetectorMapping.model_validate_json(detector.model_dump_json()) == detector
+
+
+@pytest.mark.parametrize("fields", [
+    {"sumo_lane_id": "entry_0"},
+    {"sumo_position_m": 0},
+    {"sumo_lane_id": "entry_0", "sumo_position_m": None},
+    {"sumo_lane_id": None, "sumo_position_m": 0},
+])
+def test_detector_location_requires_both_fields(fields):
+    with pytest.raises(ValidationError, match="must be supplied together"):
+        makes(DetectorMapping, **fields)
+
+
+@pytest.mark.parametrize("lane", ["", " \n\t", 9, False])
+def test_detector_location_rejects_invalid_lane_ids(lane):
+    with pytest.raises(ValidationError):
+        makes(DetectorMapping, sumo_lane_id=lane, sumo_position_m=1)
+
+
+@pytest.mark.parametrize("position", [
+    -1, -0.01, float("nan"), float("inf"), float("-inf"), True, False,
+    "not-a-number", "NaN", "Infinity",
+])
+def test_detector_location_rejects_invalid_positions(position):
+    with pytest.raises(ValidationError):
+        makes(DetectorMapping, sumo_lane_id="entry_0", sumo_position_m=position)
+
+
+def test_detector_site_id_is_required():
+    data = deepcopy(VALID[DetectorMapping])
+    del data["site_id"]
+    with pytest.raises(ValidationError) as exc:
+        DetectorMapping.model_validate(data)
+    assert [(error["loc"], error["type"]) for error in exc.value.errors()] == [
+        (("site_id",), "missing"),
+    ]
+
+
+@pytest.mark.parametrize("value", [None, 9, False])
+def test_detector_site_id_requires_a_string(value):
+    with pytest.raises(ValidationError) as exc:
+        makes(DetectorMapping, site_id=value)
+    assert exc.value.errors()[0]["loc"] == ("site_id",)
+    assert exc.value.errors()[0]["type"] == "string_type"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("9", "9"), ("1028", "1028"), ("SITE_A", "SITE_A"), (" 9 \n", "9"),
+])
+def test_detector_site_id_preserves_valid_ids_and_trims_whitespace(value, expected):
+    assert makes(DetectorMapping, site_id=value).site_id == expected
 
 
 @pytest.mark.parametrize("value", ["forecast", "invalid", ""])
@@ -268,7 +335,7 @@ def test_config_rejects_duplicate_entity_keys(collection, duplicate):
 
 
 @pytest.mark.parametrize("source,site,detector", [
-    ("synthetic", None, "D1"), ("rcrc", "1028", "D1")
+    ("synthetic", "9", "D1"), ("rcrc", "1028", "D1")
 ])
 def test_config_rejects_duplicate_detector_key(source, site, detector):
     d = valid_config()
@@ -289,11 +356,20 @@ def test_detector_keys_allow_same_id_for_different_sources_or_sites():
     assert len(NetworkMappingConfig.model_validate(d).detector_mappings) == 3
 
 
+def test_detector_keys_use_normalized_site_ids():
+    d = valid_config()
+    first = deepcopy(VALID[DetectorMapping])
+    second = dict(first, site_id=" 9 ")
+    d["detector_mappings"] = [first, second]
+    with pytest.raises(ValidationError, match="duplicate detector key"):
+        NetworkMappingConfig.model_validate(d)
+
+
 @pytest.mark.parametrize("collection", ["approach_mappings", "movement_mappings", "detector_mappings"])
 def test_config_rejects_wrong_intersection(collection):
     d = valid_config()
     if collection == "detector_mappings":
-        d[collection] = [{"source": "synthetic", "detector_id": "D", "intersection_id": "OTHER", "mapping_status": "unresolved"}]
+        d[collection] = [{"source": "synthetic", "site_id": "9", "detector_id": "D", "intersection_id": "OTHER", "mapping_status": "unresolved"}]
     else:
         d[collection][0]["intersection_id"] = "OTHER"
     with pytest.raises(ValidationError, match="different intersection"):
@@ -304,7 +380,7 @@ def test_config_rejects_wrong_intersection(collection):
 def test_config_rejects_unknown_approach(collection):
     d = valid_config()
     if collection == "detector_mappings":
-        d[collection] = [{"source": "synthetic", "detector_id": "D", "intersection_id": "INT_001",
+        d[collection] = [{"source": "synthetic", "site_id": "9", "detector_id": "D", "intersection_id": "INT_001",
                           "approach_id": "APP_UNKNOWN", "mapping_status": "unresolved"}]
     else:
         d[collection][0]["approach_id"] = "APP_UNKNOWN"
@@ -314,7 +390,7 @@ def test_config_rejects_unknown_approach(collection):
 
 def test_config_rejects_missing_detector_target_movement():
     d = valid_config()
-    d["detector_mappings"] = [{"source": "synthetic", "detector_id": "D", "intersection_id": "INT_001",
+    d["detector_mappings"] = [{"source": "synthetic", "site_id": "9", "detector_id": "D", "intersection_id": "INT_001",
                                "movement_ids": ["MOV_UNKNOWN"], "mapping_status": "usable"}]
     with pytest.raises(ValidationError, match="unmapped movement"):
         NetworkMappingConfig.model_validate(d)
@@ -322,7 +398,7 @@ def test_config_rejects_missing_detector_target_movement():
 
 def test_config_rejects_detector_movement_approach_mismatch():
     d = valid_config()
-    d["detector_mappings"] = [{"source": "synthetic", "detector_id": "D", "intersection_id": "INT_001",
+    d["detector_mappings"] = [{"source": "synthetic", "site_id": "9", "detector_id": "D", "intersection_id": "INT_001",
                                "approach_id": "APP_W", "movement_ids": ["MOV_E_W"], "mapping_status": "usable"}]
     with pytest.raises(ValidationError, match="approach mismatch"):
         NetworkMappingConfig.model_validate(d)
@@ -330,7 +406,7 @@ def test_config_rejects_detector_movement_approach_mismatch():
 
 def test_config_allows_resolved_detector_to_movement_without_approach():
     d = valid_config()
-    d["detector_mappings"] = [{"source": "synthetic", "detector_id": "D", "intersection_id": "INT_001",
+    d["detector_mappings"] = [{"source": "synthetic", "site_id": "9", "detector_id": "D", "intersection_id": "INT_001",
                                "movement_ids": ["MOV_E_W"], "mapping_status": "usable"}]
     assert len(NetworkMappingConfig.model_validate(d).detector_mappings) == 1
 

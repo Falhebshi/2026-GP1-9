@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "mapping_version": "2.0-review",
+  "mapping_version": "2.1-lanes",
   "network": {
     "version": "jaadah_network_v2",
     "path": "data/processed/road_network/jaadah_study_area.net.xml",
@@ -37,9 +37,500 @@
       "queue_detection_lane_ids": []
     }
   ],
-  "approach_lanes": [],
-  "lane_mappings": [],
-  "detector_mappings": [],
+  "approach_lanes": [
+    {
+      "lane_id": "LANE_E_1",
+      "approach_id": "APP_E",
+      "lane_index": 1,
+      "served_movement_ids": [
+        "MOV_E_S"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_E_2",
+      "approach_id": "APP_E",
+      "lane_index": 2,
+      "served_movement_ids": [
+        "MOV_E_S",
+        "MOV_E_W"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_E_3",
+      "approach_id": "APP_E",
+      "lane_index": 3,
+      "served_movement_ids": [
+        "MOV_E_W"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_E_4",
+      "approach_id": "APP_E",
+      "lane_index": 4,
+      "served_movement_ids": [
+        "MOV_E_W"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_S_1",
+      "approach_id": "APP_S",
+      "lane_index": 1,
+      "served_movement_ids": [
+        "MOV_S_W"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_S_2",
+      "approach_id": "APP_S",
+      "lane_index": 2,
+      "served_movement_ids": [
+        "MOV_S_W"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_S_3",
+      "approach_id": "APP_S",
+      "lane_index": 3,
+      "served_movement_ids": [
+        "MOV_S_E_BYPASS"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_S_4",
+      "approach_id": "APP_S",
+      "lane_index": 4,
+      "served_movement_ids": [
+        "MOV_S_E_BYPASS"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_W_1",
+      "approach_id": "APP_W",
+      "lane_index": 1,
+      "served_movement_ids": [
+        "MOV_W_N"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_W_2",
+      "approach_id": "APP_W",
+      "lane_index": 2,
+      "served_movement_ids": [
+        "MOV_W_N",
+        "MOV_W_E"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_W_3",
+      "approach_id": "APP_W",
+      "lane_index": 3,
+      "served_movement_ids": [
+        "MOV_W_E"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_W_4",
+      "approach_id": "APP_W",
+      "lane_index": 4,
+      "served_movement_ids": [
+        "MOV_W_S_SLIP"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_N_1",
+      "approach_id": "APP_N",
+      "lane_index": 1,
+      "served_movement_ids": [
+        "MOV_N_E"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_N_2",
+      "approach_id": "APP_N",
+      "lane_index": 2,
+      "served_movement_ids": [
+        "MOV_N_E"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_N_3",
+      "approach_id": "APP_N",
+      "lane_index": 3,
+      "served_movement_ids": [
+        "MOV_N_E"
+      ],
+      "lane_width_m": 3.2
+    },
+    {
+      "lane_id": "LANE_N_4",
+      "approach_id": "APP_N",
+      "lane_index": 4,
+      "served_movement_ids": [
+        "MOV_N_W_SLIP"
+      ],
+      "lane_width_m": 3.2
+    }
+  ],
+  "lane_mappings": [
+    {
+      "lane_id": "LANE_E_1",
+      "sumo_lane_ids": [
+        "713369663#1.469_3",
+        "713369663#2-AddedOnRampEdge_3",
+        "713369663#2_3"
+      ]
+    },
+    {
+      "lane_id": "LANE_E_2",
+      "sumo_lane_ids": [
+        "713369663#1.469_2",
+        "713369663#2-AddedOnRampEdge_2",
+        "713369663#2_2"
+      ]
+    },
+    {
+      "lane_id": "LANE_E_3",
+      "sumo_lane_ids": [
+        "713369663#1.469_1",
+        "713369663#2-AddedOnRampEdge_1",
+        "713369663#2_1"
+      ]
+    },
+    {
+      "lane_id": "LANE_E_4",
+      "sumo_lane_ids": [
+        "713369663#1.469_0",
+        "713369663#2-AddedOnRampEdge_0",
+        "713369663#2_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_S_1",
+      "sumo_lane_ids": [
+        "539502456#8_3",
+        "569790079#0_1"
+      ]
+    },
+    {
+      "lane_id": "LANE_S_2",
+      "sumo_lane_ids": [
+        "539502456#8_2",
+        "569790079#0_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_S_3",
+      "sumo_lane_ids": [
+        "539502456#8_1",
+        "133973513_1"
+      ]
+    },
+    {
+      "lane_id": "LANE_S_4",
+      "sumo_lane_ids": [
+        "539502456#8_0",
+        "133973513_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_W_1",
+      "sumo_lane_ids": [
+        "133793906#0-AddedOffRampEdge.26_3",
+        "133793906#2_2"
+      ]
+    },
+    {
+      "lane_id": "LANE_W_2",
+      "sumo_lane_ids": [
+        "133793906#0-AddedOffRampEdge.26_2",
+        "133793906#2_1"
+      ]
+    },
+    {
+      "lane_id": "LANE_W_3",
+      "sumo_lane_ids": [
+        "133793906#0-AddedOffRampEdge.26_1",
+        "133793906#2_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_W_4",
+      "sumo_lane_ids": [
+        "133793906#0-AddedOffRampEdge.26_0",
+        "133973488#0_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_N_1",
+      "sumo_lane_ids": [
+        "133973525#1.51_3",
+        "569788806_2"
+      ]
+    },
+    {
+      "lane_id": "LANE_N_2",
+      "sumo_lane_ids": [
+        "133973525#1.51_2",
+        "569788806_1"
+      ]
+    },
+    {
+      "lane_id": "LANE_N_3",
+      "sumo_lane_ids": [
+        "133973525#1.51_1",
+        "569788806_0"
+      ]
+    },
+    {
+      "lane_id": "LANE_N_4",
+      "sumo_lane_ids": [
+        "133973525#1.51_0",
+        "1311808806_0"
+      ]
+    }
+  ],
+  "detector_mappings": [
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "1",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_1",
+      "movement_ids": [
+        "MOV_W_N"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133793906#2_2",
+      "sumo_position_m": 20.15
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "2",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_2",
+      "movement_ids": [
+        "MOV_W_N",
+        "MOV_W_E"
+      ],
+      "mapping_status": "requires_allocation",
+      "sumo_lane_id": "133793906#2_1",
+      "sumo_position_m": 20.15
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "3",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_3",
+      "movement_ids": [
+        "MOV_W_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133793906#2_0",
+      "sumo_position_m": 20.15
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "4",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_1",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_2",
+      "sumo_position_m": 31.23
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "5",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_2",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_1",
+      "sumo_position_m": 31.23
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "6",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_3",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_0",
+      "sumo_position_m": 31.23
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "7",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_1",
+      "movement_ids": [
+        "MOV_S_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569790079#0_1",
+      "sumo_position_m": 13.63
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "8",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_2",
+      "movement_ids": [
+        "MOV_S_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569790079#0_0",
+      "sumo_position_m": 13.63
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "9",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_1",
+      "movement_ids": [
+        "MOV_E_S"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_3",
+      "sumo_position_m": 1.27
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "10",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_2",
+      "movement_ids": [
+        "MOV_E_S",
+        "MOV_E_W"
+      ],
+      "mapping_status": "requires_allocation",
+      "sumo_lane_id": "713369663#2_2",
+      "sumo_position_m": 1.27
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "11",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_3",
+      "movement_ids": [
+        "MOV_E_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_1",
+      "sumo_position_m": 1.27
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "12",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_4",
+      "movement_ids": [
+        "MOV_E_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_0",
+      "sumo_position_m": 1.27
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "13",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_4",
+      "movement_ids": [
+        "MOV_W_S_SLIP"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133973488#0_0",
+      "sumo_position_m": 36.01
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "14",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_4",
+      "movement_ids": [
+        "MOV_N_W_SLIP"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "1311808806_0",
+      "sumo_position_m": 62.41
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "15",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_3",
+      "movement_ids": [
+        "MOV_S_E_BYPASS"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133973513_1",
+      "sumo_position_m": 110.71
+    },
+    {
+      "source": "synthetic",
+      "site_id": "9",
+      "detector_id": "16",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_4",
+      "movement_ids": [
+        "MOV_S_E_BYPASS"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133973513_0",
+      "sumo_position_m": 110.71
+    }
+  ],
   "movement_mappings": [
     {
       "movement_id": "MOV_E_W",
