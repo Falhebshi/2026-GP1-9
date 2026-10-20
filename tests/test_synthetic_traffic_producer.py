@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from threading import Event
@@ -9,11 +10,13 @@ from traffic_source.synthetic.config import (
 )
 from traffic_source.synthetic.generator import (
     SyntheticDetectorObservation,
+    TARGET_DETECTORS,
 )
 from traffic_source.synthetic.producer import (
     SyntheticTrafficProducer,
     latest_completed_interval,
     next_interval_boundary,
+    _daily_random_seed,
 
 )
 from traffic_source.synthetic.storage import (
@@ -22,6 +25,7 @@ from traffic_source.synthetic.storage import (
 
 
 RIYADH = ZoneInfo("Asia/Riyadh")
+TARGET_DETECTOR_COUNT = len(TARGET_DETECTORS)
 
 
 class FakeStatefulGenerator:
@@ -36,12 +40,15 @@ class FakeStatefulGenerator:
         self.state = 0
         self.reset_seeds: list[int | None] = []
         self.generated_timestamps: list[datetime] = []
+        self.active_seed: int | None = None
+        self.seeded_timestamps: list[tuple[datetime, int | None]] = []
 
     def reset(
         self,
         seed: int | None = None,
     ) -> None:
         self.reset_seeds.append(seed)
+        self.active_seed = seed
 
         if seed is None:
             self.state = 0
@@ -53,6 +60,7 @@ class FakeStatefulGenerator:
         timestamp: datetime,
     ) -> list[SyntheticDetectorObservation]:
         self.generated_timestamps.append(timestamp)
+        self.seeded_timestamps.append((timestamp, self.active_seed))
 
         minutes_since_midnight = (
             timestamp.hour * 60
@@ -73,7 +81,7 @@ class FakeStatefulGenerator:
                 volume=self.state + detector_id,
                 description=f"SYN-{detector_id}",
             )
-            for detector_id in range(1, 13)
+            for detector_id in range(1, TARGET_DETECTOR_COUNT + 1)
         ]
 
 
@@ -107,7 +115,7 @@ def make_batch(
             volume=40 + detector_id,
             description=f"SYN-{detector_id}",
         )
-        for detector_id in range(1, 13)
+        for detector_id in range(1, TARGET_DETECTOR_COUNT + 1)
     ]
 
 
@@ -311,7 +319,7 @@ def test_empty_database_bootstraps_expected_history(
     expected_rows = (
         INITIAL_HISTORY_DAYS
         * intervals_per_day
-        * 12
+        * TARGET_DETECTOR_COUNT
     )
 
     assert inserted == expected_rows
@@ -371,7 +379,7 @@ def test_initial_history_starts_after_coverage_start(
         end=first_timestamp,
     )
 
-    assert len(observations) == 12
+    assert len(observations) == TARGET_DETECTOR_COUNT
 
     assert {
         observation.timestamp
@@ -417,7 +425,7 @@ def test_existing_database_fills_only_missing_intervals(
         )
     )
 
-    assert inserted == 24
+    assert inserted == 2 * TARGET_DETECTOR_COUNT
 
     assert storage.get_latest_timestamp() == datetime(
         2026,
@@ -504,7 +512,7 @@ def test_synchronize_does_nothing_when_already_caught_up(
     )
 
     assert inserted == 0
-    assert storage.get_observation_count() == 12
+    assert storage.get_observation_count() == TARGET_DETECTOR_COUNT
     assert generator.generated_timestamps == []
 
 
@@ -585,7 +593,7 @@ def test_exact_boundary_generates_newly_completed_interval(
         )
     )
 
-    assert inserted == 12
+    assert inserted == TARGET_DETECTOR_COUNT
 
     assert storage.get_latest_timestamp() == datetime(
         2026,
@@ -674,7 +682,7 @@ def test_gap_recovery_handles_midnight(
         )
     )
 
-    assert inserted == 12
+    assert inserted == TARGET_DETECTOR_COUNT
 
     assert storage.get_latest_timestamp() == datetime(
         2026,
@@ -686,7 +694,7 @@ def test_gap_recovery_handles_midnight(
     )
 
 
-def test_generation_resets_deterministically_each_calendar_day(
+def test_generation_resets_deterministically_each_traffic_day(
     storage,
     config,
 ):
@@ -720,6 +728,124 @@ def test_generation_resets_deterministically_each_calendar_day(
         generator.reset_seeds[0]
         != generator.reset_seeds[1]
     )
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_last_interval_and_midnight_share_traffic_day_seed(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    producer, generator = make_producer(storage, config)
+    day_start = datetime(2026, 10, 15, tzinfo=RIYADH)
+    midnight = day_start + timedelta(days=1)
+    interval = timedelta(minutes=minutes)
+
+    rows = producer._generate_window(midnight - 2 * interval, midnight)
+
+    seed = _daily_random_seed(config.seed, day_start.date())
+    assert generator.reset_seeds == [seed]
+    assert generator.seeded_timestamps[-2:] == [
+        (midnight - interval, seed), (midnight, seed),
+    ]
+    assert generator.generated_timestamps[0] == day_start + interval
+    assert len(generator.generated_timestamps) == 1440 // minutes
+    assert sorted({row.timestamp for row in rows}) == [midnight - interval, midnight]
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_new_traffic_day_resets_after_midnight_before_first_interval(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    producer, generator = make_producer(storage, config)
+    midnight = datetime(2026, 10, 16, tzinfo=RIYADH)
+    interval = timedelta(minutes=minutes)
+
+    rows = producer._generate_window(midnight - 2 * interval, midnight + interval)
+
+    yesterday_seed = _daily_random_seed(config.seed, (midnight - interval).date())
+    today_seed = _daily_random_seed(config.seed, midnight.date())
+    assert generator.reset_seeds == [yesterday_seed, today_seed]
+    assert generator.seeded_timestamps[-3:] == [
+        (midnight - interval, yesterday_seed), (midnight, yesterday_seed),
+        (midnight + interval, today_seed),
+    ]
+    timestamps = [midnight - interval, midnight, midnight + interval]
+    assert sorted({row.timestamp for row in rows}) == timestamps
+    assert len({(row.detector_id, row.timestamp) for row in rows}) == len(rows) == 3 * TARGET_DETECTOR_COUNT
+    first_new_day = next(row for row in rows if row.timestamp == midnight + interval)
+    assert first_new_day.volume == ((today_seed % 997) * 37 + minutes + 17) % 10_000 + 1
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_only_midnight_regeneration_replays_the_complete_previous_traffic_day(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    first, _ = make_producer(storage, config)
+    partial, generator = make_producer(storage, config)
+    day_start = datetime(2026, 10, 15, tzinfo=RIYADH)
+    midnight = day_start + timedelta(days=1)
+    interval = timedelta(minutes=minutes)
+    full_day = first._generate_window(day_start, midnight)
+
+    midnight_only = partial._generate_window(midnight - interval, midnight)
+
+    assert midnight_only == [row for row in full_day if row.timestamp == midnight]
+    assert generator.generated_timestamps[0] == day_start + interval
+    assert generator.generated_timestamps[-1] == midnight
+    assert len(generator.generated_timestamps) == 1440 // minutes
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_synchronize_recovers_missing_midnight_exactly_without_duplicates(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    first, _ = make_producer(storage, config)
+    day_start = datetime(2026, 10, 15, tzinfo=RIYADH)
+    midnight = day_start + timedelta(days=1)
+    full_day = first._generate_window(day_start, midnight)
+    storage.insert_observations([row for row in full_day if row.timestamp < midnight])
+    restarted, generator = make_producer(storage, config)
+
+    assert restarted.synchronize(now=midnight + timedelta(minutes=1)) == TARGET_DETECTOR_COUNT
+    assert storage.get_observations(start=day_start, end=midnight) == full_day
+    assert storage.get_observation_count() == (1440 // minutes) * TARGET_DETECTOR_COUNT
+    assert generator.reset_seeds == [_daily_random_seed(config.seed, day_start.date())]
+    assert restarted.synchronize(now=midnight + timedelta(minutes=1)) == 0
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_complete_previous_day_continues_with_first_new_day_interval(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    first, _ = make_producer(storage, config)
+    day_start = datetime(2026, 10, 15, tzinfo=RIYADH)
+    midnight = day_start + timedelta(days=1)
+    interval = timedelta(minutes=minutes)
+    storage.insert_observations(first._generate_window(day_start, midnight))
+    restarted, generator = make_producer(storage, config)
+
+    assert restarted.synchronize(now=midnight + interval) == TARGET_DETECTOR_COUNT
+    assert generator.generated_timestamps == [midnight + interval]
+    assert generator.reset_seeds == [_daily_random_seed(config.seed, midnight.date())]
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_traffic_day_windows_are_reproducible_across_midnight(storage, config, minutes):
+    config = replace(config, interval_minutes=minutes)
+    first, _ = make_producer(storage, config)
+    second, _ = make_producer(storage, config)
+    midnight = datetime(2026, 10, 16, tzinfo=RIYADH)
+    interval = timedelta(minutes=minutes)
+
+    full = first._generate_window(midnight - 2 * interval, midnight + 2 * interval)
+    later = second._generate_window(midnight - interval, midnight + 2 * interval)
+
+    assert later == [row for row in full if row.timestamp >= midnight]
+    assert len({(row.detector_id, row.timestamp) for row in full}) == len(full)
+
+
+def test_empty_storage_bootstrap_at_midnight_contains_exactly_seven_traffic_days(storage, config):
+    producer, generator = make_producer(storage, config)
+    midnight = datetime(2026, 10, 16, tzinfo=RIYADH)
+
+    assert producer.synchronize(now=midnight) == INITIAL_HISTORY_DAYS * 96 * TARGET_DETECTOR_COUNT
+    assert len(generator.reset_seeds) == INITIAL_HISTORY_DAYS
+    assert generator.generated_timestamps[-1] == midnight
+    assert storage.get_latest_timestamp() == midnight
 
 
 # ---------------------------------------------------------------------------
@@ -855,7 +981,7 @@ def test_new_producer_instance_can_recover_existing_gap(
         )
     )
 
-    assert inserted == 24
+    assert inserted == 2 * TARGET_DETECTOR_COUNT
 
     assert storage.get_latest_timestamp() == datetime(
         2026,

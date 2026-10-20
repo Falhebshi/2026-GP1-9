@@ -19,7 +19,7 @@ def _daily_random_seed(
     base_seed: int,
     day: date,
 ) -> int:
-    """Derive reproducible randomness for one calendar day."""
+    """Derive reproducible randomness for one interval-start traffic day."""
 
     return (
         base_seed * 100_000_000
@@ -137,7 +137,11 @@ class SyntheticTrafficProducer:
         start_exclusive: datetime,
         end_inclusive: datetime,
     ) -> list[SyntheticDetectorObservation]:
-        """Generate a deterministic range while preserving daily persistence."""
+        """Replay each traffic day from its first interval-end record.
+
+        A traffic day's last record is the following midnight. Replaying its
+        full prefix preserves state when only a later suffix needs recovery.
+        """
 
         timezone = ZoneInfo(
             self.config.timezone
@@ -159,8 +163,8 @@ class SyntheticTrafficProducer:
             start_exclusive + interval
         )
 
-        current_day = first_missing.date()
-        last_day = end_inclusive.date()
+        current_day = (first_missing - interval).date()
+        last_day = (end_inclusive - interval).date()
 
         generated: list[
             SyntheticDetectorObservation
@@ -176,7 +180,6 @@ class SyntheticTrafficProducer:
             day_last_timestamp = (
                 day_start
                 + timedelta(days=1)
-                - interval
             )
 
             generation_end = min(
@@ -191,7 +194,7 @@ class SyntheticTrafficProducer:
                 )
             )
 
-            timestamp = day_start
+            timestamp = day_start + interval
 
             while timestamp <= generation_end:
                 observations = (

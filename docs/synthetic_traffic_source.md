@@ -173,21 +173,74 @@ The repository does not publish the original RCRC sample or its derived profile 
 
 This separation allows the source code and tests to remain public while keeping restricted traffic-data artifacts outside version control.
 
+The revised analysis contract is methodology version 2 in
+`rcrc_profile_summary.json`. Regenerate all analysis files together before
+running this source. The loader rejects old versions, missing workday-noise
+columns, and sample SDs without at least two observations.
+
+The reference is one week from a different intersection: 18 reference
+detectors, 672 intervals each, five Sunday–Thursday workdays, one Friday and
+one Saturday. It does not measure Jaadah's target intersection. Boundary
+timestamps can span partial calendar dates under interval-end semantics.
+
+Expected detector-slot means and stochastic `std_volume` now come from
+workdays only. The SD uses the ordinary sample denominator (`ddof=1`), with
+no additional `5/4` correction. Friday and Saturday reuse this workday noise
+model as an explicit development assumption.
+
+Weekend expected profiles use the workday temporal reference multiplied by
+smoothed weekend/workday slot ratios. A centered five-slot circular mean
+(75 minutes) wraps within the daily template, and the resulting curve is
+rescaled to preserve its observed weekend mean level. This preserves broad
+weekend differences without copying one day's individual spikes as an expected
+pattern. Detailed weekend shapes remain uncertain. `observed_mean_volume`
+retains the raw reference; the generator uses the revised expected level and
+normalized shape from `day_type_time_profile.csv`.
+
+The existing shared-correlation JSON key is unchanged, but its value is
+recomputed from residuals around these revised expected profiles. Shared daily
+adjustment is the ratio of total observed to total expected traffic over the
+same observed slots, rather than the mean of individual ratios. Adjusted
+lag-1 persistence uses those same residuals. Full residual matrices and a
+pooled workday residual-noise summary remain analysis outputs; this generator
+continues using one shared-correlation parameter rather than a full matrix.
+Exact one-week estimates are development references, not universal parameters.
+
 ---
 
 ## Reproducibility
 
 Synthetic traffic generation is designed to be deterministic.
 
-A fixed base seed is configured for the source. For each calendar day, the producer derives a deterministic daily seed from:
+A fixed base seed is configured for the source. The producer derives a daily
+seed from the **interval-start traffic-day date**:
 
 ```text
-base seed + calendar date
+base seed + date of (record timestamp − configured interval)
 ```
 
-The generator is reset using that daily seed.
+The generator resets before the first interval-ending record of that traffic
+day. With 15-minute intervals, Thursday's sequence runs from Thursday `00:15`
+through Friday `00:00`. Thursday `23:45` and Friday `00:00` share the same seed
+and continuous temporal state. The next reset is before Friday `00:15`.
+All replay boundaries use `config.interval_minutes`.
 
-When part of an existing day needs to be regenerated, the producer reconstructs the day's generator state from midnight before returning the required observations.
+This daily seed controls reproducibility. There is no separate random daily
+traffic-level multiplier and no robust daily-level distribution estimated
+from only five workdays. Updated profiles change generated values compared
+with older methodology; identical profiles, settings and seeds remain
+deterministic. Previously stored synthetic rows are not retroactively updated.
+
+For a missing suffix, the producer reconstructs state from the traffic day's
+first interval-ending timestamp and returns only the requested missing rows.
+If only Friday `00:00` is missing, it replays Thursday `00:15` through Friday
+`00:00`, then returns only the midnight batch. Storage still uses the physical
+window `start < timestamp <= end`; no timestamp or API response fields change.
+
+This reset correction changes generated values relative to the previous
+methodology-v2 producer, which reset at calendar midnight and consumed a
+different prefix. Previously stored history is not rewritten; use newly
+generated history when validating the revised sequence.
 
 This means that a particular detector and timestamp should receive the same synthetic value regardless of whether that interval was generated:
 
@@ -204,6 +257,11 @@ This behavior is important because generation should not depend on when the appl
 Traffic observations use **15-minute intervals**.
 
 An observation timestamp represents the **end of the traffic observation interval**.
+
+Expected-profile day type is selected from `timestamp − interval_minutes`.
+For example, a Friday `00:00` observation uses Thursday's workday profile.
+The calendar-day helper remains a calendar classifier; the caller supplies
+the interval-start date.
 
 For example:
 

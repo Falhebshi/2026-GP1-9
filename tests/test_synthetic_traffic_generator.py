@@ -1,7 +1,9 @@
 from dataclasses import replace
 from datetime import datetime
+import json
 import pandas as pd
 import pytest
+from traffic_source.synthetic import generator as generator_module
 from traffic_source.synthetic.config import (
     SyntheticSourceConfig,
 )
@@ -11,6 +13,7 @@ from traffic_source.synthetic.generator import (
     SyntheticTrafficGenerator,
     SyntheticTrafficProfiles,
     assign_reference_templates,
+    calculate_expected_volume,
     get_day_type,
     load_profiles,
 )
@@ -1033,7 +1036,7 @@ def test_record_timestamp_is_used_for_profile_lookup() -> None:
         ),
     ],
 )
-def test_day_type_uses_record_timestamp(
+def test_day_type_helper_classifies_calendar_date(
     timestamp: datetime,
     expected_day_type: str,
 ) -> None:
@@ -1041,7 +1044,7 @@ def test_day_type_uses_record_timestamp(
         get_day_type(timestamp)
         == expected_day_type
     )
-def test_midnight_record_uses_new_calendar_day() -> None:
+def test_day_type_helper_changes_calendar_day_at_midnight() -> None:
     before_midnight = datetime(
         2026,
         10,
@@ -1064,6 +1067,100 @@ def test_midnight_record_uses_new_calendar_day() -> None:
         get_day_type(midnight)
         == "friday"
     )
+
+
+@pytest.mark.parametrize("timestamp,expected", [
+    (datetime(2026, 10, 16, 0, 0), 80),
+    (datetime(2026, 10, 17, 0, 0), 160),
+    (datetime(2026, 10, 18, 0, 0), 40),
+])
+def test_expected_volume_uses_interval_start_day_at_midnight(timestamp, expected):
+    profiles = make_generation_profiles()
+    profiles.detector_time_of_day_profile["time_of_day"] = "00:00"
+    profiles.overall_time_of_day_profile["time_of_day"] = "00:00"
+    profiles = replace(profiles, day_type_time_profile=pd.DataFrame({
+        "day_type": ["workday", "friday", "saturday"],
+        "time_of_day": "00:00",
+        "day_type_mean_volume": [100, 200, 50],
+        "normalized_shape": 1.0,
+    }))
+    assert calculate_expected_volume(
+        1, timestamp, profiles, SyntheticSourceConfig(), {1: 1001}, 1.0
+    ) == expected
+
+
+def test_workday_noise_is_reused_for_all_day_types():
+    generator = make_generation_generator()
+    expected = generator._get_detector_standard_deviation(1, datetime(2026, 10, 15, 8, 15))
+    for day in (16, 17):
+        assert generator._get_detector_standard_deviation(
+            1, datetime(2026, 10, day, 8, 15)
+        ) == expected
+
+
+def write_loader_profiles(tmp_path, monkeypatch, *, version=2, count=5, sd=10.0):
+    profiles = make_generation_profiles()
+    profiles.profile_summary["methodology"] = {"version": version}
+    profiles.detector_time_of_day_profile["workday_observation_count"] = count
+    profiles.detector_time_of_day_profile["std_volume"] = sd
+    profiles.day_type_time_profile["observed_mean_volume"] = 100.0
+    profiles.day_type_time_profile["workday_mean_volume"] = 100.0
+    profiles.day_type_time_profile["smoothing_window_slots"] = 1
+    summary = tmp_path / "rcrc_profile_summary.json"
+    summary.write_text(json.dumps(profiles.profile_summary))
+    monkeypatch.setattr(generator_module, "PROFILE_SUMMARY_PATH", summary)
+    for attribute, constant in [
+        ("detector_volume_summary", "DETECTOR_VOLUME_SUMMARY_PATH"),
+        ("detector_time_of_day_profile", "DETECTOR_TIME_OF_DAY_PROFILE_PATH"),
+        ("overall_time_of_day_profile", "OVERALL_TIME_OF_DAY_PROFILE_PATH"),
+        ("day_type_time_profile", "DAY_TYPE_TIME_PROFILE_PATH"),
+        ("temporal_autocorrelation_summary", "TEMPORAL_AUTOCORRELATION_SUMMARY_PATH"),
+    ]:
+        path = tmp_path / f"{attribute}.csv"
+        getattr(profiles, attribute).to_csv(path, index=False)
+        monkeypatch.setattr(generator_module, constant, path)
+
+
+def test_loader_accepts_revised_profile_contract(tmp_path, monkeypatch):
+    write_loader_profiles(tmp_path, monkeypatch)
+    profiles = load_profiles()
+    assert profiles.profile_summary["methodology"]["version"] == 2
+    first = SyntheticTrafficGenerator(profiles, SyntheticSourceConfig(seed=42))
+    second = SyntheticTrafficGenerator(profiles, SyntheticSourceConfig(seed=42))
+    timestamp = datetime(2026, 10, 15, 8, 15)
+    assert first.generate_timestamp(timestamp) == second.generate_timestamp(timestamp)
+
+
+def test_loader_rejects_old_profiles_with_regeneration_message(tmp_path, monkeypatch):
+    write_loader_profiles(tmp_path, monkeypatch, version=1)
+    with pytest.raises(ValueError, match="Regenerate RCRC profiles"):
+        load_profiles()
+
+
+@pytest.mark.parametrize("count,sd", [(1, 10.0), (5, float("nan")), (5, -1.0)])
+def test_loader_rejects_unavailable_workday_noise(tmp_path, monkeypatch, count, sd):
+    write_loader_profiles(tmp_path, monkeypatch, count=count, sd=sd)
+    with pytest.raises(ValueError, match="finite.*observation counts"):
+        load_profiles()
+
+
+@pytest.mark.parametrize("count", [float("nan"), float("inf"), float("-inf"), 1, 2.5, "five", True])
+def test_loader_requires_finite_numeric_whole_workday_counts(tmp_path, monkeypatch, count):
+    write_loader_profiles(tmp_path, monkeypatch)
+    path = generator_module.DETECTOR_TIME_OF_DAY_PROFILE_PATH
+    frame = pd.read_csv(path)
+    frame["workday_observation_count"] = frame["workday_observation_count"].astype(object)
+    frame.at[0, "workday_observation_count"] = count
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="finite.*observation counts"):
+        load_profiles()
+
+
+@pytest.mark.parametrize("count", [5, 5.0])
+def test_loader_accepts_whole_workday_counts(tmp_path, monkeypatch, count):
+    write_loader_profiles(tmp_path, monkeypatch, count=count)
+    assert load_profiles().detector_time_of_day_profile["workday_observation_count"].eq(5).all()
 # ---------------------------------------------------------------------------
 # Randomness, reproducibility, and temporal persistence
 # ---------------------------------------------------------------------------

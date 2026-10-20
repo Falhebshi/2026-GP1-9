@@ -3,7 +3,7 @@ import random
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from math import sqrt
+from math import isfinite, sqrt
 
 import pandas as pd
 
@@ -62,7 +62,7 @@ def load_profiles() -> SyntheticTrafficProfiles:
     ) as file:
         profile_summary = json.load(file)
 
-    return SyntheticTrafficProfiles(
+    profiles = SyntheticTrafficProfiles(
         profile_summary=profile_summary,
         detector_volume_summary=pd.read_csv(
             DETECTOR_VOLUME_SUMMARY_PATH
@@ -80,6 +80,35 @@ def load_profiles() -> SyntheticTrafficProfiles:
             TEMPORAL_AUTOCORRELATION_SUMMARY_PATH
         ),
     )
+    if profiles.profile_summary.get("methodology", {}).get("version") != 2:
+        raise ValueError("Regenerate RCRC profiles with methodology version 2 before loading.")
+    required_noise_columns = {"workday_observation_count", "std_volume"}
+    noise = profiles.detector_time_of_day_profile
+    if not required_noise_columns.issubset(noise.columns):
+        raise ValueError("Detector profiles must include workday-only sample SD and counts.")
+    counts = noise["workday_observation_count"]
+    standard_deviations = noise["std_volume"]
+    valid_counts = (
+        pd.api.types.is_numeric_dtype(counts)
+        and not pd.api.types.is_complex_dtype(counts)
+        and counts.map(
+            lambda value: isfinite(value) and value >= 2 and value % 1 == 0
+        ).all()
+    )
+    if (
+        not valid_counts
+        or not pd.api.types.is_numeric_dtype(standard_deviations)
+        or pd.api.types.is_complex_dtype(standard_deviations)
+        or not standard_deviations.map(lambda value: isfinite(value) and value >= 0).all()
+    ):
+        raise ValueError(
+            "Workday noise requires finite whole-number observation counts >= 2 "
+            "and finite non-negative SD."
+        )
+    required_shape_columns = {"observed_mean_volume", "smoothing_window_slots", "workday_mean_volume"}
+    if not required_shape_columns.issubset(profiles.day_type_time_profile.columns):
+        raise ValueError("Day-type profiles must include the revised smoothed weekend reference.")
+    return profiles
 
 
 def get_day_type(timestamp: datetime) -> str:
@@ -127,10 +156,10 @@ TARGET_DETECTORS = (
     TargetDetector(11, "SYN-WB-L3-T-STB"),
     TargetDetector(12, "SYN-WB-L4-T-STB"),
 
-    TargetDetector(13, "SYN-EB-L4-R-STB"),
-    TargetDetector(14, "SYN-SB-L4-R-STB"),
-    TargetDetector(15, "SYN-NB-L3-R-STB"),
-    TargetDetector(16, "SYN-NB-L4-R-STB"),
+    TargetDetector(13, "SYN-EB-L4-R-SLP"),
+    TargetDetector(14, "SYN-SB-L4-R-SLP"),
+    TargetDetector(15, "SYN-NB-L3-R-BYP"),
+    TargetDetector(16, "SYN-NB-L4-R-BYP"),
 
 )
 
@@ -252,7 +281,9 @@ def calculate_expected_volume(
     time_of_day = timestamp.strftime(
         "%H:%M"
     )
-    day_type = get_day_type(timestamp)
+    # Source timestamps mark interval ends; midnight uses the preceding day.
+    interval_start = timestamp - timedelta(minutes=config.interval_minutes)
+    day_type = get_day_type(interval_start)
 
     detector_match = (
         profiles.detector_time_of_day_profile[
@@ -346,6 +377,11 @@ def calculate_expected_volume(
             "normalized_shape"
         ]
     )
+
+    if overall_time_mean == 0:
+        if detector_time_mean == 0 and day_type_mean * day_type_shape == 0:
+            return 0.0
+        raise ValueError("A positive expected volume requires a non-zero workday slot reference.")
 
     overall_shape = (
         overall_time_mean
@@ -443,8 +479,10 @@ class SyntheticTrafficGenerator:
         timestamp: datetime,
     ) -> float:
         """
-        Return the time-specific variability inherited from the assigned
-        reference profile.
+        Return workday-only slot sample SD from the assigned reference profile.
+
+        Friday/Saturday reuse the same SD as a one-week development assumption;
+        std_volume already has ddof=1 and receives no extra finite-sample factor.
         """
 
         reference_detector_id = (
