@@ -38,7 +38,7 @@ The ingestion layer does not perform detector-to-movement mapping, SUMO route ma
 The implementation is located under:
 
 ```text
-jaadah/
+backend/
 └── ingestion/
     ├── __init__.py
     ├── adapter.py
@@ -52,7 +52,8 @@ Tests are located under:
 tests/
 ├── test_ingestion_adapter.py
 ├── test_ingestion_client.py
-└── test_ingestion_service.py
+├── test_ingestion_service.py
+└── test_ingestion_integration.py
 ```
 
 Each module has a separate responsibility:
@@ -165,7 +166,7 @@ A valid response has the general structure:
       "detector_id": 1,
       "Date  & Time": "2026-10-15T20:15:00+03:00",
       "volume": 50,
-      "description": "SYN-EB-L1"
+      "description": "SYN-EB-L1-L-STB"
     }
   ]
 }
@@ -322,7 +323,7 @@ detector_id         = 1
 interval_start      = 2026-10-15T20:00:00+03:00
 interval_end        = 2026-10-15T20:15:00+03:00
 vehicle_count       = 50
-description         = SYN-EB-L1
+description         = SYN-EB-L1-L-STB
 average_speed_kmh   = null
 travel_time_s       = null
 ```
@@ -568,7 +569,8 @@ Run all ingestion tests with:
 python -m pytest -v \
   tests/test_ingestion_adapter.py \
   tests/test_ingestion_client.py \
-  tests/test_ingestion_service.py
+  tests/test_ingestion_service.py \
+  tests/test_ingestion_integration.py
 ```
 
 The tests cover:
@@ -592,15 +594,32 @@ The ingestion tests are also included in the full Jaadah project test suite.
 
 ## End-to-End Validation
 
-The ingestion layer has also been validated against the actual local synthetic traffic source rather than only mocked HTTP responses.
+The integration tests exercise the synthetic generator, producer, SQLite
+storage, FastAPI application, HTTP client, adapter, and ingestion service
+together. They use artificial profiles and an isolated test database, with
+HTTP requests routed through the application's in-process test client.
+Private reference files and a running server are not required.
 
-A request covering two 15-minute intervals across the 12 synthetic detector streams produced:
+A request covering two 15-minute intervals across all 16 detector streams
+must produce:
 
 ```text
-Received: 24
-Accepted: 24
+Received: 32
+Accepted: 32
 Rejected: 0
 ```
+
+The tests cross Thursday/Friday, Friday/Saturday, and Saturday/Sunday midnight
+boundaries. Midnight-ending records retain the preceding traffic day's
+expected level; the following `00:15` records use the new day type. Adaptation
+preserves both timestamps, vehicle counts, and the `SLP` descriptions on
+detectors 13/14 and `BYP` descriptions on detectors 15/16. Repeated ingestion
+returns the same observation IDs without adding source database rows.
+
+This branch includes the revised synthetic source from PR #12, which consumes
+PR #11's methodology-version-2 profiles. Ingestion does not read or recompute
+those profiles and does not interpret the description suffixes as movement
+or SUMO mappings; it preserves the provider description for downstream use.
 
 This validates the complete local development path:
 
