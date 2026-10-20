@@ -6,10 +6,12 @@ import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
 import KpiTile from '../components/KpiTile'
 import LocationSummary from '../components/LocationSummary'
+import Notice from '../components/Notice'
 import SimulationViewport from '../components/SimulationViewport'
 import TrafficScene3D from '../components/TrafficScene3D'
 import { getCurrentTraffic } from '../services/currentTrafficService'
 import { darkness } from '../utils/daylight'
+import { KPI_DEFINITIONS, kpiTileProps } from '../utils/kpi'
 import './CurrentTraffic.css'
 
 // Current Traffic page: the 3D intersection, the last 24 hours of congestion, KPIs and alerts.
@@ -50,13 +52,20 @@ function CurrentTraffic() {
     return <EmptyState>Loading current traffic…</EmptyState>
   }
 
-  const { intersection, timeline, kpis, alerts, approaches } = data
+  const { isSample, intersection, timeline, kpis, alerts, approaches } = data
   const shownTime = selectedTime ?? timeline[timeline.length - 1]?.time
   const timeLabel = shownTime ? formatLabel(new Date(shownTime)) : undefined
   const night = shownTime ? darkness(new Date(shownTime), intersection.center) : 0
 
   return (
     <div className="current-traffic">
+      {isSample && (
+        <Notice variant="warning">
+          Sample data for layout only: the KPIs, alerts and timeline on this page are
+          illustrative, not simulation results.
+        </Notice>
+      )}
+
       <div className="current-traffic-sim">
         {/* time shown above the map, on the right */}
         {timeLabel && (
@@ -97,8 +106,13 @@ function CurrentTraffic() {
         <Card title="Current KPIs">
           {kpis.length ? (
             <div className="current-traffic-kpis">
-              {kpis.map((kpi) => (
-                <KpiTile key={kpi.label} {...kpi} />
+              {kpis.map(({ current, previous }) => (
+                <KpiTile
+                  key={current.kpi}
+                  label={KPI_DEFINITIONS[current.kpi].label}
+                  layout="stacked"
+                  {...kpiTileProps(current, previous, 'vs prev. 15 min')}
+                />
               ))}
             </div>
           ) : (

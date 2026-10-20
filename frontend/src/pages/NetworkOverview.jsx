@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
 import NetworkMap from '../components/NetworkMap'
+import Notice from '../components/Notice'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import { getNetwork, getNetworkTimeline, getSegments } from '../services/networkService'
@@ -176,6 +177,12 @@ function NetworkOverview() {
         <Card floating className="network-overview-title">
           <h1>Network Traffic Overview</h1>
         </Card>
+
+        {network.isSample && (
+          <Notice variant="warning">
+            Sample data for layout only: the congestion levels on the map are illustrative.
+          </Notice>
+        )}
 
         <Card floating title="Intersections by area" className="network-overview-picker">
           {intersections.length ? (

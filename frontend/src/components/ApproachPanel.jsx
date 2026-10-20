@@ -1,36 +1,41 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
+import LosBadge from './LosBadge'
+import { displayUnit, formatKpiValue, hasValue, isOverLimit, OVER_LIMIT } from '../utils/kpi'
 import './ApproachPanel.css'
 
 // The approaches of the intersection along the bottom of the 3D scene, one small chip each with
 // its LOS and delay. Clicking a chip (or the approach's lanes on the map) opens a card above it
 // with the approach's KPIs and its movements, so you can see which movement causes the trouble.
-// Clicking the chip again, or the ×, closes it.
+// Clicking a movement shows its other KPIs (capacity, saturation flow, queue time, storage
+// ratio) under it. Clicking the chip again, or the ×, closes the card.
 //
-//   approaches   list of { id, arm, road, kpis, movements: [{ id, type, kpis }] }
-//   openId       id of the open approach, or null
-//   onToggle     called with an approach id when its chip is clicked
-// In a KPI value, null means unavailable and 'na' means the KPI doesn't apply (e.g. LOS for a
-// right turn on a slip lane).
+//   approaches   list of { approach_id, arm, road, kpis, movements: [{ movement_id, label, kpis }] }
+//                where kpis maps a KPI name to its KpiResult, e.g. kpis.control_delay
+//   openId       approach_id of the open approach, or null
+//   onToggle     called with an approach_id when its chip is clicked
+// Values are formatted with src/utils/kpi.js, so a missing value shows "Unavailable" or
+// "Not applicable" (with the reason on hover), never 0.
 
 const COLUMNS = [
-  { key: 'delay', label: 'Delay', unit: 's' },
-  { key: 'los', label: 'LOS' },
-  { key: 'vc', label: 'v/c' },
-  { key: 'queue', label: 'Queue', unit: 'm' },
-  { key: 'throughput', label: 'Flow', unit: 'veh/h' },
+  { kpi: 'control_delay', label: 'Delay' },
+  { kpi: 'level_of_service', label: 'LOS' },
+  { kpi: 'volume_to_capacity_ratio', label: 'v/c' },
+  { kpi: 'queue_length', label: 'Queue' },
+  { kpi: 'throughput', label: 'Flow' },
 ]
 
-// the KPIs that only fit in the line under each movement
+// the KPIs shown under a movement when it is clicked
 const DETAILS = [
-  { key: 'capacity', label: 'Capacity', unit: 'veh/h' },
-  { key: 'satFlow', label: 'Sat. flow', unit: 'veh/h' },
-  { key: 'queueDuration', label: 'Queue time', unit: 's' },
-  { key: 'storage', label: 'Storage ratio' },
+  { kpi: 'capacity', label: 'Capacity' },
+  { kpi: 'saturation_flow_rate', label: 'Sat. flow' },
+  { kpi: 'queue_duration', label: 'Queue time' },
+  { kpi: 'queue_storage_ratio', label: 'Storage ratio' },
 ]
 
 function ApproachPanel({ approaches, openId, onToggle }) {
   if (!approaches?.length) return null
-  const open = approaches.find((a) => a.id === openId)
+  const open = approaches.find((a) => a.approach_id === openId)
+  const shared = open ? sharedLaneNote(open.movements) : null
 
   return (
     <div className="approach-panel">
@@ -44,7 +49,7 @@ function ApproachPanel({ approaches, openId, onToggle }) {
             <button
               type="button"
               className="approach-close"
-              onClick={() => onToggle(open.id)}
+              onClick={() => onToggle(open.approach_id)}
               aria-label="Close"
             >
               ×
@@ -55,43 +60,33 @@ function ApproachPanel({ approaches, openId, onToggle }) {
             <thead>
               <tr>
                 <th />
-                {COLUMNS.map((c) => (
-                  <th key={c.key}>
-                    {c.label}
-                    {c.unit && <small> {c.unit}</small>}
-                  </th>
-                ))}
+                {COLUMNS.map((c) => {
+                  const unit = displayUnit(open.kpis[c.kpi]?.unit)
+                  return (
+                    <th key={c.kpi}>
+                      {c.label}
+                      {unit && <small> {unit}</small>}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
               <tr className="approach-total">
                 <th scope="row">Whole approach</th>
                 {COLUMNS.map((c) => (
-                  <td key={c.key}>{show(open.kpis[c.key], c.key)}</td>
+                  <td key={c.kpi}>
+                    <KpiValue result={open.kpis[c.kpi]} />
+                  </td>
                 ))}
               </tr>
               {open.movements.map((m) => (
-                <Fragment key={m.id}>
-                  <tr className="approach-movement-row">
-                    <th scope="row">{m.type}</th>
-                    {COLUMNS.map((c) => (
-                      <td key={c.key}>{show(m.kpis[c.key], c.key)}</td>
-                    ))}
-                  </tr>
-                  <tr className="approach-movement-details">
-                    <td colSpan={COLUMNS.length + 1}>
-                      {DETAILS.map((d) => (
-                        <span key={d.key}>
-                          {d.label} <b>{show(m.kpis[d.key], d.key)}</b>
-                          {typeof m.kpis[d.key] === 'number' && d.unit ? ` ${d.unit}` : ''}
-                        </span>
-                      ))}
-                    </td>
-                  </tr>
-                </Fragment>
+                <MovementRows key={m.movement_id} movement={m} />
               ))}
             </tbody>
           </table>
+
+          {shared && <p className="approach-note">{shared}</p>}
         </div>
       )}
 
@@ -99,15 +94,17 @@ function ApproachPanel({ approaches, openId, onToggle }) {
         <span className="approach-chips-label">Approaches</span>
         {approaches.map((a) => (
           <button
-            key={a.id}
+            key={a.approach_id}
             type="button"
-            className={`approach-chip ${a.id === openId ? 'approach-chip-active' : ''}`}
-            aria-pressed={a.id === openId}
-            onClick={() => onToggle(a.id)}
+            className={`approach-chip ${a.approach_id === openId ? 'approach-chip-active' : ''}`}
+            aria-pressed={a.approach_id === openId}
+            onClick={() => onToggle(a.approach_id)}
           >
             <span className="approach-chip-name">{a.arm}</span>
-            {show(a.kpis.los, 'los')}
-            <span className="approach-chip-delay">{show(a.kpis.delay, 'delay')} s</span>
+            <KpiValue result={a.kpis.level_of_service} />
+            <span className="approach-chip-delay">
+              <KpiValue result={a.kpis.control_delay} withUnit />
+            </span>
           </button>
         ))}
       </div>
@@ -115,15 +112,85 @@ function ApproachPanel({ approaches, openId, onToggle }) {
   )
 }
 
-function show(value, key) {
-  if (value === 'na') return <span className="approach-kpi-missing">N/A</span>
-  if (value === null || value === undefined) return <span className="approach-kpi-missing">Unavailable</span>
-  if (key === 'los') return <span className={`approach-los approach-los-${value}`}>{value}</span>
-  if (key === 'vc' || key === 'storage') {
-    const text = value.toFixed(2)
-    return value >= 1 ? <span className="approach-kpi-over">{text}</span> : text
+// A movement's row, and its other KPIs under it once it is clicked
+function MovementRows({ movement }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <Fragment>
+      <tr
+        className={`approach-movement-row ${expanded ? 'approach-movement-open' : ''}`}
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <th scope="row">
+          <button type="button" className="approach-movement-toggle" aria-expanded={expanded}>
+            <span className="approach-arrow" aria-hidden="true">
+              ›
+            </span>
+            {movement.label}
+          </button>
+        </th>
+        {COLUMNS.map((c) => (
+          <td key={c.kpi}>
+            <KpiValue result={movement.kpis[c.kpi]} />
+          </td>
+        ))}
+      </tr>
+      {expanded && (
+        <tr className="approach-movement-details">
+          <td colSpan={COLUMNS.length + 1}>
+            <dl>
+              {DETAILS.map((d) => (
+                <div key={d.kpi}>
+                  <dt>{d.label}</dt>
+                  <dd>
+                    <KpiValue result={movement.kpis[d.kpi]} withUnit />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  )
+}
+
+// One sentence under the table when movements share a lane and so show the same queue,
+// e.g. "Through and Left share a lane, so they show the same queue."
+function sharedLaneNote(movements) {
+  const names = movements
+    .filter((m) => m.kpis.queue_length?.is_shared_value)
+    .map((m) => m.label)
+  if (names.length < 2) return null
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)} share a lane, so they show the same queue.`
+}
+
+// One KPI result in the table or a chip
+//   withUnit   adds the unit after the number (the table columns show it in the header)
+function KpiValue({ result, withUnit = false }) {
+  if (!hasValue(result)) {
+    return (
+      <span className="approach-kpi-missing" title={result?.reason ?? undefined}>
+        {formatKpiValue(result)}
+      </span>
+    )
   }
-  return value.toLocaleString('en-US')
+  if (result.kpi === 'level_of_service') {
+    return <LosBadge grade={result.los_grade} className="approach-los" />
+  }
+
+  const unit = displayUnit(result.unit)
+  const text = withUnit && unit ? `${formatKpiValue(result)} ${unit}` : formatKpiValue(result)
+
+  if (isOverLimit(result)) {
+    return (
+      <span className="approach-kpi-over" title={OVER_LIMIT[result.kpi].label}>
+        {text}
+      </span>
+    )
+  }
+  return text
 }
 
 export default ApproachPanel

@@ -521,8 +521,8 @@ function TrafficScene3D({
         {status === 'ready' && (
           <ApproachPanel
             approaches={approaches}
-            openId={approaches?.find((a) => a.arm === openApproach)?.id ?? null}
-            onToggle={(id) => openArm(approaches.find((a) => a.id === id)?.arm ?? null)}
+            openId={approaches?.find((a) => a.arm === openApproach)?.approach_id ?? null}
+            onToggle={(id) => openArm(approaches.find((a) => a.approach_id === id)?.arm ?? null)}
           />
         )}
       </div>

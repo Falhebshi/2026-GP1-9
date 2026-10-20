@@ -126,7 +126,7 @@
 }
 
 .approach-movement-row th {
-  padding-left: 22px;
+  padding-left: 14px;
   color: var(--color-text-muted);
 }
 
@@ -134,22 +134,67 @@
   color: var(--color-text);
 }
 
+.approach-movement-row {
+  cursor: pointer;
+}
+
+.approach-movement-row:hover {
+  background: var(--color-selected-bg);
+}
+
+/* the movement name, as a button so it can be reached with the keyboard */
+.approach-movement-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.approach-arrow {
+  display: inline-block;
+  width: 8px;
+  transition: transform 0.15s;
+}
+
+.approach-movement-open .approach-arrow {
+  transform: rotate(90deg);
+}
+
 .approach-movement-details td {
-  padding: 0 8px 8px 22px;
+  padding: 2px 8px 10px 36px;
   text-align: left;
-  color: var(--color-text-muted);
-  font-size: 10.5px;
   white-space: normal;
 }
 
-.approach-movement-details span + span::before {
-  content: '·';
-  margin: 0 6px;
+/* the four extra KPIs side by side, name above value */
+.approach-movement-details dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0;
 }
 
-.approach-movement-details b {
-  color: var(--color-text);
+.approach-movement-details dt {
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+}
+
+.approach-movement-details dd {
+  margin: 0;
   font-weight: 600;
+}
+
+/* the shared-lane sentence under the table */
+.approach-note {
+  margin: 0;
+  padding: 6px 12px 10px;
+  color: var(--color-text-muted);
+  font-size: 10.5px;
 }
 
 .approach-kpi-missing {
@@ -162,41 +207,11 @@
   font-weight: 600;
 }
 
-/* LOS letter, in the team's level-of-service colors (index.css, --los-a to --los-f) */
+/* LosBadge, a little smaller to fit the table rows and chips */
 .approach-los {
-  display: inline-block;
-  min-width: 18px;
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-  text-align: center;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.approach-los-A {
-  background: var(--los-a);
-}
-
-.approach-los-B {
-  background: var(--los-b);
-}
-
-.approach-los-C {
-  background: var(--los-c);
-}
-
-.approach-los-D {
-  background: var(--los-d);
-}
-
-.approach-los-E {
-  background: var(--los-e);
-  color: var(--color-text-on-dark);
-}
-
-.approach-los-F {
-  background: var(--los-f);
-  color: var(--color-text-on-dark);
+  width: 18px;
+  height: 18px;
+  font-size: 10.5px;
 }
 
 .approach-total th,

@@ -6,44 +6,51 @@
 //   {
 //     isSample: true,                    true while the data is sample data
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
-//     kpis: { 15: [...], 30: [...], 45: [...], 60: [...] },   predicted KPIs per horizon,
-//                                        each [{ label, value, unit, change, changeTone }]
+//     kpis: { 15: [...], 30: [...], 45: [...], 60: [...] },   predicted intersection KPIs
+//                                        per horizon, each [{ current: KpiResult, previous: KpiResult }]
+//                                        where previous is the value now, for the change
 //     alerts: [{ id, title, details: [{ label, value }] }],
 //   }
 
 import { getIntersection } from './currentTrafficService'
+import { latestInterval, sampleResult, unavailableResult } from './sampleKpiResults'
 
-// Predicted KPIs at each forecast horizon (minutes ahead), in the same shape KpiTile takes.
-// change is compared with now; changeTone says whether that change is good or bad.
-const SAMPLE_FORECAST_KPIS = {
-  15: [
-    { label: 'Control Delay', value: 50, unit: 's/veh', change: 2, changeTone: 'bad' },
-    { label: 'Queue Length', value: 138, unit: 'm', change: 6, changeTone: 'bad' },
-    { label: 'Throughput', value: 1780, unit: 'veh/h', change: 2, changeTone: 'good' },
-    { label: 'V/C Ratio', value: 0.84, change: 0.02, changeUnit: '', changeTone: 'bad' },
-    { label: 'Level of Service' },
-  ],
-  30: [
-    { label: 'Control Delay', value: 55, unit: 's/veh', change: 4, changeTone: 'bad' },
-    { label: 'Queue Length', value: 150, unit: 'm', change: 12, changeTone: 'bad' },
-    { label: 'Throughput', value: 1701, unit: 'veh/h', change: 3, changeTone: 'good' },
-    { label: 'V/C Ratio', value: 0.81, change: 0.04, changeUnit: '', changeTone: 'bad' },
-    { label: 'Level of Service' },
-  ],
-  45: [
-    { label: 'Control Delay', value: 58, unit: 's/veh', change: 7, changeTone: 'bad' },
-    { label: 'Queue Length', value: 162, unit: 'm', change: 15, changeTone: 'bad' },
-    { label: 'Throughput', value: 1655, unit: 'veh/h', change: -1, changeTone: 'bad' },
-    { label: 'V/C Ratio', value: 0.88, change: 0.06, changeUnit: '', changeTone: 'bad' },
-    { label: 'Level of Service' },
-  ],
-  60: [
-    { label: 'Control Delay', value: 52, unit: 's/veh', change: 3, changeTone: 'bad' },
-    { label: 'Queue Length', value: 144, unit: 'm', change: 9, changeTone: 'bad' },
-    { label: 'Throughput', value: 1724, unit: 'veh/h', change: 1, changeTone: 'good' },
-    { label: 'V/C Ratio', value: 0.83, change: 0.03, changeUnit: '', changeTone: 'bad' },
-    { label: 'Level of Service' },
-  ],
+const ELEMENT = { level: 'intersection', id: 'INT_001' }
+const HORIZONS = [15, 30, 45, 60]
+
+// The intersection now, the same numbers as the Current Traffic sample
+const NOW = { control_delay: 46, queue_length: 128, throughput: 1842, volume_to_capacity_ratio: 0.91 }
+
+// Predicted values at each horizon (minutes ahead)
+const PREDICTED = {
+  15: { control_delay: 50, queue_length: 138, throughput: 1780, volume_to_capacity_ratio: 0.84 },
+  30: { control_delay: 55, queue_length: 150, throughput: 1701, volume_to_capacity_ratio: 0.81 },
+  45: { control_delay: 58, queue_length: 162, throughput: 1655, volume_to_capacity_ratio: 0.88 },
+  60: { control_delay: 52, queue_length: 144, throughput: 1724, volume_to_capacity_ratio: 0.83 },
+}
+
+// The 15 minutes that end `minutes` after the latest interval
+function intervalAhead(now, minutes) {
+  const end = Date.parse(now[1]) + minutes * 60 * 1000
+  return [new Date(end - 15 * 60 * 1000).toISOString(), new Date(end).toISOString()]
+}
+
+function sampleForecastKpis() {
+  const now = latestInterval()
+  const kpis = {}
+  for (const horizon of HORIZONS) {
+    const interval = intervalAhead(now, horizon)
+    kpis[horizon] = Object.entries(PREDICTED[horizon]).map(([kpi, value]) => ({
+      current: sampleResult(kpi, value, ELEMENT, interval),
+      previous: sampleResult(kpi, NOW[kpi], ELEMENT, now),
+    }))
+    // LOS is left out of the forecast sample on purpose, to show how a missing value looks
+    kpis[horizon].push({
+      current: unavailableResult('level_of_service', ELEMENT, interval, 'Not calculated for forecasts yet.'),
+      previous: null,
+    })
+  }
+  return kpis
 }
 
 // Problems the forecast expects. Click one to see where and when.
@@ -88,7 +95,7 @@ export async function getForecast() {
   return {
     isSample: true,
     intersection,
-    kpis: SAMPLE_FORECAST_KPIS,
+    kpis: sampleForecastKpis(),
     alerts: SAMPLE_FORECAST_ALERTS,
   }
 }

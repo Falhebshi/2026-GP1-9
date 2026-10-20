@@ -7,13 +7,24 @@
 //     isSample: true,                    true while the data is sample data
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
 //     timeline: [{ time, value, level }],      one bar per 15 minutes, last 24 hours
-//     kpis: [{ label, value, unit, change, changeUnit, changeTone }],
+//     kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level, latest
+//                                        15 minutes and the 15 minutes before, for the change
 //     alerts: [{ id, title, details: [{ label, value }], interventionsTo }],
-//     approaches: [{ id, arm, road, kpis, movements: [{ id, type, kpis }] }],
+//     approaches: [{
+//       approach_id, arm, road,
+//       kpis: { <kpi name>: KpiResult },                    approach level
+//       movements: [{ movement_id, label, kpis: { <kpi name>: KpiResult } }],
+//     }],
 //   }
 //
-// The KPI values (including the LOS grade) come from the backend; this file never calculates
-// them. The KPIs follow the team's KPI list (Capacity Engine Handoff, section 3).
+// Every KPI value is a KpiResult, exactly as the backend's KPI engine sends it (data_models.md,
+// section 6). Pages show them with src/utils/kpi.js. This file never calculates a KPI.
+
+import {
+  latestInterval,
+  notApplicableResult,
+  sampleResult,
+} from './sampleKpiResults'
 
 const CENTER = [46.633621, 24.735289]
 
@@ -61,14 +72,21 @@ export function sampleTimelineBars(now = Date.now()) {
   return bars
 }
 
-// changeTone decides the color: green for good, red for bad
-const SAMPLE_KPIS = [
-  { label: 'Control Delay', value: 46, unit: 's/veh', change: 4, changeTone: 'bad' },
-  { label: 'Queue Length', value: 128, unit: 'm', change: 12, changeTone: 'bad' },
-  { label: 'Throughput', value: 1842, unit: 'veh/h', change: 3, changeTone: 'good' },
-  { label: 'V/C Ratio', value: 0.91, change: 0.04, changeUnit: '', changeTone: 'bad' },
-  { label: 'Level of Service' }, // no value yet, shows "Unavailable"
-]
+// Intersection KPIs for the tiles: the latest 15 minutes and the 15 minutes before
+function sampleIntersectionKpis(interval, previousInterval) {
+  const element = { level: 'intersection', id: 'INT_001' }
+  const pair = (kpi, now, before) => ({
+    current: sampleResult(kpi, now, element, interval),
+    previous: sampleResult(kpi, before, element, previousInterval),
+  })
+  return [
+    pair('control_delay', 46, 44),
+    pair('queue_length', 128, 114),
+    pair('throughput', 1842, 1788),
+    pair('volume_to_capacity_ratio', 0.91, 0.87),
+    pair('level_of_service', 'D', 'D'),
+  ]
+}
 
 // Click an alert to see where and when it was detected, like the Forecast Alerts
 const SAMPLE_ALERTS = [
@@ -105,65 +123,85 @@ const SAMPLE_ALERTS = [
 // East and West have through and left on the signal, South is through only and North is left
 // only. Right turns leave before the signal on slip lanes (South to East, West to South and
 // North to West; East has none), so the signal measures (LOS, v/c, capacity, saturation flow)
-// don't apply to them and are 'na'. Whether slip lanes get KPIs at all is still open.
-// A value of null means unavailable, 'na' means not applicable.
+// don't apply to them. Whether slip lanes get KPIs at all is still open.
 // arm is the side of the junction the approach comes from (matches the 3D scene).
-const NA = 'na'
-const kpis = (delay, los, vc, capacity, satFlow, queue, queueDuration, storage, throughput) => ({
-  delay,
-  los,
-  vc,
-  capacity,
-  satFlow,
-  queue,
-  queueDuration,
-  storage,
-  throughput,
-})
 
-const SAMPLE_APPROACHES = [
-  {
-    id: 'E',
-    arm: 'East',
-    road: 'Imam Saud Rd',
-    kpis: kpis(52, 'D', 0.94, 1710, null, 142, 38, 0.81, 1540),
-    movements: [
-      { id: 'E-T', type: 'Through', kpis: kpis(44, 'D', 0.88, 1180, 1820, 118, 31, 0.67, 1040) },
-      { id: 'E-L', type: 'Left', kpis: kpis(71, 'E', 0.94, 530, 1760, 142, 52, 0.81, 500) },
-    ],
-  },
-  {
-    id: 'W',
-    arm: 'West',
-    road: 'Imam Saud Rd',
-    kpis: kpis(41, 'D', 0.83, 1420, null, 109, 29, 0.66, 1290),
-    movements: [
-      { id: 'W-T', type: 'Through', kpis: kpis(36, 'D', 0.79, 960, 1800, 96, 26, 0.58, 760) },
-      { id: 'W-L', type: 'Left', kpis: kpis(53, 'D', 0.83, 460, 1750, 109, 35, 0.66, 380) },
-      { id: 'W-R', type: 'Right (slip lane)', kpis: kpis(7, NA, NA, NA, NA, 15, 4, 0.25, 150) },
-    ],
-  },
-  {
-    id: 'S',
-    arm: 'South',
-    road: 'Prince Turki Rd, service road',
-    kpis: kpis(33, 'C', 0.71, 1020, null, 74, 22, 0.52, 720),
-    movements: [
-      { id: 'S-T', type: 'Through', kpis: kpis(33, 'C', 0.71, 1020, 1790, 74, 22, 0.52, 640) },
-      { id: 'S-R', type: 'Right (slip lane)', kpis: kpis(6, NA, NA, NA, NA, 12, 3, 0.2, 80) },
-    ],
-  },
-  {
-    id: 'N',
-    arm: 'North',
-    road: 'Prince Turki Rd, service road',
-    kpis: kpis(58, 'F', 1.04, 760, null, 168, 61, 1.12, 790),
-    movements: [
-      { id: 'N-L', type: 'Left', kpis: kpis(64, 'F', 1.04, 760, 1740, 168, 61, 1.12, 700) },
-      { id: 'N-R', type: 'Right (slip lane)', kpis: kpis(8, NA, NA, NA, NA, 18, 5, 0.3, 90) },
-    ],
-  },
+// Markers used in the tables below instead of a value
+const SLIP = 'slip'
+const MOVEMENT_ONLY = 'movement only'
+const NOT_APPLICABLE_REASONS = {
+  [SLIP]: 'Uncontrolled right turn on a slip lane, signal measures do not apply.',
+  [MOVEMENT_ONLY]: 'Saturation flow is reported per lane group and movement, not per approach.',
+}
+
+const KPI_ORDER = [
+  'control_delay',
+  'level_of_service',
+  'volume_to_capacity_ratio',
+  'capacity',
+  'saturation_flow_rate',
+  'queue_length',
+  'queue_duration',
+  'queue_storage_ratio',
+  'throughput',
 ]
+
+// One element's KPIs from a row of sample values in KPI_ORDER.
+// sharedLane is set for a movement on a shared lane: its queue values are the lane's values
+// (data_models.md, 6.7), so the page can show the "Shared lane" tag.
+function sampleKpis(element, interval, values, sharedLane) {
+  const results = {}
+  KPI_ORDER.forEach((kpi, i) => {
+    const value = values[i]
+    if (value in NOT_APPLICABLE_REASONS) {
+      results[kpi] = notApplicableResult(kpi, element, interval, NOT_APPLICABLE_REASONS[value])
+    } else {
+      results[kpi] = sampleResult(kpi, value, element, interval)
+    }
+  })
+  if (sharedLane) {
+    for (const kpi of ['queue_length', 'queue_storage_ratio']) {
+      results[kpi] = { ...results[kpi], is_shared_value: true, measured_on_lane_id: sharedLane }
+    }
+  }
+  return results
+}
+
+function sampleApproaches(interval) {
+  const approach = (approach_id, arm, road, values, movements) => ({
+    approach_id,
+    arm,
+    road,
+    kpis: sampleKpis({ level: 'approach', id: approach_id }, interval, values),
+    movements: movements.map(([movement_id, label, movementValues, sharedLane]) => ({
+      movement_id,
+      label,
+      kpis: sampleKpis({ level: 'movement', id: movement_id }, interval, movementValues, sharedLane),
+    })),
+  })
+  const M = MOVEMENT_ONLY
+
+  // East and West: lane 2 is shared by left and through, so both movements show its queue
+  return [
+    approach('APP_E', 'East', 'Imam Saud Rd', [52, 'D', 0.94, 1710, M, 142, 38, 0.81, 1540], [
+      ['MOV_E_W', 'Through', [44, 'D', 0.88, 1180, 1820, 142, 31, 0.81, 1040], 'LANE_E_2'],
+      ['MOV_E_S', 'Left', [71, 'E', 0.94, 530, 1760, 142, 52, 0.81, 500], 'LANE_E_2'],
+    ]),
+    approach('APP_W', 'West', 'Imam Saud Rd', [41, 'D', 0.83, 1420, M, 109, 29, 0.66, 1290], [
+      ['MOV_W_E', 'Through', [36, 'D', 0.79, 960, 1800, 109, 26, 0.66, 760], 'LANE_W_2'],
+      ['MOV_W_N', 'Left', [53, 'D', 0.83, 460, 1750, 109, 35, 0.66, 380], 'LANE_W_2'],
+      ['MOV_W_S_SLIP', 'Right (slip lane)', [7, SLIP, SLIP, SLIP, SLIP, 15, 4, 0.25, 150]],
+    ]),
+    approach('APP_S', 'South', 'Prince Turki Rd, service road', [33, 'C', 0.71, 1020, M, 74, 22, 0.52, 720], [
+      ['MOV_S_W', 'Through', [33, 'C', 0.71, 1020, 1790, 74, 22, 0.52, 640]],
+      ['MOV_S_E_BYPASS', 'Right (slip lane)', [6, SLIP, SLIP, SLIP, SLIP, 12, 3, 0.2, 80]],
+    ]),
+    approach('APP_N', 'North', 'Prince Turki Rd, service road', [58, 'F', 1.04, 760, M, 168, 61, 1.12, 790], [
+      ['MOV_N_E', 'Left', [64, 'F', 1.04, 760, 1740, 168, 61, 1.12, 700]],
+      ['MOV_N_W_SLIP', 'Right (slip lane)', [8, SLIP, SLIP, SLIP, SLIP, 18, 5, 0.3, 90]],
+    ]),
+  ]
+}
 
 // The intersection on its own, for pages that only need its name and position
 export async function getIntersection() {
@@ -191,13 +229,16 @@ export async function getCurrentTraffic() {
     }
   }
 
+  const interval = latestInterval()
+  const previousInterval = latestInterval(Date.parse(interval[0]))
+
   return {
     isSample: true,
     intersection: INTERSECTION,
     timeline: sampleTimelineBars(),
-    kpis: SAMPLE_KPIS,
+    kpis: sampleIntersectionKpis(interval, previousInterval),
     alerts: SAMPLE_ALERTS,
-    approaches: SAMPLE_APPROACHES,
+    approaches: sampleApproaches(interval),
   }
 }
 

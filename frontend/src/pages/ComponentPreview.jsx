@@ -20,6 +20,11 @@ import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import SimulationViewport from '../components/SimulationViewport'
 import usePlayback from '../hooks/usePlayback'
+import {
+  notApplicableResult,
+  sampleResult,
+  unavailableResult,
+} from '../services/sampleKpiResults'
 import { kpiTileProps } from '../utils/kpi'
 import './ComponentPreview.css'
 
@@ -117,41 +122,58 @@ const fullIntersection = {
   signalType: 'Adaptive signal',
 }
 
-// Example approaches for the ApproachPanel example (fake data). 'na' = not applicable,
-// null = unavailable.
-const exampleKpis = (delay, los, vc, queue, throughput) => ({
-  delay,
-  los,
-  vc,
-  queue,
-  throughput,
-  capacity: vc === 'na' ? 'na' : 1200,
-  satFlow: vc === 'na' ? 'na' : 1800,
-  queueDuration: 30,
-  storage: null,
-})
+// Example approaches for the ApproachPanel example (fake data), in the KpiResult shape the
+// backend sends. exampleKpis takes delay, LOS, v/c, queue and flow; SLIP marks the signal
+// measures as not applicable. Storage ratio is left unavailable to show that state.
+const EXAMPLE_INTERVAL = ['2026-10-14T05:00:00Z', '2026-10-14T05:15:00Z']
+const SLIP = 'slip'
+
+function exampleKpis(element, [delay, los, vc, queue, throughput]) {
+  const result = (kpi, value) =>
+    value === SLIP
+      ? notApplicableResult(kpi, element, EXAMPLE_INTERVAL, 'Uncontrolled right turn on a slip lane.')
+      : sampleResult(kpi, value, element, EXAMPLE_INTERVAL)
+  return {
+    control_delay: result('control_delay', delay),
+    level_of_service: result('level_of_service', los),
+    volume_to_capacity_ratio: result('volume_to_capacity_ratio', vc),
+    queue_length: result('queue_length', queue),
+    throughput: result('throughput', throughput),
+    capacity: result('capacity', vc === SLIP ? SLIP : 1200),
+    saturation_flow_rate: result('saturation_flow_rate', vc === SLIP ? SLIP : 1800),
+    queue_duration: result('queue_duration', 30),
+    queue_storage_ratio: unavailableResult(
+      'queue_storage_ratio',
+      element,
+      EXAMPLE_INTERVAL,
+      'Storage length is not known.',
+    ),
+  }
+}
+
+function exampleApproach(approach_id, arm, road, values, movements) {
+  return {
+    approach_id,
+    arm,
+    road,
+    kpis: exampleKpis({ level: 'approach', id: approach_id }, values),
+    movements: movements.map(([movement_id, label, movementValues]) => ({
+      movement_id,
+      label,
+      kpis: exampleKpis({ level: 'movement', id: movement_id }, movementValues),
+    })),
+  }
+}
 
 const exampleApproaches = [
-  {
-    id: 'E',
-    arm: 'East',
-    road: 'Main road',
-    kpis: exampleKpis(44, 'D', 0.88, 118, 1540),
-    movements: [
-      { id: 'E-T', type: 'Through', kpis: exampleKpis(40, 'D', 0.82, 96, 1040) },
-      { id: 'E-L', type: 'Left', kpis: exampleKpis(71, 'E', 0.94, 118, 500) },
-    ],
-  },
-  {
-    id: 'N',
-    arm: 'North',
-    road: 'Side road',
-    kpis: exampleKpis(64, 'F', 1.04, 168, 790),
-    movements: [
-      { id: 'N-L', type: 'Left', kpis: exampleKpis(64, 'F', 1.04, 168, 700) },
-      { id: 'N-R', type: 'Right (slip lane)', kpis: exampleKpis(8, 'na', 'na', 18, 90) },
-    ],
-  },
+  exampleApproach('APP_E', 'East', 'Main road', [44, 'D', 0.88, 118, 1540], [
+    ['MOV_E_W', 'Through', [40, 'D', 0.82, 96, 1040]],
+    ['MOV_E_S', 'Left', [71, 'E', 0.94, 118, 500]],
+  ]),
+  exampleApproach('APP_N', 'North', 'Side road', [64, 'F', 1.04, 168, 790], [
+    ['MOV_N_E', 'Left', [64, 'F', 1.04, 168, 700]],
+    ['MOV_N_W_SLIP', 'Right (slip lane)', [8, SLIP, SLIP, 18, 90]],
+  ]),
 ]
 
 const partialIntersection = {
@@ -337,7 +359,7 @@ function DemoTraffic({ time, cars, speed }) {
 function ComponentPreview() {
   // Each Select needs a place to remember what is currently chosen
   const [period, setPeriod] = useState('30')
-  const [openApproach, setOpenApproach] = useState('E')
+  const [openApproach, setOpenApproach] = useState('APP_E')
   const [intersection, setIntersection] = useState('')
   const [metric, setMetric] = useState('delay')
 

@@ -4,7 +4,9 @@ import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import ForecastSimulation from '../components/ForecastSimulation'
 import KpiTile from '../components/KpiTile'
+import Notice from '../components/Notice'
 import { getForecast } from '../services/forecastService'
+import { KPI_DEFINITIONS, kpiTileProps } from '../utils/kpi'
 import './TrafficForecast.css'
 
 // Traffic Forecast page: the predicted traffic in 3D with the 15 / 30 / 45 / 60 min play bar,
@@ -47,14 +49,26 @@ function TrafficForecast() {
 
   return (
     <div className="traffic-forecast">
+      {data.isSample && (
+        <Notice variant="warning">
+          Sample data for layout only: the predicted KPIs and alerts on this page are
+          illustrative, not forecast results.
+        </Notice>
+      )}
+
       <ForecastSimulation intersection={data.intersection} onHorizonChange={setHorizon} />
 
       <div className="traffic-forecast-row">
         <Card title={`Predicted KPIs · in ${horizon} min`}>
           {kpis.length ? (
             <div className="traffic-forecast-kpis">
-              {kpis.map((kpi) => (
-                <KpiTile key={kpi.label} {...kpi} />
+              {kpis.map(({ current, previous }) => (
+                <KpiTile
+                  key={current.kpi}
+                  label={KPI_DEFINITIONS[current.kpi].label}
+                  layout="stacked"
+                  {...kpiTileProps(current, previous, 'vs now')}
+                />
               ))}
             </div>
           ) : (
