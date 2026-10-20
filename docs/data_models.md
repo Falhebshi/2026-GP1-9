@@ -214,14 +214,20 @@ Fields: `lane_id`, `approach_id`, `lane_index`, `served_movement_ids`, `lane_wid
 
 **Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID such as `east_L`, `east_LT`, `east_T` (team decision, 17 Oct 2026).
 
-Confirmed layout of the case-study intersection, from the median outward:
+Signal-entry lane subset (12 lanes), from the median outward. The complete
+canonical inventory contains 16 lanes, including four slip/bypass lanes; see
+the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 
 | Approach | Lanes |
 | --- | --- |
 | East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
 | West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
 | North | 3 lanes, all left |
-| South | 2 lanes, both through |
+| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
+
+The analytical left/signalized classification of `MOV_S_W` remains pending
+KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
+movement identity, physical routing, and signal behavior remain unchanged.
 
 ## 2.6 Canonical Identity vs. SUMO Identity
 
@@ -586,6 +592,38 @@ The canonical model defines shared meanings and structures. It intentionally doe
 
 Canonical entities do not contain SUMO topology. A separate mapping layer links movements to SUMO routes, lanes to SUMO lanes, and detectors and traffic-light controlled links to their Jaadah identities. This keeps generated SUMO identifiers from becoming application-level identities.
 
+The study area's network IDs, parent relationships, and source/SUMO mappings
+live in `data/processed/road_network/network_mappings.json`. This is the single
+configuration used to define the network. `NetworkMappingConfig` builds
+canonical objects from those records through `canonical_intersection`,
+`canonical_approaches`, and `canonical_movements`.
+
+`approach_lanes` holds the canonical lane definitions, while `lane_mappings`
+connects them to SUMO lane segments. A known lane may still be waiting for its
+SUMO mapping. The checks catch inconsistent references and ownership; creating
+canonical objects from the same records does not independently confirm their
+geographic correctness. See [Network mapping](network_mapping.md) for the full
+rules, M7 usage, and test commands.
+
+`DetectorMapping.lane_id` is an optional canonical association. Its separate
+`sumo_lane_id` and `sumo_position_m` fields describe an exact modeled location:
+both may be absent/null, or both must be supplied. Lane IDs are trimmed and
+nonblank; positions must be finite, nonnegative numbers, excluding booleans,
+in metres from the SUMO lane start along travel direction. Network validation
+checks external lane existence, inclusive lane-length bounds, and membership
+in the canonical lane chain when that mapping is available. Any chain segment
+may be selected. Pending mappings cannot establish membership, and unresolved
+detectors may still omit exact locations.
+
+The populated 16-detector synthetic baseline uses 1 m before the selected lane endpoint.
+Detectors 1-12 reference modeled signal entries; 13-16 reference uncontrolled
+slip/bypass endpoints, not necessarily physical stop lines. These modeled
+assumptions are not surveyed RCRC locations or defaults for other sources.
+The configuration contains 16 synthetic detector mappings at site `"9"`.
+Shared detectors 2 and 10 require allocation; the other 14 are usable. These
+statuses do not define allocation algorithms or split proportions. Catalogue
+provenance and mapping scope are documented in [Network mapping](network_mapping.md).
+
 ## 9.2 Demand transformation is separate
 
 The models do not decide how observed detector counts become movement demand (e.g. splitting 100 detector vehicles 70/30 between two movements). That rule belongs to the Traffic Demand Transformation component, so traffic-domain assumptions are not hidden inside structural validation.
@@ -685,3 +723,6 @@ Together, these structures form the common data language used across the Jaadah 
 | Oct 2026 (Sprint 1) | 16 initial models in five areas |
 | 14–17 Oct 2026 | Added `KpiResult` and its enums and tables (`kpis.py`); `MovementAttributes` and `ApproachLane`; `VehicleDelayRecord`, `IncompletePassage` and `CycleQueueRecord`; `ReplicationPair` and `ReplicationSet`; `SimulationConfig.clearance_duration_s`. Shared-lane reporting (Option C) with lane and lane-group levels |
 | 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
+| 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
+| 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
+| 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |

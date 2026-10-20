@@ -11,6 +11,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  transition: background-color 0.25s, border-color 0.25s, box-shadow 0.25s;
 }
 
 /* The alert that is open. The shadow thickens the outline to 2px without
@@ -36,7 +37,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
+  flex: 1 1 200px; /* below 200px, the link moves under the title */
   min-width: 0;
   padding: 0;
   background: none;
@@ -60,7 +61,7 @@
 }
 
 .alert-text {
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
 }
 
@@ -81,6 +82,35 @@
   font-size: var(--text-xs);
   font-weight: 500;
   white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Sliding open and closed.
+   The outer box is a grid with one row. Closed, that row has a height of
+   "0fr" (nothing). Open, it is "1fr" (as tall as its content). The browser
+   can animate between those two, which it cannot do with height: auto. */
+.alert-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.alert-item.open .alert-collapse {
+  grid-template-rows: 1fr;
+}
+
+/* The inner box clips the content while the row is growing or shrinking.
+   "visibility" keeps closed details away from screen readers; its
+   transition delays the hiding until the slide has finished. */
+.alert-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0.25s;
+}
+
+.alert-item.open .alert-collapse-inner {
+  visibility: visible;
 }
 
 /* The lavender box with the alert's details */
@@ -89,4 +119,14 @@
   padding: var(--space-sm) 12px;
   background: var(--color-surface-muted);
   border-radius: var(--radius-sm);
+}
+
+/* People who turned off animations in their system settings get no sliding */
+@media (prefers-reduced-motion: reduce) {
+  .alert-item,
+  .alert-chevron,
+  .alert-collapse,
+  .alert-collapse-inner {
+    transition: none;
+  }
 }

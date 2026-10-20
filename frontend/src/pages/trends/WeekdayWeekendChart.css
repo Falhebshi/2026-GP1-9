@@ -1,0 +1,109 @@
+.ww-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Legend under the title: a small swatch per series */
+.ww-legend {
+  display: flex;
+  gap: 12px;
+  margin: calc(var(--space-sm) * -1) 0 var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.ww-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ww-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* Series colors */
+.ww-weekdays {
+  background: var(--chart-1);
+}
+
+.ww-weekends {
+  background: var(--chart-2);
+}
+
+.ww-rows {
+  display: grid;
+  gap: var(--space-md);
+}
+
+/* Label on the left, bars on the right */
+.ww-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.ww-label {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+/* The unit on its own line under the name, the same in every row */
+.ww-unit {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.ww-bars {
+  display: grid;
+  gap: 2px; /* the gap that separates the two bars */
+}
+
+.ww-bar-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A thin bar, rounded at its end, square where it starts */
+.ww-bar {
+  height: 12px;
+  border-radius: 0 4px 4px 0;
+}
+
+.ww-bar-missing {
+  width: 40px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+/* The number at the end of the bar, in text color, not the bar's color */
+.ww-value {
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ww-value-missing {
+  color: var(--color-text-muted);
+}
+
+.ww-note {
+  margin-top: auto;
+  padding-top: var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 480px) {
+  .ww-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-xs);
+  }
+}

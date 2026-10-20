@@ -62,3 +62,36 @@ For the current finite test scenarios, the runner continues stepping while SUMO 
 This means the simulation does not stop as soon as the last vehicle enters. Vehicles already in the network are allowed to complete their routes, allowing remaining queues to clear before the simulation ends.
 
 This behavior is specific to finite validation runs. Jaadah's continuous historical reconstruction will preserve the simulation state between consecutive traffic intervals so that vehicles and queues can persist across interval boundaries.
+
+## 2. Movement Smoke Test
+
+The movement smoke-test runner is implemented in:
+
+`simulation/scripts/tests/run_movement_smoke.py`
+
+Its purpose is to verify that a vehicle can complete each of the 18 mapped movement routes in SUMO.
+
+### Current Capabilities
+
+The runner can:
+
+- Load and validate the mappings against the SUMO network.
+- Test each movement with one vehicle in a separate simulation.
+- Check departure, arrival, teleportation, and simulation errors.
+- Save per-movement logs and an overall summary.
+
+A movement passes when the vehicle departs and arrives within the time limit without teleportation or errors.
+
+### Usage
+
+Run the movement smoke test from the project root:
+
+```bash
+python simulation/scripts/tests/run_movement_smoke.py
+```
+
+Results are stored under `simulation/outputs/tests/movement_smoke/`. Use `--out` with a new directory to preserve earlier results. Run the script with `--help` to see its options.
+
+### Test Results
+
+Unit tests cover the runner using mocked TraCI. Live SUMO movement tests are run separately.
