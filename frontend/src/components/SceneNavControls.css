@@ -1,0 +1,64 @@
+/* Camera buttons and north arrow (scoped to the 3D scene) */
+.traffic-scene .scene-nav-north {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+/* the arrow turns with the camera; --bearing is set by the component */
+.traffic-scene .scene-nav-north svg {
+  transform: rotate(var(--bearing, 0deg));
+}
+.traffic-scene .scene-nav-north-dial {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+}
+.traffic-scene .scene-nav-north-tip {
+  fill: var(--color-text);
+}
+.traffic-scene .scene-nav-north-tail {
+  fill: var(--color-border-strong);
+}
+.traffic-scene .scene-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.traffic-scene .scene-nav button {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.traffic-scene .scene-nav-compass {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.traffic-scene .scene-nav-group {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-float);
+}
+.traffic-scene .scene-nav-group button {
+  width: 32px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+}
+.traffic-scene .scene-nav-group button + button {
+  border-top: 1px solid var(--color-border);
+}
+.traffic-scene .scene-nav-group button:hover {
+  background: var(--color-bg);
+}

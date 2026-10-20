@@ -3,6 +3,7 @@ import './Select.css'
 // A dropdown in the Jaadah style.
 //
 //   options      the choices, as a list: [{ value: '30', label: 'Last 30 days' }]
+//                add disabled: true to show a choice that can't be picked yet
 //   value        the value of the choice that is currently selected
 //   onChange     function called with the new value when the user picks one
 //   label        text shown before the dropdown (optional)
@@ -38,7 +39,7 @@ function Select({
           )}
 
           {options.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={option.value} value={option.value} disabled={option.disabled}>
               {option.label}
             </option>
           ))}
