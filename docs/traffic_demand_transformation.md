@@ -147,12 +147,12 @@ The result depends on the detector's mapping status:
 |---|---|---|
 | no mapping | The detector is not in the configuration | Raises `ValueError("detector has no mapping")` |
 | `unresolved` | The detector cannot be linked to any movement | Raises `ValueError("detector mapping is unresolved")` |
-| `requires_allocation` | The detector serves two or more movements, for example a shared left-through lane | Raises `ValueError` naming the candidate movements |
+| `requires_allocation` | The detector serves two or more movements, for example a shared left-through lane | Raises `ValueError` naming the candidate movements; the service splits these counts instead (see [Shared-Lane Allocation](#shared-lane-allocation)) |
 | `usable` | The detector serves exactly one movement | Returns that movement ID |
 
 A `usable` mapping always has exactly one movement. This is enforced by the `DetectorMapping` model.
 
-Shared-lane detectors are not split. Their observations are reported until the team adopts a documented allocation method. The movements they serve are also held back; see [Shared-Lane Detector](#shared-lane-detector).
+The mapper handles one observation and one movement. Shared-lane detectors are not passed to it; the batch service splits their counts between movements.
 
 ---
 
@@ -198,12 +198,13 @@ backend/demand/service.py
 Its workflow is:
 
 ```text
-1. Map each observation to its movement
+1. Map each observation to its movement, or set it aside if it comes from a shared-lane detector
 2. Record observations that cannot be mapped
 3. Group mapped observations by source, movement and interval
-4. Check each group for conflicting, shared-lane or missing detectors
-5. Sum the vehicle counts of each complete group
-6. Return demands and transformation errors
+4. Split each shared-lane count between its movements
+5. Check each group for conflicting or missing detectors
+6. Sum the vehicle counts of each complete group, including its parts of shared-lane counts
+7. Return demands and transformation errors
 ```
 
 For example, if the north left turn `MOV_N_E` is counted by detectors `4`, `5` and `6`:
@@ -246,6 +247,118 @@ Demands are returned in interval order.
 
 ---
 
+## Shared-Lane Allocation
+
+### Why the Split Is an Assumption
+
+A shared-lane detector counts every vehicle in its lane, without knowing which movement each one takes. With the current mapping there are two such detectors:
+
+| Shared detector | Lane | Movements |
+|---|---|---|
+| `2` | west, lane 2 | `MOV_W_N` (left), `MOV_W_E` (through) |
+| `10` | east, lane 2 | `MOV_E_S` (left), `MOV_E_W` (through) |
+
+The split between the movements cannot be measured from detector counts, whether synthetic or RCRC. Turning movement counts in shared lanes cannot be obtained from loop-based data unless additional detectors are installed (Noyce et al., 2019, Section 1.1.1), and no automated method exists without downstream detectors (Gholami and Tian, 2016, Section 2). The methods of Gholami and Tian need downstream counts, per-vehicle headways or calibration counts, none of which are available here.
+
+The split is therefore a **modelled assumption**. It was agreed with the KPI engine owner on 20 October 2026.
+
+### Proportional Split
+
+The shared lane is assumed to carry the same mix as the exclusive lanes next to it in the same interval:
+
+```text
+volume per lane (movement) = count of the movement's exclusive lanes / number of those lanes
+share (movement)           = volume per lane (movement) / sum over the lane's movements
+```
+
+The exclusive lanes are found from the mapping: the `usable` detectors on the same approach that count one of the shared lane's movements alone.
+
+West example, detectors `1`, `2` and `3`:
+
+```text
+Detector 1   left only           10 vehicles
+Detector 2   left and through    20 vehicles
+Detector 3   through only        30 vehicles
+
+left share   = 10 / (10 + 30) = 0.25
+detector 2   = 5 left + 15 through
+MOV_W_N      = 10 + 5  = 15
+MOV_W_E      = 30 + 15 = 45
+```
+
+East example, where the through movement has two exclusive lanes (detectors `11` and `12`):
+
+```text
+Detector 9        left only           90 vehicles
+Detector 10       left and through   100 vehicles
+Detectors 11, 12  through only       110 + 120 vehicles
+
+through per lane = 230 / 2 = 115
+left share       = 90 / (90 + 115) = 0.439
+detector 10      = 44 left + 56 through
+MOV_E_S          = 90 + 44        = 134
+MOV_E_W          = 110 + 120 + 56 = 286
+```
+
+In a quiet interval the split follows the actual mix. With 1 vehicle in the left lane and 30 in the through lane, a shared count of 20 gives 1 left and 19 through.
+
+When the exclusive lanes counted no vehicles at all, there is no mix to follow and the lane is split equally.
+
+The proportional split was chosen over two alternatives:
+
+| Alternative | Reason not used |
+|---|---|
+| A fixed split such as 50/50 | Does not follow the interval's actual mix |
+| The KPI engine's HCM lane-choice model in reverse | The lane counts barely change with the split, so small count differences give very different splits |
+
+### Whole Vehicles
+
+Demand is a whole number of vehicles. Each part is rounded down and the remaining vehicles go to the parts with the largest remainders; ties go to the movement ID that comes first. The parts always add up to the shared count:
+
+```text
+Detector 2 = 45, shares 0.5 / 0.5
+MOV_W_E    = 23
+MOV_W_N    = 22
+```
+
+### Marking Allocated Demand
+
+Every demand that contains part of a shared-lane count lists that observation in `allocated_observation_ids`, and its computed `is_allocated` is true (see [Data models](data_models.md), section 1.2). The observation is also in `source_observation_ids`. The KPI engine uses `is_allocated` to label its results *modelled assumption*, even when the source is RCRC.
+
+### Missing or Conflicting Data
+
+The split needs the shared detector and all of its exclusive-lane detectors in the same interval. Otherwise both movements of the lane get no demand:
+
+| Situation | Message |
+|---|---|
+| The shared detector did not report | `no observation from detector(s) 2` |
+| An exclusive-lane detector did not report, or sent different counts | `split of shared detector 2 needs detector(s) 3` |
+| The shared detector sent different counts | `shared detector 2 sent different counts` |
+| A movement of the shared lane has no exclusive lane in the mapping | `shared detector 2 has no exclusive lane for every movement to split by` |
+
+### Sensitivity Runs
+
+Because the split is assumed, its effect on the results should be shown. `share_adjustments` moves the share of one movement of a shared lane by a number of percentage points, and the other movement receives the rest:
+
+```python
+result = build_simulation_demand(
+    observations=observations,
+    share_adjustments={
+        "MOV_W_N": -0.2,
+        "MOV_E_S": -0.2,
+    },
+)
+```
+
+The agreed runs use −0.2 and +0.2 on the left movements (for example, a share of 50 % becomes 30 % and 70 %). Shares stay between 0 and 1, and the lane totals do not change. An adjustment for a movement that no shared lane serves is rejected.
+
+### References
+
+- Noyce, D. A., Bill, A. R., Chitturi, M. V., and Santiago-Chaparro, K. R. (2019). *Turning Movement Counts on Shared Lanes: Prototype Development and Analysis Procedures*. NCHRP IDEA Project 198 Final Report, Transportation Research Board.
+- Gholami, A., and Tian, Z. (2016). Using stop bar detector information to determine turning movement proportions in shared lanes. *Journal of Advanced Transportation*, 50, 802–817. https://doi.org/10.1002/atr.1376
+
+---
+
 ## Missing and Duplicate Observations
 
 ### Missing Detector
@@ -275,28 +388,11 @@ This means SUMO receives no demand for that movement and interval. Filling such 
 
 ### Shared-Lane Detector
 
-Some movements are also counted by a shared-lane detector. For example, the west left turn `MOV_W_N` uses lane 1 (detector `1`, left only) and lane 2 (detector `2`, shared with the west through movement):
+A movement that uses a shared lane also needs that lane's detector. When it is missing, the movement gets no demand and the error names it, as for any other detector:
 
 ```text
-Detector 1   left only           30 vehicles
-Detector 2   left and through    40 vehicles, split unknown
+Error: no observation from detector(s) 2
 ```
-
-Summing detector `1` alone would give `30`, which looks like a valid total but leaves out the left-turning part of lane 2. The result is therefore:
-
-```text
-No demand for MOV_W_N at 08:00-08:15
-Error: movement also uses shared detector(s) 2; no allocation rule adopted
-```
-
-With the current mapping this holds back four movements:
-
-| Shared detector | Movements held back |
-|---|---|
-| `2` (west, lane 2) | `MOV_W_N`, `MOV_W_E` |
-| `10` (east, lane 2) | `MOV_E_S`, `MOV_E_W` |
-
-Other movements are not affected. When an allocation rule is adopted, this check is where its result is added.
 
 ### Repeated Observation
 
@@ -348,8 +444,9 @@ The possible messages are:
 |---|---|
 | `detector has no mapping` | No mapping for the observation's source, site and detector |
 | `detector mapping is unresolved` | The detector cannot be linked to a movement |
-| `detector serves ...; no allocation rule adopted` | Shared-lane detector |
-| `movement also uses shared detector(s) ...; no allocation rule adopted` | The movement's total needs a shared-lane detector's split |
+| `split of shared detector ... needs detector(s) ...` | An exclusive-lane detector needed for the split did not report or sent different counts |
+| `shared detector ... sent different counts` | Two different counts from a shared-lane detector |
+| `shared detector ... has no exclusive lane for every movement to split by` | The mapping gives a shared-lane movement no exclusive lane |
 | `no observation from detector(s) ...` | A detector of the movement did not report |
 | `duplicate observation ignored` | The same count was reported twice |
 | `detector sent different counts: ...` | Two different counts for the same detector and interval |
@@ -371,6 +468,8 @@ result = build_simulation_demand(
     observations=ingestion_result.observations,
 )
 ```
+
+For sensitivity runs, `share_adjustments` is passed on to the split (see [Sensitivity Runs](#sensitivity-runs)).
 
 By default it reads:
 
@@ -438,8 +537,11 @@ The tests cover:
 
 - usable detectors mapped to their movement;
 - exact matching on source, site and detector;
-- unmapped, unresolved and shared-lane detectors;
-- movements held back because they use a shared-lane detector;
+- unmapped and unresolved detectors;
+- proportional splitting of shared-lane counts, in whole vehicles, with the equal-split fallback;
+- marking split demand as allocated;
+- missing and conflicting shared-lane and exclusive-lane detectors;
+- sensitivity adjustments and their limits;
 - stable demand IDs for synthetic and RCRC sources;
 - summing usable detectors into one demand;
 - preserving every source observation ID;
@@ -450,7 +552,7 @@ The tests cover:
 - valid observations processed alongside rejected ones;
 - empty batches;
 - rejection of detector mappings that reference unknown movements;
-- the real mappings: demand for the five movements without shared lanes, and the four shared-lane movements held back;
+- the real mappings: demand for all nine movements with detectors, the four shared-lane movements marked as allocated, and sensitivity runs that keep the approach totals;
 - every observation either used in demand or reported.
 
 The transformation tests are also included in the full Jaadah project test suite.
@@ -459,13 +561,13 @@ The transformation tests are also included in the full Jaadah project test suite
 
 ## Current Scope and Open Decisions
 
-The transformation currently produces demand only from `usable` detectors.
+The transformation produces demand from `usable` detectors and from split shared-lane detectors.
 
 The following decisions are open and are not implemented:
 
 | Decision | Current behavior |
 |---|---|
-| Allocation method for shared left-through lanes | Reported, not split; the four movements that use them get no demand |
+| Observed turning proportions for the shared lanes (Gholami and Tian, 2016, Section 3.4) | Not available; the proportional split is used |
 | East and west through detectors also counting ramp and U-turn traffic | Depends on how these detectors are mapped |
 | Movements with no detector (U-turns, tunnel, tunnel on-ramp) | No demand produced |
 | Filling missing detector intervals, and marking estimated demand | Reported, not filled |
@@ -481,8 +583,8 @@ The traffic-demand transformation provides a traceable boundary between observed
 Its main design principles are:
 
 - detectors are matched exactly on source, site and detector;
-- only detectors that serve exactly one movement produce demand;
-- shared lanes are not split without a documented method, and movements that need them get no demand;
+- detectors that serve exactly one movement are summed directly;
+- shared-lane counts are split by a documented modelled assumption, and the split demand is marked;
 - missing data is reported, never treated as zero;
 - repeated observations are never counted twice;
 - every demand keeps the IDs of the observations it came from;
@@ -490,4 +592,4 @@ Its main design principles are:
 - valid observations are kept when others fail;
 - the transformation remains independent of SUMO files.
 
-This gives SUMO demand generation a consistent movement-level input whose every value can be traced back to measured traffic.
+This gives SUMO demand generation a consistent movement-level input whose every value can be traced back to measured traffic, with the assumed part of shared-lane demand marked.

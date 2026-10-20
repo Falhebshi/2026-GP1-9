@@ -51,7 +51,7 @@ def map_observation_to_movement(
         raise ValueError(
             "detector serves "
             + ", ".join(mapping.movement_ids)
-            + "; no allocation rule adopted"
+            + "; its count must be split between them"
         )
 
     return mapping.movement_ids[0]

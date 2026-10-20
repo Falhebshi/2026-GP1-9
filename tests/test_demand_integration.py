@@ -48,15 +48,21 @@ def make_all_detector_observations() -> list[TrafficObservation]:
     ]
 
 
-def test_real_mappings_give_demand_without_shared_lanes() -> None:
+def test_real_mappings_give_demand_for_every_detected_movement() -> None:
     result = build_simulation_demand(
         observations=make_all_detector_observations(),
     )
+
+    assert result.errors == []
 
     assert {
         demand.movement_id: demand.vehicle_count
         for demand in result.demands
     } == {
+        "MOV_W_N": 10 + 5,
+        "MOV_W_E": 30 + 15,
+        "MOV_E_S": 90 + 44,
+        "MOV_E_W": 110 + 120 + 56,
         "MOV_N_E": 40 + 50 + 60,
         "MOV_S_W": 70 + 80,
         "MOV_W_S_SLIP": 130,
@@ -71,44 +77,52 @@ def test_real_mappings_give_demand_without_shared_lanes() -> None:
     )
 
 
-def test_real_mappings_hold_back_shared_lane_movements() -> None:
+def test_real_mappings_mark_only_shared_lane_movements_as_allocated() -> None:
     result = build_simulation_demand(
         observations=make_all_detector_observations(),
     )
 
-    assert result.error_count == 6
-
     assert {
-        error.detector_id
-        for error in result.errors
-        if error.detector_id is not None
+        demand.movement_id: demand.allocated_observation_ids
+        for demand in result.demands
+        if demand.is_allocated
     } == {
-        "2",
-        "10",
+        "MOV_W_N": ["OBS_SYN_9_2_20261014T0815"],
+        "MOV_W_E": ["OBS_SYN_9_2_20261014T0815"],
+        "MOV_E_S": ["OBS_SYN_9_10_20261014T0815"],
+        "MOV_E_W": ["OBS_SYN_9_10_20261014T0815"],
     }
 
-    assert {
-        error.movement_id: error.message
-        for error in result.errors
-        if error.movement_id is not None
-    } == {
-        "MOV_W_N": (
-            "movement also uses shared detector(s) 2; "
-            "no allocation rule adopted"
-        ),
-        "MOV_W_E": (
-            "movement also uses shared detector(s) 2; "
-            "no allocation rule adopted"
-        ),
-        "MOV_E_S": (
-            "movement also uses shared detector(s) 10; "
-            "no allocation rule adopted"
-        ),
-        "MOV_E_W": (
-            "movement also uses shared detector(s) 10; "
-            "no allocation rule adopted"
-        ),
-    }
+
+def test_sensitivity_run_keeps_approach_totals() -> None:
+    observations = make_all_detector_observations()
+
+    baseline = build_simulation_demand(
+        observations=observations,
+    )
+
+    for adjustment in (-0.2, 0.2):
+        adjusted = build_simulation_demand(
+            observations=observations,
+            share_adjustments={
+                "MOV_W_N": adjustment,
+                "MOV_E_S": adjustment,
+            },
+        )
+
+        for pair in (
+            ("MOV_W_N", "MOV_W_E"),
+            ("MOV_E_S", "MOV_E_W"),
+        ):
+            assert sum(
+                demand.vehicle_count
+                for demand in adjusted.demands
+                if demand.movement_id in pair
+            ) == sum(
+                demand.vehicle_count
+                for demand in baseline.demands
+                if demand.movement_id in pair
+            )
 
 
 def test_every_counted_vehicle_is_in_demand_or_reported() -> None:
