@@ -1,0 +1,47 @@
+/* Title on the left, actions on the right. When there are many actions
+   they wrap onto more lines, still on the right. On a narrow page the
+   actions drop below the title. */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.page-header-text {
+  flex: 1 1 340px;
+  min-width: 240px;
+}
+
+.page-header-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.page-header-subtitle {
+  margin-top: var(--space-xs);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.page-header-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+@media (max-width: 800px) {
+  .page-header {
+    flex-wrap: wrap;
+  }
+
+  .page-header-actions {
+    justify-content: flex-start;
+  }
+}

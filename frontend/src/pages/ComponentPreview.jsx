@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import AlertCard from '../components/AlertCard'
 import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
@@ -8,11 +10,15 @@ import HistoricalTimeline from '../components/HistoricalTimeline'
 import InfoList from '../components/InfoList'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
+import LosBadge, { GRADES } from '../components/LosBadge'
+import Notice from '../components/Notice'
+import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import SimulationViewport from '../components/SimulationViewport'
 import usePlayback from '../hooks/usePlayback'
+import { kpiTileProps } from '../utils/kpi'
 import './ComponentPreview.css'
 
 // Example choices for the Select examples (fake data)
@@ -50,6 +56,35 @@ const speedOptions = [
   { value: '10', label: 'x10' },
   { value: '20', label: 'x20' },
 ]
+
+// Example KPI results, shaped exactly like the backend's KpiResult (fake data).
+// "current" is this period, "previous" the period before, for the change.
+const exampleResults = {
+  delay: {
+    current: { kpi: 'control_delay', method: 'simulation', unit: 's/veh', value: 31.4, status: 'ok' },
+    previous: { kpi: 'control_delay', method: 'simulation', unit: 's/veh', value: 30.2, status: 'ok' },
+  },
+  throughput: {
+    current: { kpi: 'throughput', method: 'simulation', unit: 'veh/h', value: 3210, status: 'ok' },
+    previous: { kpi: 'throughput', method: 'simulation', unit: 'veh/h', value: 3117, status: 'ok' },
+  },
+  vc: {
+    current: { kpi: 'volume_to_capacity_ratio', method: 'hcm', unit: 'ratio', value: 0.94, status: 'ok' },
+    previous: { kpi: 'volume_to_capacity_ratio', method: 'hcm', unit: 'ratio', value: 0.91, status: 'ok' },
+  },
+  storage: {
+    current: {
+      kpi: 'queue_storage_ratio', method: 'simulation', unit: 'ratio', value: null,
+      status: 'unavailable', reason: 'Storage length is not known for this lane.',
+    },
+  },
+  losRight: {
+    current: {
+      kpi: 'level_of_service', method: 'simulation', unit: 'grade', value: null,
+      status: 'not_applicable', reason: 'Right turns on the slip road are not signal controlled.',
+    },
+  },
+}
 
 // Example rows for the InfoList examples (fake data)
 const locationItems = [
@@ -191,6 +226,44 @@ const forecastStarts = [
 ]
 
 const COMPARISON_LENGTH = 600
+
+// Example alerts for the AlertCard examples (fake data), one of each type
+const alertCards = [
+  {
+    id: 'c1',
+    type: 'current',
+    title: 'Queue spillback',
+    details: [
+      { label: 'Affected area', value: 'North approach' },
+      { label: 'Detected at', value: '14:05' },
+      { label: 'Status', value: <Badge variant="warning">Active</Badge> },
+    ],
+    interventionsTo: '/recommendations/1',
+  },
+  {
+    id: 'f1',
+    type: 'forecast',
+    title: 'Queue buildup',
+    details: [
+      { label: 'Affected area', value: 'South approach' },
+      { label: 'Expected in', value: '12 min' },
+      { label: 'Horizon', value: '+15 min' },
+    ],
+    interventionsTo: '/recommendations/2',
+  },
+  {
+    id: 'p1',
+    type: 'pattern',
+    title: 'Recurring high V/C',
+    details: [
+      { label: 'Location', value: 'West approach' },
+      { label: 'When', value: 'Weekends, 12:00-15:00' },
+      { label: 'How often', value: '2 of 2 days' },
+      { label: 'Last seen', value: 'Sat 10 Oct' },
+    ],
+    // no interventionsTo: the card says "No intervention available"
+  },
+]
 
 // A stand-in for the real simulation, only for the SimulationViewport
 // examples: a crossing with rectangles for cars. Every car's position is
@@ -486,6 +559,71 @@ function ComponentPreview() {
       </section>
 
       <section className="preview-section">
+        <h2>KpiTile from backend results</h2>
+
+        {/* Stacked tiles in a row line up: the change line sits at the bottom */}
+        <div className="kpi-row preview-kpi-row">
+          <KpiTile
+            layout="stacked"
+            label="Avg control delay"
+            detail="LOS C · simulation-based"
+            {...kpiTileProps(exampleResults.delay.current, exampleResults.delay.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Avg throughput"
+            detail="All signalized movements"
+            {...kpiTileProps(exampleResults.throughput.current, exampleResults.throughput.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Critical v/c, peak 15 min"
+            detail="Weekdays 17:15–17:30"
+            {...kpiTileProps(exampleResults.vc.current, exampleResults.vc.previous, 'vs prev. 30 days')}
+          />
+          <KpiTile
+            layout="stacked"
+            label="Peak congestion window"
+            value="17:15"
+            unit="–17:30"
+            detail="Highest avg control delay, weekdays"
+            changeNote="Same window as prev. 30 days"
+            tag="Simulated"
+          />
+          <KpiTile
+            layout="stacked"
+            label="Storage ratio"
+            {...kpiTileProps(exampleResults.storage.current)}
+          />
+          <KpiTile
+            layout="stacked"
+            label="LOS, right slip lane"
+            {...kpiTileProps(exampleResults.losRight.current)}
+          />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>Notice</h2>
+        <div className="preview-stack">
+          <Notice variant="warning">
+            Sample data for layout only: all values on this page are illustrative.
+          </Notice>
+          <Notice>Results cover weekdays only.</Notice>
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>LosBadge</h2>
+        <div className="preview-row">
+          {GRADES.map((grade) => (
+            <LosBadge key={grade} grade={grade} />
+          ))}
+          <LosBadge />
+        </div>
+      </section>
+
+      <section className="preview-section">
         <h2>InfoList</h2>
         <div className="preview-row preview-row-top">
           <Card title="Location & General Information" className="preview-card">
@@ -550,6 +688,58 @@ function ComponentPreview() {
             error="Abnormal traffic detection is not responding."
             className="preview-card-wide"
           />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>PageHeader</h2>
+
+        {/* As on Alerts: a plain subtitle and several buttons */}
+        <div className="preview-box">
+          <PageHeader
+            title="Alerts"
+            subtitle="Selected area: Intersection A"
+            actions={
+              <>
+                <Button variant="secondary" size="sm">Current 3</Button>
+                <Button variant="secondary" size="sm">Forecast 3</Button>
+                <Button variant="secondary" size="sm">Patterns 3</Button>
+              </>
+            }
+          />
+        </div>
+
+        {/* As on Recommendation Details: breadcrumb links and one button */}
+        <div className="preview-box">
+          <PageHeader
+            title="Intervention 1"
+            subtitle={
+              <>
+                <Link to="/recommendations">Interventions</Link> / Intervention 1
+              </>
+            }
+            actions={<Button variant="secondary">Back to interventions</Button>}
+          />
+        </div>
+
+        {/* Title only */}
+        <div className="preview-box">
+          <PageHeader title="Traffic Patterns & Trends" />
+        </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>AlertCard</h2>
+        <div className="preview-grid-3">
+          {alertCards.map((alert) => (
+            <AlertCard
+              key={alert.id}
+              type={alert.type}
+              title={alert.title}
+              details={alert.details}
+              interventionsTo={alert.interventionsTo}
+            />
+          ))}
         </div>
       </section>
 

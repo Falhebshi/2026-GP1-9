@@ -1,2103 +1,728 @@
-**# Jaadah Canonical Data Models**
+# Jaadah Canonical Data Models
 
+## Overview
 
+Jaadah uses a canonical data model to standardize the information exchanged between traffic-data sources, the simulation pipeline, SUMO, visualization, analytics, the KPI engine and backend components.
 
-**## Overview**
+The models are implemented in Python using **Pydantic**, which provides validation, serialization and a consistent structure across the system.
 
+Two architectural rules shape every model:
 
+> **1. SUMO adapts to Jaadah.** External traffic data and SUMO-specific representations are adapted to Jaadah's canonical model. Downstream components consume Jaadah structures rather than depending directly on source-specific or SUMO-specific formats.
 
-Jaadah uses a canonical data model to standardize the information exchanged between traffic-data sources, the simulation pipeline, SUMO, visualization, analytics, and backend components.
+> **2. One source of truth per fact.** A model never stores a second, independent copy of a fact that another model already owns, or a value it can calculate from its own fields. A record stores only its **most specific identifiers**; parents are looked up (for example, the scenario of a record is found through its `run_id`, and the approach and intersection of a movement through its `movement_id`).
 
+The first rule lets external datasets and SUMO network identifiers change without forcing changes throughout the application. The second means two copies of the same fact can never disagree.
 
+---
 
-The models are implemented in Python using **\*\*Pydantic\*\***, which provides validation, serialization, and a consistent structure across the system.
-
-
-
-The main architectural rule is:
-
-
-
-\> **\*\*External traffic data and SUMO-specific representations are adapted to Jaadah's canonical model. Downstream components consume Jaadah structures rather than depending directly on source-specific or SUMO-specific formats.\*\***
-
-
-
-This separation allows external datasets and SUMO network identifiers to evolve without forcing corresponding changes throughout the rest of the application.
-
-
-
-**---**
-
-
-
-**## Package Structure**
-
-
+## Package Structure
 
 The canonical models are implemented under:
 
-
-
-\`\`\`text
-
+```text
 jaadah/
-
-├── \_\_init\_\_.py
-
+├── __init__.py
 └── models/
-
-&#x20;   ├── \_\_init\_\_.py
-
-&#x20;   ├── traffic.py
-
-&#x20;   ├── network.py
-
-&#x20;   ├── scenario.py
-
-&#x20;   ├── outputs.py
-
-&#x20;   └── signals.py
-
-\`\`\`
-
-
+    ├── __init__.py
+    ├── traffic.py     traffic input and simulation demand
+    ├── network.py     intersections, approaches, movements, lanes
+    ├── scenario.py    scenarios, runs, configuration, replication
+    ├── outputs.py     standardized simulation outputs
+    ├── signals.py     signal programs and signal state
+    └── kpis.py        KPI results
+```
 
 Their tests are located under:
 
-
-
-\`\`\`text
-
+```text
 tests/
-
 ├── test_traffic_observation.py
-
 ├── test_simulation_demand.py
-
 ├── test_network_models.py
-
+├── test_movement_lane_models.py
 ├── test_scenario_models.py
-
+├── test_replication_set.py
 ├── test_output_models.py
+├── test_vehicle_delay_record.py
+├── test_cycle_queue_record.py
+├── test_incomplete_passage.py
+├── test_signal_models.py
+└── test_kpi_models.py
+```
 
-└── test_signal_models.py
+The current implementation contains **23 canonical models**:
 
-\`\`\`
+| File | Models |
+| --- | --- |
+| `traffic.py` | `TrafficObservation`, `SimulationDemand` |
+| `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
+| `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
+| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `ApproachTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord` |
+| `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
+| `kpis.py` | `KpiResult` |
 
+---
 
+# 1. Traffic Input and Simulation Demand
 
-The current implementation contains **\*\*16 canonical models\*\*** grouped into five areas:
+Implemented in `jaadah/models/traffic.py`.
 
+The traffic models deliberately separate **what a source reports** from **what Jaadah derives for simulation**. This prevents source measurements from being rewritten in a way that makes inferred information appear externally observed.
 
+## 1.1 `TrafficObservation`
 
-1\. traffic input and simulation demand;
+One standardized traffic observation received through Jaadah's ingestion boundary: what the external source actually supplied.
 
-2\. canonical network entities;
+Fields: `observation_id`, `source`, `site_id`, `detector_id`, `interval_start`, `interval_end`, `vehicle_count`, optional `description`, optional `average_speed_kmh`, optional `travel_time_s`.
 
-3\. scenario and simulation execution;
+A `TrafficObservation` intentionally does **not** contain Jaadah movement or intersection IDs, or SUMO edge, lane or route IDs. Those relationships are established separately through mapping and demand-transformation logic. This preserves the distinction between **source truth** and **Jaadah interpretation**.
 
-4\. standardized simulation outputs;
+## 1.2 `SimulationDemand`
 
-5\. traffic-signal state.
+The movement-level traffic demand that Jaadah intends SUMO to simulate.
 
+Fields: `demand_id`, `interval_start`, `interval_end`, `movement_id`, `vehicle_count`, `source`, `source_observation_ids`.
 
+The intersection is found through `movement_id` (`Movement`), not stored here. RCRC and synthetic demand must reference at least one source observation; forecast demand may reference none.
 
-**---**
+Unlike `TrafficObservation`, `SimulationDemand` is **derived simulation input**:
 
-
-
-**# 1. Traffic Input and Simulation Demand**
-
-
-
-Implemented in:
-
-
-
-\`\`\`text
-
-jaadah/models/traffic.py
-
-\`\`\`
-
-
-
-The traffic models deliberately separate **\*\*what a source reports\*\*** from **\*\*what Jaadah derives for simulation\*\***.
-
-
-
-This distinction prevents source measurements from being rewritten in a way that makes inferred information appear externally observed.
-
-
-
-**---**
-
-
-
-**## 1.1 \`TrafficObservation\`**
-
-
-
-\`TrafficObservation\` represents one standardized traffic observation received through Jaadah's ingestion boundary.
-
-
-
-It describes what the external source actually supplied.
-
-
-
-Core fields include:
-
-
-
-\- \`observation_id\`
-
-\- \`source\`
-
-\- \`site_id\`
-
-\- \`detector_id\`
-
-\- \`interval_start\`
-
-\- \`interval_end\`
-
-\- \`vehicle_count\`
-
-\- optional \`description\`
-
-\- optional \`average_speed_kmh\`
-
-\- optional \`travel_time_s\`
-
-
-
-A \`TrafficObservation\` intentionally does **\*\*not\*\*** contain:
-
-
-
-\- Jaadah movement IDs;
-
-\- Jaadah intersection IDs;
-
-\- SUMO edge IDs;
-
-\- SUMO lane IDs;
-
-\- SUMO route IDs.
-
-
-
-Those relationships are established separately through mapping and demand-transformation logic.
-
-
-
-This preserves the distinction between **\*\*source truth\*\*** and **\*\*Jaadah interpretation\*\***.
-
-
-
-**---**
-
-
-
-**## 1.2 \`SimulationDemand\`**
-
-
-
-\`SimulationDemand\` represents the movement-level traffic demand that Jaadah intends SUMO to simulate.
-
-
-
-Core fields include:
-
-
-
-\- \`demand_id\`
-
-\- \`interval_start\`
-
-\- \`interval_end\`
-
-\- \`intersection_id\`
-
-\- \`movement_id\`
-
-\- \`vehicle_count\`
-
-\- \`source\`
-
-\- \`source_observation_ids\`
-
-
-
-Unlike \`TrafficObservation\`, \`SimulationDemand\` is **\*\*derived simulation input\*\***.
-
-
-
-The relationship is:
-
-
-
-\`\`\`text
-
+```text
 External Traffic Source
-
-&#x20;       ↓
-
-TrafficObservation
-
-&#x20;       ↓
-
+        ↓
+TrafficObservation          What did the source report?
+        ↓
 Traffic Demand Transformation
-
-&#x20;       ↓
-
-SimulationDemand
-
-&#x20;       ↓
-
+        ↓
+SimulationDemand            What demand should SUMO simulate?
+        ↓
 SUMO Input Generation
-
-&#x20;       ↓
-
+        ↓
 SUMO
+```
 
-\`\`\`
+The demand `v` in the KPI engine's v/c ratio comes from `SimulationDemand`, not from vehicles entered in the simulation.
 
-
-
-A \`TrafficObservation\` answers:
-
-
-
-\> What did the source report?
-
-
-
-A \`SimulationDemand\` answers:
-
-
-
-\> What traffic demand should Jaadah ask SUMO to simulate?
-
-
-
-These structures are therefore intentionally separate.
-
-
-
-**---**
-
-
-
-**## 1.3 Traffic Source Enums**
-
-
+## 1.3 Traffic Source Enums
 
 Controlled enums are used instead of arbitrary strings.
 
+### `TrafficObservationSource`
 
-
-**### \`TrafficObservationSource\`**
-
-
-
-\`\`\`text
-
+```text
 synthetic
-
 rcrc
+```
 
-\`\`\`
+### `SimulationDemandSource`
 
-
-
-**### \`SimulationDemandSource\`**
-
-
-
-\`\`\`text
-
+```text
 synthetic
-
 rcrc
-
 forecast
-
-\`\`\`
-
-
+```
 
 Using enums prevents inconsistent free-text values from propagating through the application.
 
-
-
 For example, values such as:
 
-
-
-\`\`\`text
-
+```text
 RCRC
-
 rcrc-data
-
 real
-
 synthetic_data
-
-\`\`\`
-
-
+```
 
 cannot silently become alternative representations of the same concept.
 
+---
 
+# 2. Canonical Network Model
 
-**---**
+Implemented in `jaadah/models/network.py`.
 
+The network model gives Jaadah its own stable application-level identities. It does not use SUMO-generated edge or lane IDs as the primary identities of the system.
 
+## 2.1 `Intersection`
 
-**# 2. Canonical Network Model**
+A Jaadah study intersection.
 
-
-
-Implemented in:
-
-
-
-\`\`\`text
-
-jaadah/models/network.py
-
-\`\`\`
-
-
-
-The canonical network model gives Jaadah its own stable application-level identities.
-
-
-
-It does not use SUMO-generated edge or lane IDs as the primary identities of the system.
-
-
-
-The implemented structures are:
-
-
-
-\- \`Intersection\`
-
-\- \`Approach\`
-
-\- \`Movement\`
-
-\- \`Segment\`
-
-
-
-**---**
-
-
-
-**## 2.1 \`Intersection\`**
-
-
-
-\`Intersection\` represents a Jaadah study intersection or controlled study location.
-
-
-
-Core fields include:
-
-
-
-\- \`intersection_id\`
-
-\- optional \`name_en\`
-
-\- optional \`name_ar\`
-
-\- optional \`center_longitude\`
-
-\- optional \`center_latitude\`
-
-\- optional \`area_label\`
-
-
+Fields: `intersection_id`, optional `name_en`, `name_ar`, `center_longitude`, `center_latitude`, `area_label`.
 
 The geographic center is optional, but longitude and latitude must be provided together.
 
-
-
 For example:
 
-
-
-\`\`\`text
-
+```text
 center_longitude = null
-
 center_latitude  = null
-
-\`\`\`
-
-
+```
 
 is valid.
 
-
-
 This is also valid:
 
-
-
-\`\`\`text
-
+```text
 center_longitude = 46.65
-
 center_latitude  = 24.72
-
-\`\`\`
-
-
+```
 
 Providing only one coordinate is rejected.
 
+## 2.2 `Approach`
 
+A stable identity for an incoming intersection approach.
 
-**---**
+Fields: `approach_id`, `intersection_id`. SUMO edges and lanes are stored in the mapping layer, not here.
 
+## 2.3 `Movement`
 
+A traffic movement that Jaadah models independently, for example `MOV_E_W`.
 
-**## 2.2 \`Approach\`**
+Fields: `movement_id`, `intersection_id`, optional `approach_id`.
 
+`Movement` is the one network model that keeps both a parent and a grandparent ID: `approach_id` is optional (not every movement belongs to a conventional approach), and when it is absent `intersection_id` is the movement's only link to the network.
 
+A movement can map to a sequence of SUMO edges and lanes, but those SUMO identifiers do not define it, so the SUMO network can change without changing what `MOV_E_W` means.
 
-\`Approach\` represents a stable Jaadah identity for an incoming intersection approach.
+## 2.4 `MovementAttributes`
 
+Jaadah-level facts about one movement that the KPI engine needs, kept separate so that `Movement` remains a pure identity.
 
+Fields: `movement_id`, `movement_type`, `control`.
 
-Core fields:
+| Enum | Values |
+| --- | --- |
+| `MovementType` | `through`, `left`, `right` |
+| `MovementControl` | `signalized`, `uncontrolled` (right turns on unsignalised slip roads) |
 
+**Scope:** only movements included in the KPI analysis of the case-study intersection receive `MovementAttributes`. Other simulated movements (ramps, tunnel paths, slips and U-turns elsewhere in the network) remain plain `Movement`s and have no KPIs.
 
+A movement with `MovementAttributes` must have `Movement.approach_id` set, because its results roll up to an approach. That rule spans two models, so it is checked where both are combined, not inside either.
 
-\- \`approach_id\`
+## 2.5 `ApproachLane`
 
-\- \`intersection_id\`
+One lane of an approach and the movements it serves.
 
+Fields: `lane_id`, `approach_id`, `lane_index`, `served_movement_ids`, `lane_width_m`, optional `storage_length_m`.
 
+- `lane_id` (e.g. `LANE_E_2`) is the lane's stable identity. It keeps its meaning if the layout changes; the mapping layer links it to SUMO lane IDs.
+- `lane_index` counts from the median: 1 is the lane closest to the median. SUMO counts from the kerb, starting at 0; the mapping layer converts between them.
+- A lane shared by several movements lists all of them in `served_movement_ids`, e.g. `["MOV_E_L", "MOV_E_T"]`.
+- `storage_length_m` is optional: when it is unknown, the queue storage ratio is reported as unavailable.
 
-SUMO-specific edges and lanes are intentionally not stored in the canonical entity itself.
+**Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID such as `east_L`, `east_LT`, `east_T` (team decision, 17 Oct 2026).
 
+Signal-entry lane subset (12 lanes), from the median outward. The complete
+canonical inventory contains 16 lanes, including four slip/bypass lanes; see
+the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 
+| Approach | Lanes |
+| --- | --- |
+| East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
+| West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
+| North | 3 lanes, all left |
+| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
 
-**---**
+The analytical left/signalized classification of `MOV_S_W` remains pending
+KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
+movement identity, physical routing, and signal behavior remain unchanged.
 
+## 2.6 Canonical Identity vs. SUMO Identity
 
+The canonical model represents Jaadah concepts; SUMO-specific identifiers belong to the mapping layer:
 
-**## 2.3 \`Movement\`**
+```text
+Jaadah Movement MOV_E_W   →   Movement Mapping   →   SUMO route edges
+Jaadah lane LANE_E_2      →   Lane Mapping       →   SUMO lane 713369663#2_2
+```
 
+rather than `Jaadah Movement = SUMO edge ID`. The same principle applies to approaches, lanes, detectors, routes and traffic-light controlled links.
 
+---
 
-\`Movement\` represents a traffic movement that Jaadah needs to model independently.
+# 3. Scenario and Simulation Execution
 
+Implemented in `jaadah/models/scenario.py`.
 
+These models distinguish the **traffic/control scenario being represented** from an **individual execution of that scenario**.
 
-Core fields:
+## 3.1 `Scenario`
 
+The traffic and control context being represented: what should be simulated, not a specific execution of it.
 
+Fields: `scenario_id`, `intersection_id`, `time_context`, `control_mode`, `start_time`, optional `end_time`, optional `reference_scenario_id`.
 
-\- \`movement_id\`
+| Enum | Values |
+| --- | --- |
+| `TimeContext` | `historical`, `current`, `forecast` |
+| `ControlMode` | `baseline`, `intervention` |
 
-\- \`intersection_id\`
+## 3.2 `SimulationRun`
 
-\- optional \`approach_id\`
+One concrete execution of a scenario.
 
+Fields: `run_id`, `scenario_id`, `random_seed`, `network_version`, `sumo_version`, `step_length_s`, optional `started_at`, `status` (`pending`, `running`, `completed`, `failed`).
 
+Lifecycle rules: `pending` and `failed` runs may have no `started_at`; `running` and `completed` runs require it; a failed run may also have one if execution began before the failure.
 
-For example:
+A scenario may have several runs, each with its own seed:
 
-
-
-\`\`\`text
-
-MOV_E_W
-
-\`\`\`
-
-
-
-may represent the canonical East-to-West movement.
-
-
-
-That movement can later map to a sequence of SUMO edges and lanes, but those SUMO identifiers do not define the movement itself.
-
-
-
-This means the SUMO network can change without changing the meaning of \`MOV_E_W\` throughout Jaadah.
-
-
-
-**---**
-
-
-
-**## 2.4 \`Segment\`**
-
-
-
-\`Segment\` represents a stable road-segment identity used when Jaadah requires segment-level references.
-
-
-
-Core field:
-
-
-
-\- \`segment_id\`
-
-
-
-SUMO edge relationships are handled separately by the mapping layer.
-
-
-
-**---**
-
-
-
-**## 2.5 Canonical Identity vs. SUMO Identity**
-
-
-
-The canonical model represents **\*\*Jaadah concepts\*\***.
-
-
-
-SUMO-specific identifiers belong to the mapping layer.
-
-
-
-The intended relationship is:
-
-
-
-\`\`\`text
-
-Jaadah Movement
-
-MOV_E_W
-
-&#x20;     ↓
-
-Movement Mapping
-
-&#x20;     ↓
-
-SUMO route edges
-
-\`\`\`
-
-
-
-rather than:
-
-
-
-\`\`\`text
-
-Jaadah Movement = SUMO edge ID
-
-\`\`\`
-
-
-
-The same principle applies to approaches, road segments, detectors, lanes, routes, and traffic-light controlled links.
-
-
-
-**---**
-
-
-
-**# 3. Scenario and Simulation Execution**
-
-
-
-Implemented in:
-
-
-
-\`\`\`text
-
-jaadah/models/scenario.py
-
-\`\`\`
-
-
-
-These models distinguish the **\*\*traffic/control scenario being represented\*\*** from an **\*\*individual execution of that scenario\*\***.
-
-
-
-The implemented structures are:
-
-
-
-\- \`Scenario\`
-
-\- \`SimulationRun\`
-
-\- \`SimulationConfig\`
-
-
-
-**---**
-
-
-
-**## 3.1 \`Scenario\`**
-
-
-
-\`Scenario\` describes the traffic and control context being represented.
-
-
-
-Core fields include:
-
-
-
-\- \`scenario_id\`
-
-\- \`intersection_id\`
-
-\- \`time_context\`
-
-\- \`control_mode\`
-
-\- \`start_time\`
-
-\- optional \`end_time\`
-
-\- optional \`reference_scenario_id\`
-
-
-
-Supported time contexts are:
-
-
-
-\`\`\`text
-
-historical
-
-current
-
-forecast
-
-\`\`\`
-
-
-
-Supported control modes are:
-
-
-
-\`\`\`text
-
-baseline
-
-intervention
-
-\`\`\`
-
-
-
-A scenario describes **\*\*what should be simulated\*\***, not a specific execution of it.
-
-
-
-**---**
-
-
-
-**## 3.2 \`SimulationRun\`**
-
-
-
-\`SimulationRun\` represents one concrete execution of a scenario.
-
-
-
-It records execution provenance including:
-
-
-
-\- \`run_id\`
-
-\- \`scenario_id\`
-
-\- \`random_seed\`
-
-\- \`network_version\`
-
-\- \`sumo_version\`
-
-\- \`step_length_s\`
-
-\- optional \`started_at\`
-
-\- \`status\`
-
-
-
-\`started_at\` is optional because a simulation run may exist before execution begins.
-
-Lifecycle rules are:
-
-\- \`PENDING\` may have no \`started_at\`;
-
-\- \`FAILED\` may have no \`started_at\` if failure occurs before execution begins;
-
-\- \`RUNNING\` requires \`started_at\`;
-
-\- \`COMPLETED\` requires \`started_at\`.
-
-A failed run may also contain \`started_at\` when execution began before the failure occurred.
-
-
-
-A single scenario may have multiple simulation runs.
-
-
-
-For example:
-
-
-
-\`\`\`text
-
+```text
 Historical baseline scenario
-
-&#x20;       ↓
-
+        ↓
 SimulationRun A → seed 42
-
 SimulationRun B → seed 73
-
 SimulationRun C → seed 105
+```
 
-\`\`\`
+`SimulationRun` is the **only owner of the random seed**. Every other model that needs it references the run.
 
+## 3.3 `SimulationConfig`
 
+Configurable simulation settings.
 
-The traffic/control context remains the same, while each stochastic execution remains distinguishable.
+Fields: optional `simulation_duration_s`, `warmup_duration_s`, `clearance_duration_s`.
 
+A run is divided into three parts:
 
+```text
+| warm-up | analysis period | clearance |
+```
 
-This is why the random seed belongs to \`SimulationRun\`.
+Vehicles are counted only if they enter the delay zone during the analysis period. The clearance period lets those vehicles finish their passage; traffic keeps arriving during it, but new arrivals are not counted. Both durations are **required** (zero is allowed, but must be written on purpose), and when the total duration is set, warm-up + clearance must leave a non-empty analysis period.
 
+## 3.4 `ReplicationPair` and `ReplicationSet`
 
+A replicated experiment comparing an intervention scenario with its baseline using **matched random seeds** (common random numbers): each pair is a baseline run and an intervention run that used the same seed, so differences between them come from the intervention rather than from random variation.
 
-**---**
+- `ReplicationPair`: `baseline_run_id`, `intervention_run_id` (must differ). It does **not** store the seed; `SimulationRun` owns it.
+- `ReplicationSet`: `replication_set_id`, `baseline_scenario_id`, `intervention_scenario_id` (must differ), `pairs` (at least 2, because a standard deviation needs two values; no run may appear twice). Properties `replication_count`, `baseline_run_ids`, `intervention_run_ids` (in pair order).
 
+The replication runner, which has the `SimulationRun` and `Scenario` objects, confirms that both runs of each pair used the same seed, that each pair used a different seed, and that each run belongs to the stated scenario. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
 
-
-**## 3.3 \`SimulationConfig\`**
-
-
-
-\`SimulationConfig\` represents configurable simulation settings.
-
-
-
-Current fields include:
-
-
-
-\- \`simulation_duration_s\`
-
-\- \`warmup_duration_s\`
-
-
-
-The warm-up duration is configurable rather than treated as a permanently fixed constant.
-
-
-
-Its operational behavior is handled by the simulation pipeline rather than by the data model itself.
-
-
-
-**---**
-
-
-
-**## 3.4 Scenario Validation**
-
-
+## 3.5 Scenario Validation
 
 The scenario models enforce structural relationships such as:
 
-
-
-\- historical scenarios require an \`end_time\`;
-
-\- forecast scenarios require an \`end_time\`;
-
-\- intervention scenarios require a \`reference_scenario_id\`;
-
-\- baseline scenarios cannot reference another scenario;
-
-\- a scenario cannot reference itself;
-
-\- scenario data-time timestamps must use Riyadh time;
-
-\- when \`started_at\` is present, it must include explicit timezone information;
-
-\- \`RUNNING\` and \`COMPLETED\` simulation runs require \`started_at\`.
-
-
+- historical and forecast scenarios require an `end_time`;
+- intervention scenarios require a `reference_scenario_id`; baseline scenarios cannot reference another scenario; a scenario cannot reference itself;
+- scenario data-time timestamps must use Riyadh time;
+- `running` and `completed` runs require `started_at`, which must include timezone information;
+- warm-up + clearance must be shorter than a known total duration.
 
 These are structural integrity rules rather than traffic-simulation business logic.
 
+---
 
+# 4. Standardized Simulation Outputs
 
-**---**
+Implemented in `jaadah/models/outputs.py`.
 
+SUMO exposes simulation results in SUMO-specific representations. Jaadah standardizes them before they reach downstream components. KPI runs execute **without TraCI** and write output files; the simulation pipeline reduces those files to the records below.
 
+All output records identify their run by `run_id`; the scenario is found through `SimulationRun`. They are simulation measurements, not final application KPIs.
 
-**# 4. Standardized Simulation Outputs**
+## 4.1 `VehicleState`
 
+One simulated vehicle at a specific simulation time, for visualization.
 
+Fields: `vehicle_id`, `run_id`, `simulation_time_s`, `timestamp`, `longitude`, `latitude`, `speed_mps`, `heading_deg`, `vehicle_type`, `sumo_edge_id`, and optional `z_m` (elevation), `sumo_lane_id`, `lane_pos_m` (lane position), `vtype_id` (SUMO vehicle type), `length_m`, `width_m`, `signals` (SUMO signal bitset) and `movement_id` (mapped Jaadah movement).
 
-Implemented in:
+Positions use WGS84 longitude and latitude. Heading: 0° = North, 90° = East, 180° = South, 270° = West, increasing clockwise.
 
+## 4.2 `EdgeTrafficState`
 
+Aggregated traffic conditions for one SUMO edge over an interval.
 
-\`\`\`text
+Fields: `run_id`, `sumo_edge_id`, `interval_start`, `interval_end`, `vehicles_entered`, `vehicles_left`, optional `average_speed_mps`, optional `travel_time_s`, `density_veh_per_km`, optional `time_loss_s`, `sampled_seconds`.
 
-jaadah/models/outputs.py
+The KPI engine does not use it: it serves network-level views such as speeds and densities on the network overview map.
 
-\`\`\`
+## 4.3 `ApproachTrafficState`
 
+Aggregate queue and time-loss measurements for one approach.
 
+Fields: `run_id`, `approach_id`, `queue_detection_lane_ids` (at least one, no duplicates), `interval_start`, `interval_end`, `max_queue_length_m`, `mean_max_queue_vehicles`, `started_halts`, `vehicles_seen`, optional `mean_time_loss_s`.
 
-SUMO and TraCI expose simulation state using SUMO-specific representations.
+**Not used by the KPI engine:** queue length is measured per lane in `CycleQueueRecord`, and time loss and time stopped per vehicle in `VehicleDelayRecord`. It is kept until the team decides whether any component needs it (tracked in a GitHub issue).
 
+## 4.4 `VehicleDelayRecord`
 
+One vehicle's complete passage through the **delay zone** of one movement. The zone runs from 250 m before the stop line to the point after the intersection where the vehicle is back to speed. Records are produced from SUMO vehicle position output (FCD, recorded every 0.4 s).
 
-Jaadah standardizes that state before it reaches downstream components.
+Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, `stop_line_time`, `zone_exit_time`, `zone_distance_m`, `free_flow_travel_time_s`, `halted_time_s`.
 
+- `zone_entry_time` is when the vehicle arrived: its delay counts in the 15-minute interval it arrived in.
+- `stop_line_time` is when it got through the signal: it counts as served (throughput) in the interval it crossed the stop line.
+- `free_flow_travel_time_s` is how long it would have needed through the same zone with no traffic and no signal. How it is obtained (one free-flow speed, or one per lane along the path) is decided by the simulation pipeline.
+- `halted_time_s` is how long it stood still in the zone. The queue-duration KPI is measured per vehicle from it, so it splits cleanly by movement.
 
+Checks: entry ≤ stop line ≤ exit; entry before exit; free-flow time and halted time each no longer than the time in the zone.
 
-The implemented structures are:
+Properties (calculated, not stored): `zone_travel_time_s` = exit − entry, and `time_loss_s` = zone travel time − free-flow travel time.
 
+## 4.5 `IncompletePassage`
 
+A vehicle that entered the delay zone but had not left it when the run ended. Recorded so that unfinished vehicles are **never silently dropped**: they are usually the most delayed (still queued), so leaving them out would make delay look better than it was.
 
-\- \`VehicleState\`
+Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, optional `stop_line_time`, `last_seen_time`.
 
-\- \`EdgeTrafficState\`
+Its delay is unknown, so it has no time loss. A vehicle that crossed the stop line before the run ended was served and still counts for throughput (property `crossed_stop_line`). How the KPI engine reports an interval with incomplete passages is decided in the engine.
 
-\- \`ApproachTrafficState\`
+## 4.6 `CycleQueueRecord`
 
+Queue length for one lane over one signal cycle, from a lane-area (E2) detector whose output period is one cycle, aligned with the cycle start.
 
+Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`.
 
-**---**
+The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
+## 4.7 Vehicle Type Enum
 
+`VehicleType`: `car`. A stable application-level category, rather than arbitrary SUMO vehicle-type identifiers.
 
-**## 4.1 \`VehicleState\`**
+---
 
+# 5. Traffic Signal Model
 
+Implemented in `jaadah/models/signals.py`.
 
-\`VehicleState\` represents one simulated vehicle at a specific simulation time.
+Jaadah represents traffic-signal logic with canonical movement-level structures rather than exposing raw positional SUMO TLS strings.
 
+## 5.1 `SignalPhase`
 
+One phase in a signal program.
 
-Core information includes:
+Fields: `phase_id`, `sequence_order`, `served_movement_ids` (at least one, no duplicates), `green_time_s`, `yellow_time_s`, `all_red_time_s`.
 
+## 5.2 `SignalProgram`
 
+A complete signal program associated with a scenario.
 
-\- \`vehicle_id\`
+Fields: `signal_program_id`, `scenario_id`, `control_type` (`fixed_time`), `cycle_length_s`, `phases`, `source` (`observed`, `baseline_model`, `intervention`).
 
-\- \`scenario_id\`
+The intersection is found through `scenario_id` (`Scenario`). SUMO TLS identifiers belong to the mapping layer.
 
-\- \`run_id\`
+Rules: at least one phase; unique phase IDs and sequence orders; the cycle length must equal the sum of all phase durations:
 
-\- \`simulation_time_s\`
+```text
+cycle length = Σ(green + yellow + all-red)
+```
 
-\- \`timestamp\`
+Jaadah represents fixed-time programs as a sequence of non-overlapping phases; concurrent or overlapping phases are outside the current scope.
 
-\- \`longitude\`
+## 5.3 `MovementSignalState`
 
-\- \`latitude\`
+The current indication for one movement: `movement_id`, `indication` (`green`, `yellow`, `red`).
 
-\- \`speed_mps\`
+## 5.4 `CurrentSignalState`
 
-\- \`heading_deg\`
+The signal controller at a specific simulation time, for live views.
 
-\- \`vehicle_type\`
+Fields: `run_id`, `signal_program_id`, `simulation_time_s`, `timestamp`, `active_phase_id`, `phase_elapsed_s`, optional `phase_remaining_s`, `movement_states` (at least one, no duplicate movements).
 
-\- \`sumo_edge_id\`
+The scenario is found through `run_id` and the intersection through `signal_program_id`. That the program belongs to the run's scenario is checked where both objects are available. KPI runs do not produce this model, because they run without TraCI.
 
+---
 
+# 6. KPI Results
 
-Optional simulation and visualization metadata may include:
+Implemented in `jaadah/models/kpis.py`.
 
+`KpiResult` is one KPI value for one element, one interval, and one run or set of runs. The KPI engine produces these; they are stored and sent to the dashboard.
 
+## 6.1 Fields
 
-\- elevation;
+| Group | Fields |
+| --- | --- |
+| What | `kpi`, `method` (`hcm` or `simulation`), `unit` |
+| Where | `level` and exactly one matching ID: `lane_id`, `lane_group_id`, `movement_id`, `approach_id` or `intersection_id` |
+| When | `interval_start`, `interval_end` (15-minute intervals) |
+| Value | `value` (≥ 0) or, for level of service, `los_grade` (A–F); `status`; `reason` |
+| Provenance | `input_origins` |
+| Runs | `scenario_id`, `run_ids`, `standard_deviation` |
+| Shared lanes | `measured_on_lane_id` or `measured_on_lane_group_id` |
 
-\- SUMO lane ID;
+## 6.2 Enums
 
-\- lane position;
+| Enum | Values |
+| --- | --- |
+| `KpiName` | `control_delay`, `level_of_service`, `volume_to_capacity_ratio`, `capacity`, `saturation_flow_rate`, `queue_length`, `queue_duration`, `queue_storage_ratio`, `throughput` |
+| `KpiLevel` | `lane`, `lane_group`, `movement`, `approach`, `intersection` |
+| `KpiMethod` | `hcm`, `simulation` |
+| `KpiStatus` | `ok`, `unavailable`, `not_applicable` |
+| `KpiUnit` | `s/veh`, `veh/h`, `veh/h/lane`, `ratio`, `m`, `veh`, `s`, `grade` |
+| `ValueComputation` | `direct_summary`, `derived` |
+| `InputOrigin` | `observed`, `modelled_assumption`, `simulated` |
+| `LevelOfServiceGrade` | `A` … `F` |
 
-\- SUMO vehicle-type ID;
+## 6.3 Missing values are never zero
 
-\- vehicle length;
+A result with status `ok` must have a value. A result with status `unavailable` (the KPI applies but data is missing) or `not_applicable` (the KPI does not apply, e.g. LOS for an uncontrolled right turn) must have **no** value and must give a `reason`. A real measured zero (e.g. a 0 m queue) is still allowed with status `ok`.
 
-\- vehicle width;
+## 6.4 Three fixed tables
 
-\- SUMO signal bitset;
+| Table | Says |
+| --- | --- |
+| `ALLOWED_KPI_UNITS` | which units each KPI may use (every KPI shows its unit) |
+| `VALUE_COMPUTATIONS` | for each supported (KPI, method) pair, how the final value is computed; a pair not listed is not a supported result |
+| `ALLOWED_KPI_LEVELS` | for each (KPI, method) pair, which levels it may be reported at |
 
-\- mapped Jaadah movement ID.
+`ALLOWED_KPI_LEVELS` in summary:
 
+| KPI (method) | Levels |
+| --- | --- |
+| Control delay, LOS, throughput, queue duration (simulation) | movement, approach, intersection |
+| Queue length, queue storage ratio (simulation) | lane, movement, approach, intersection |
+| Saturation flow (simulation, calibration check) | lane |
+| Control delay, LOS, v/c (HCM) | lane group, movement, approach, intersection |
+| Capacity (HCM) | lane group, movement, approach |
+| Saturation flow (HCM) | lane group, movement |
 
+## 6.5 Provenance: two labels
 
-The standardized geographic representation uses WGS84 longitude and latitude.
+The four provenance labels overlap (an HCM result can be derived from observed demand plus assumed geometry), so they are split in two:
 
+- **`value_computation`** (computed field): how the final value was computed. `direct_summary` is a mean, maximum, percentile or count of SUMO measurements; `derived` means a formula was applied. It is looked up from the KPI and its method in `VALUE_COMPUTATIONS`, so it can never be set inconsistently. Throughput and measured saturation flow are `direct_summary`; level of service, storage ratio and all HCM results are `derived`. This is separate from `method`: simulation-based LOS is a simulation-method result that is `derived`.
+- **`input_origins`** (stored): where the inputs came from, traced back to their source; one or more of `observed`, `modelled_assumption`, `simulated`. Any simulation-method result includes `simulated`.
 
+## 6.6 Runs and replication
 
-The heading convention is:
+- Simulation results summarize at least one run. HCM results may have no runs (e.g. capacity from demand, geometry and signal timing).
+- With more than one run, `value` is the mean and `standard_deviation` is required (not for LOS, a letter grade). One run means no standard deviation.
+- `scenario_id` is always stored: a result belongs to a scenario, while `run_ids` only lists the executions it summarizes.
 
+## 6.7 Shared lanes (Option C, 17 Oct 2026)
 
+KPIs measured per lane (queue length, storage ratio) or per lane group (HCM capacity measures) cannot be split between the movements of a shared lane. They are reported on their lane or lane group. A movement that uses a shared lane also shows that value, and records where it was measured in `measured_on_lane_id` or `measured_on_lane_group_id` (movement level only, at most one, and only for KPIs reportable on that kind of element). The computed field `is_shared_value` drives the dashboard's "Shared lane" tag; the tooltip text ("Measured on lane 2, shared with East-left") is looked up from `ApproachLane`, not stored.
 
-\`\`\`text
+## 6.8 Computed fields and storage
 
-0°   = North
+`value_computation`, `replication_count` and `is_shared_value` are Pydantic computed fields: they appear in `model_dump()` and JSON output but cannot be passed in. **For storage, dump without them**, otherwise reloading fails, because unknown fields are forbidden:
 
-90°  = East
+```python
+# for the dashboard / API
+result.model_dump()
 
-180° = South
+# for storage
+result.model_dump(exclude={"value_computation", "replication_count", "is_shared_value"})
+```
 
-270° = West
+---
 
-\`\`\`
+# 7. Validation Strategy
 
+Pydantic is a validation boundary throughout Jaadah. Its purpose is to prevent structurally invalid data from silently moving between components.
 
+Validation stays focused on **structural correctness**. Traffic-domain logic such as detector allocation, demand estimation, KPI calculations or intervention selection belongs to the application services, not inside Pydantic validators.
 
-with heading increasing clockwise.
+## 7.1 Identifiers
 
+Required identifiers must be present, be strings, and not be empty or whitespace only. Leading and trailing whitespace is removed.
 
+## 7.2 Time
 
-This provides visualization with a stable structure without requiring it to depend directly on raw TraCI calls.
+Timestamps must be timezone-aware and use Riyadh time (`Asia/Riyadh`, UTC+03:00). Intervals satisfy `end > start` and are half-open, `[start, end)`: `08:00 → 08:15` includes 08:00 but not 08:15, so consecutive intervals never overlap.
 
+## 7.3 Numbers
 
+Counts, durations, distances and speeds cannot be negative; coordinates must be within geographic bounds; NaN and infinity are rejected where physical values are expected. Booleans are rejected where integers are expected, even though Python treats `True == 1`.
 
-**---**
+## 7.4 Collections
 
+ID lists are validated where required: no empty entries, no duplicates, and at least one entry where a list must not be empty (e.g. served movements, queue-detection lanes, phases, movement signal states).
 
+## 7.5 Cross-field rules
 
-**## 4.2 \`EdgeTrafficState\`**
+Some rules compare fields of the same model, for example: coordinates given together; intervention scenarios need a reference; the cycle length equals the phase durations; a KPI result's ID matches its level; a delay record's times are in order.
 
+## 7.6 Cross-model rules
 
+Rules that need several objects at once cannot live inside one model, and are checked by the component that holds them all. Examples: a movement with `MovementAttributes` has an approach; lane indexes are unique per approach; both runs of a replication pair used the same seed; a signal state's program belongs to its run's scenario.
 
-\`EdgeTrafficState\` represents aggregated traffic conditions for a SUMO edge over an interval.
+## 7.7 Calculated values are properties, not inputs
 
+Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`, `value_computation`, `is_shared_value`.
 
+---
 
-It includes information such as:
+# 8. Why Pydantic Is Used
 
-
-
-\- scenario ID;
-
-\- run ID;
-
-\- optional Jaadah segment ID;
-
-\- SUMO edge ID;
-
-\- interval start and end;
-
-\- vehicles entered;
-
-\- vehicles left;
-
-\- optional average speed;
-
-\- optional travel time;
-
-\- \`density_veh_per_km\` — edge density measured in vehicles per kilometre (veh/km);
-
-\- optional time loss;
-
-\- sampled duration.
-
-
-
-The explicit density field name and unit ensure that downstream analytics and KPI calculations do not need to infer the measurement unit.
-
-These values represent standardized simulation measurements rather than final application KPIs.
-
-
-
-**---**
-
-
-
-**## 4.3 \`ApproachTrafficState\`**
-
-
-
-\`ApproachTrafficState\` represents traffic conditions for a canonical intersection approach.
-
-
-
-It includes information such as:
-
-
-
-\- scenario ID;
-
-\- run ID;
-
-\- intersection ID;
-
-\- approach ID;
-
-\- queue-detection lane IDs;
-
-\- interval start and end;
-
-\- maximum queue length;
-
-\- mean maximum queued vehicles;
-
-\- started halts;
-
-\- vehicles observed;
-
-\- optional mean time loss.
-
-
-
-Queue detection may require multiple consecutive SUMO lanes upstream from the stop line.
-
-
-
-The model therefore stores:
-
-
-
-\`\`\`text
-
-queue_detection_lane_ids
-
-\`\`\`
-
-
-
-as an ordered list rather than assuming queue measurement occurs on one short lane.
-
-
-
-The list must contain at least one valid lane ID and cannot contain duplicate IDs.
-
-
-
-**---**
-
-
-
-**## 4.4 Vehicle Type Enum**
-
-
-
-The current standardized vehicle category is:
-
-
-
-\`\`\`text
-
-car
-
-\`\`\`
-
-
-
-This application-level category allows downstream components to work with a stable vehicle classification rather than depending directly on arbitrary SUMO vehicle-type identifiers.
-
-
-
-**---**
-
-
-
-**# 5. Traffic Signal Model**
-
-
-
-Implemented in:
-
-
-
-\`\`\`text
-
-jaadah/models/signals.py
-
-\`\`\`
-
-
-
-Jaadah represents traffic-signal logic using canonical movement-level structures rather than exposing raw positional SUMO TLS strings as the application-level interface.
-
-
-
-The implemented structures are:
-
-
-
-\- \`SignalPhase\`
-
-\- \`SignalProgram\`
-
-\- \`MovementSignalState\`
-
-\- \`CurrentSignalState\`
-
-
-
-**---**
-
-
-
-**## 5.1 \`SignalPhase\`**
-
-
-
-\`SignalPhase\` represents one phase in a traffic-signal program.
-
-
-
-It includes:
-
-
-
-\- \`phase_id\`
-
-\- \`sequence_order\`
-
-\- \`served_movement_ids\`
-
-\- green duration;
-
-\- yellow duration;
-
-\- all-red duration.
-
-
-
-Every phase must serve at least one canonical movement.
-
-
-
-Duplicate served movement IDs are rejected.
-
-
-
-**---**
-
-
-
-**## 5.2 \`SignalProgram\`**
-
-
-
-\`SignalProgram\` represents a complete traffic-signal program associated with a scenario.
-
-
-
-It contains information such as:
-
-
-
-\- signal-program ID;
-
-\- scenario ID;
-
-\- intersection ID;
-
-\- control type;
-
-\- cycle length;
-
-\- ordered phases;
-
-\- signal-program source.
-
-SUMO TLS identifiers are intentionally excluded from the canonical \`SignalProgram\`. They belong to the mapping layer that connects Jaadah signal identities to SUMO-specific traffic-light identifiers and controlled links.
-
-
-
-The model verifies several structural rules:
-
-
-
-\- at least one phase must exist;
-
-\- phase IDs must be unique;
-
-\- phase sequence orders must be unique;
-
-\- the declared cycle length must match the sum of all phase durations.
-
-
-
-Conceptually:
-
-
-
-\`\`\`text
-
-cycle length
-
-&#x20;   \=
-
-Σ(green + yellow + all-red)
-
-\`\`\`
-
-
-
-across the complete phase sequence.
-
-
-
-This prevents internally inconsistent signal programs from reaching the simulation pipeline.
-
-
-
-Signal phase assumption: Jaadah currently represents fixed-time signal programs as a sequence of non-overlapping phases. Concurrent or overlapping phases are outside the current canonical model scope.
-
-
-
-**---**
-
-
-
-**## 5.3 \`MovementSignalState\`**
-
-
-
-\`MovementSignalState\` represents the current signal indication for one canonical movement.
-
-
-
-Supported indications are:
-
-
-
-\`\`\`text
-
-green
-
-yellow
-
-red
-
-\`\`\`
-
-
-
-For example:
-
-
-
-\`\`\`text
-
-MOV_E_W → green
-
-MOV_S_W → red
-
-\`\`\`
-
-
-
-**---**
-
-
-
-**## 5.4 \`CurrentSignalState\`**
-
-
-
-\`CurrentSignalState\` represents the traffic-signal controller at a specific simulation time.
-
-
-
-It includes information such as:
-
-
-
-\- scenario ID;
-
-\- run ID;
-
-\- intersection ID;
-
-\- signal-program ID;
-
-\- simulation time;
-
-\- timestamp;
-
-\- active phase ID;
-
-\- phase elapsed time;
-
-\- optional phase remaining time;
-
-\- movement-level signal states.
-
-
-
-The model requires at least one movement state and rejects duplicate movement IDs.
-
-
-
-Raw positional SUMO TLS strings remain an internal simulation and adapter concern.
-
-
-
-**---**
-
-
-
-**# 6. Validation Strategy**
-
-
-
-Pydantic is used as a validation boundary throughout Jaadah.
-
-
-
-Its purpose is to prevent structurally invalid data from silently moving between components.
-
-
-
-Validation remains focused on **\*\*structural correctness\*\***.
-
-
-
-Traffic-domain logic such as detector allocation, traffic-demand estimation, KPI calculations, or intervention selection belongs to the appropriate application service rather than inside generic Pydantic validators.
-
-
-
-**---**
-
-
-
-**## 6.1 Identifier Validation**
-
-
-
-Required identifiers must:
-
-
-
-\- be present;
-
-\- be strings;
-
-\- not be empty;
-
-\- not consist only of whitespace.
-
-
-
-Examples include:
-
-
-
-\`\`\`text
-
-observation_id
-
-demand_id
-
-intersection_id
-
-movement_id
-
-scenario_id
-
-run_id
-
-vehicle_id
-
-\`\`\`
-
-
-
-**---**
-
-
-
-**## 6.2 Time Validation**
-
-
-
-Traffic and demand timestamps must be timezone-aware.
-
-
-
-Historical and source-facing data times use:
-
-
-
-\`\`\`text
-
-Asia/Riyadh
-
-UTC+03:00
-
-\`\`\`
-
-
-
-Intervals must satisfy:
-
-
-
-\`\`\`text
-
-interval_end > interval_start
-
-\`\`\`
-
-
-
-Jaadah uses half-open interval semantics:
-
-
-
-\`\`\`text
-
-[start, end)
-
-\`\`\`
-
-
-
-For example:
-
-
-
-\`\`\`text
-
-08:00 → 08:15
-
-\`\`\`
-
-
-
-includes the start of the interval but excludes the exact \`08:15\` boundary.
-
-
-
-This prevents overlap between consecutive intervals.
-
-
-
-**---**
-
-
-
-**## 6.3 Numeric Validation**
-
-
-
-Examples of numeric validation include:
-
-
-
-\- vehicle counts cannot be negative;
-
-\- physical durations cannot be negative;
-
-\- speeds cannot be negative;
-
-\- latitude must be within valid geographic bounds;
-
-\- longitude must be within valid geographic bounds;
-
-\- NaN and infinity are rejected where physical values are expected.
-
-
-
-Python booleans are explicitly rejected where integer vehicle counts are expected, even though Python normally treats:
-
-
-
-\`\`\`python
-
-True == 1
-
-False == 0
-
-\`\`\`
-
-
-
-as integer-compatible values.
-
-
-
-**---**
-
-
-
-**## 6.4 Collection Validation**
-
-
-
-ID collections are validated where required.
-
-
-
-Examples include:
-
-
-
-\- no duplicate \`source_observation_ids\`;
-
-\- no duplicate queue-detection lane IDs;
-
-\- no duplicate served movement IDs within a signal phase;
-
-\- no duplicate movement IDs within a current signal state.
-
-
-
-**---**
-
-
-
-**## 6.5 Cross-Field Validation**
-
-
-
-Some structural rules depend on relationships between multiple fields.
-
-
-
-For example:
-
-
-
-\`\`\`text
-
-center_longitude + center_latitude
-
-\`\`\`
-
-
-
-must either both be present or both be absent.
-
-
-
-Other examples include:
-
-
-
-\`\`\`text
-
-intervention scenario
-
-&#x20;       ↓
-
-requires reference scenario
-
-\`\`\`
-
-
-
-and:
-
-
-
-\`\`\`text
-
-SignalProgram cycle_length_s
-
-&#x20;       ↓
-
-must equal total phase durations
-
-\`\`\`
-
-
-
-Pydantic model validators enforce these relationships when objects are created.
-
-
-
-**---**
-
-
-
-**# 7. Why Pydantic Is Used**
-
-
-
-The Pydantic models act as Jaadah's **\*\*data gatekeeper\*\***.
-
-
+The Pydantic models act as Jaadah's **data gatekeeper**.
 
 Without a validated shared model, different components could accidentally use different names, units, assumptions, or data shapes for the same concept.
 
-
-
 For example, without standardization, speed might independently appear as:
 
-
-
-\`\`\`text
-
+```text
 speed
-
 avg_speed
-
 speed_kmh
-
 vehicle_speed
-
-\`\`\`
-
-
+```
 
 The canonical model instead establishes a shared representation.
 
-
-
 Likewise, invalid data such as:
 
-
-
-\`\`\`text
-
+```text
 vehicle_count = -20
-
-\`\`\`
-
-
+```
 
 or:
 
-
-
-\`\`\`text
-
+```text
 interval_start = 10:00
-
 interval_end   = 09:45
-
-\`\`\`
-
-
+```
 
 is rejected before it propagates through the rest of the simulation pipeline.
 
-
-
 Pydantic also provides consistent serialization for communication between backend services and downstream consumers.
 
+---
 
+# 9. Architectural Boundaries
 
-**---**
+The canonical model defines shared meanings and structures. It intentionally does not contain all project logic.
 
+## 9.1 Network mapping is separate
 
+Canonical entities do not contain SUMO topology. A separate mapping layer links movements to SUMO routes, lanes to SUMO lanes, and detectors and traffic-light controlled links to their Jaadah identities. This keeps generated SUMO identifiers from becoming application-level identities.
 
-**# 8. Architectural Boundaries**
+The study area's network IDs, parent relationships, and source/SUMO mappings
+live in `data/processed/road_network/network_mappings.json`. This is the single
+configuration used to define the network. `NetworkMappingConfig` builds
+canonical objects from those records through `canonical_intersection`,
+`canonical_approaches`, and `canonical_movements`.
 
+`approach_lanes` holds the canonical lane definitions, while `lane_mappings`
+connects them to SUMO lane segments. A known lane may still be waiting for its
+SUMO mapping. The checks catch inconsistent references and ownership; creating
+canonical objects from the same records does not independently confirm their
+geographic correctness. See [Network mapping](network_mapping.md) for the full
+rules, M7 usage, and test commands.
 
+`DetectorMapping.lane_id` is an optional canonical association. Its separate
+`sumo_lane_id` and `sumo_position_m` fields describe an exact modeled location:
+both may be absent/null, or both must be supplied. Lane IDs are trimmed and
+nonblank; positions must be finite, nonnegative numbers, excluding booleans,
+in metres from the SUMO lane start along travel direction. Network validation
+checks external lane existence, inclusive lane-length bounds, and membership
+in the canonical lane chain when that mapping is available. Any chain segment
+may be selected. Pending mappings cannot establish membership, and unresolved
+detectors may still omit exact locations.
 
-The canonical model defines shared meanings and structures.
+The populated 16-detector synthetic baseline uses 1 m before the selected lane endpoint.
+Detectors 1-12 reference modeled signal entries; 13-16 reference uncontrolled
+slip/bypass endpoints, not necessarily physical stop lines. These modeled
+assumptions are not surveyed RCRC locations or defaults for other sources.
+The configuration contains 16 synthetic detector mappings at site `"9"`.
+Shared detectors 2 and 10 require allocation; the other 14 are usable. These
+statuses do not define allocation algorithms or split proportions. Catalogue
+provenance and mapping scope are documented in [Network mapping](network_mapping.md).
 
+## 9.2 Demand transformation is separate
 
+The models do not decide how observed detector counts become movement demand (e.g. splitting 100 detector vehicles 70/30 between two movements). That rule belongs to the Traffic Demand Transformation component, so traffic-domain assumptions are not hidden inside structural validation.
 
-It intentionally does not contain all project logic.
+## 9.3 SUMO input generation is separate
 
+`SimulationDemand` expresses movement + interval + vehicle count. The SUMO adapter converts it into SUMO's representation. **SUMO adapts to Jaadah.**
 
+## 9.4 Output reduction is separate
 
-**---**
+The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; lane-area detector output into `CycleQueueRecord`; the network's signal program into `SignalProgram`.
 
+## 9.5 KPI calculation is separate
 
+The output records are simulation measurements. The KPI engine (`backend/services/kpi/`) turns them into `KpiResult`s: it derives lane groups, applies the HCM method, aggregates to 15-minute intervals and rolls movements up to approaches and the intersection. Anomaly detection, forecasting and recommendations are also separate application components.
 
-**## 8.1 Network Mapping Is Separate**
+---
 
+# 10. Testing
 
-
-Canonical network entities do not contain complete SUMO topology mappings.
-
-
-
-For example:
-
-
-
-\`\`\`text
-
-MOV_E_W
-
-\`\`\`
-
-
-
-defines a stable Jaadah movement.
-
-
-
-A separate mapping layer determines which SUMO route implements that movement:
-
-
-
-\`\`\`text
-
-MOV_E_W
-
-&#x20;    ↓
-
-MovementMapping
-
-&#x20;    ↓
-
-ordered SUMO route edges
-
-\`\`\`
-
-
-
-The same approach is used for:
-
-
-
-\- intersections;
-
-\- approaches;
-
-\- detector relationships;
-
-\- queue-detection lanes;
-
-\- road segments;
-
-\- traffic-light controlled links.
-
-
-
-Keeping mapping separate prevents generated SUMO identifiers from becoming application-level identities.
-
-
-
-**---**
-
-
-
-**## 8.2 Demand Transformation Is Separate**
-
-
-
-Pydantic models do not decide how observed detector counts become movement demand.
-
-
-
-For example:
-
-
-
-\`\`\`text
-
-Detector observation = 100 vehicles
-
-&#x20;             ↓
-
-&#x20;     allocation method
-
-&#x20;         ↙        ↘
-
-&#x20;     MOV_A        MOV_B
-
-&#x20;       70           30
-
-\`\`\`
-
-
-
-The rule producing the 70/30 allocation belongs to the Traffic Demand Transformation component.
-
-
-
-It does not belong inside the generic data model.
-
-
-
-This prevents traffic-domain assumptions from being hidden inside structural validation.
-
-
-
-**---**
-
-
-
-**## 8.3 SUMO Input Generation Is Separate**
-
-
-
-\`SimulationDemand\` expresses:
-
-
-
-\`\`\`text
-
-movement
-
-\+
-
-time interval
-
-\+
-
-vehicle count
-
-\`\`\`
-
-
-
-It does not directly create SUMO XML or TraCI commands.
-
-
-
-The SUMO adapter is responsible for converting canonical demand into the selected SUMO representation.
-
-
-
-This preserves the rule:
-
-
-
-\> **\*\*SUMO adapts to Jaadah.\*\***
-
-
-
-**---**
-
-
-
-**## 8.4 Analytics and KPIs Are Separate**
-
-
-
-\`EdgeTrafficState\` and \`ApproachTrafficState\` represent standardized simulation measurements.
-
-
-
-They do not define:
-
-
-
-\- final congestion KPIs;
-
-\- anomaly-detection results;
-
-\- forecasting outputs;
-
-\- recommendations;
-
-\- intervention decisions.
-
-
-
-Those belong to analytics and application components that consume the canonical output structures.
-
-
-
-**---**
-
-
-
-**# 9. Testing**
-
-
-
-The canonical model implementation is covered by unit tests using \`pytest\`.
-
-
+The canonical model implementation is covered by unit tests using `pytest`.
 
 Run the complete suite from the repository root with:
 
-
-
-\`\`\`bash
-
+```bash
 python -m pytest -v
-
-\`\`\`
-
-
-
-Current result:
-
-
-
-\`\`\`text
-
-290 passed
-
-\`\`\`
-
-
+```
 
 The tests cover valid model creation as well as invalid cases such as:
 
-
-
-\- empty or whitespace-only IDs;
-
-\- invalid enum values;
-
-\- negative vehicle counts;
-
-\- booleans supplied as vehicle counts;
-
-\- invalid coordinates;
-
-\- incomplete coordinate pairs;
-
-\- reversed time intervals;
-
-\- timestamps without timezone information;
-
-\- incorrect source/data-time timezone;
-
-\- duplicate provenance IDs;
-
-\- invalid scenario relationships;
-
-\- invalid \`SimulationRun\` lifecycle/start-time combinations;
-
-\- invalid queue-detection lane lists;
-
-\- duplicate queue lanes;
-
-\- empty signal phases;
-
-\- duplicate served movements;
-
-\- duplicate signal phase IDs;
-
-\- duplicate signal phase sequence numbers;
-
-\- inconsistent signal cycle lengths;
-
-\- SUMO-specific TLS identifiers supplied to the canonical \`SignalProgram\`;
-
-\- empty current signal states;
-
-\- duplicate movement signal states.
-
-
+- empty or whitespace-only IDs;
+- invalid enum values;
+- negative vehicle counts;
+- booleans supplied as vehicle counts;
+- invalid coordinates;
+- incomplete coordinate pairs;
+- reversed time intervals;
+- timestamps without timezone information;
+- incorrect source/data-time timezone;
+- duplicate provenance IDs;
+- invalid scenario relationships;
+- invalid `SimulationRun` lifecycle/start-time combinations;
+- invalid queue-detection lane lists;
+- duplicate queue lanes;
+- empty signal phases;
+- duplicate served movements;
+- duplicate signal phase IDs;
+- duplicate signal phase sequence numbers;
+- inconsistent signal cycle lengths;
+- SUMO-specific TLS identifiers supplied to the canonical `SignalProgram`;
+- empty current signal states;
+- duplicate movement signal states.
 
 The test suite verifies the shared model before other components rely on it.
 
+---
 
+# 11. Data Flow
 
-**---**
-
-
-
-**# 10. Data Flow**
-
-
-
-The canonical models sit at the center of the Jaadah simulation pipeline:
-
-
-
-\`\`\`text
-
-&#x20;       External Traffic Source
-
-&#x20;                ↓
-
-&#x20;         TrafficObservation
-
-&#x20;                ↓
-
-&#x20;     Traffic Demand Transformation
-
-&#x20;                ↓
-
-&#x20;         SimulationDemand
-
-&#x20;                ↓
-
-&#x20;      SUMO Input Generation
-
-&#x20;                ↓
-
-&#x20;            SUMO + TraCI
-
-&#x20;                ↓
-
-&#x20;      Output Standardization
-
-&#x20;                ↓
-
-&#x20;     ┌──────────┼──────────┐
-
-&#x20;     ↓          ↓          ↓
-
-&#x20;VehicleState  Traffic    Signal
-
-&#x20;              States     States
-
-&#x20;     ↓          ↓          ↓
-
-Visualization Analytics Application
-
-\`\`\`
-
-
-
-The resulting model provides:
-
-
-
-\- stable Jaadah identities;
-
-\- explicit separation between observed and derived data;
-
-\- scenario and execution separation;
-
-\- standardized simulation output structures;
-
-\- movement-oriented traffic-signal representation;
-
-\- explicit units and time semantics;
-
-\- validated structural constraints;
-
-\- shared serialization boundaries for backend integration;
-
-\- independence from source-specific and SUMO-specific formats.
-
-
+```text
+        External Traffic Source
+                 ↓
+         TrafficObservation
+                 ↓
+     Traffic Demand Transformation
+                 ↓
+          SimulationDemand
+                 ↓
+       SUMO Input Generation
+                 ↓
+     SUMO (KPI runs without TraCI)
+                 ↓
+         Output Reduction
+                 ↓
+   ┌─────────────┼──────────────────────┐
+   ↓             ↓                      ↓
+VehicleState  VehicleDelayRecord     SignalProgram
+EdgeTraffic-  IncompletePassage      (CurrentSignalState
+State         CycleQueueRecord        for live views)
+   ↓             ↓
+Visualization  KPI engine (+ ApproachLane, MovementAttributes,
+               SignalProgram, SimulationDemand)
+                 ↓
+             KpiResult
+                 ↓
+        Storage, API, dashboard
+```
 
 Together, these structures form the common data language used across the Jaadah system.
+
+---
+
+# Change Log
+
+| Date | Change |
+| --- | --- |
+| Oct 2026 (Sprint 1) | 16 initial models in five areas |
+| 14–17 Oct 2026 | Added `KpiResult` and its enums and tables (`kpis.py`); `MovementAttributes` and `ApproachLane`; `VehicleDelayRecord`, `IncompletePassage` and `CycleQueueRecord`; `ReplicationPair` and `ReplicationSet`; `SimulationConfig.clearance_duration_s`. Shared-lane reporting (Option C) with lane and lane-group levels |
+| 17 Oct 2026 (cleanup) | Removed `Segment` and `EdgeTrafficState.segment_id` (unused). Applied "most specific identifiers only" to the existing models: `VehicleState`, `EdgeTrafficState` and `ApproachTrafficState` no longer store `scenario_id`; `ApproachTrafficState`, `SimulationDemand` and `SignalProgram` no longer store `intersection_id`; `CurrentSignalState` no longer stores `scenario_id` or `intersection_id`. `EdgeTrafficState` and `ApproachTrafficState` documented as not used by the KPI engine |
+| 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
+| 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
+| 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |

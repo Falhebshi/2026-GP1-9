@@ -5,7 +5,6 @@ from jaadah.models.network import (
     Approach,
     Intersection,
     Movement,
-    Segment,
 )
 
 # ============================================================
@@ -281,41 +280,4 @@ def test_movement_extra_route_field_is_rejected():
                 "edge_1",
                 "edge_2",
             ],
-        )
-
-# ============================================================
-# SEGMENT TESTS
-# ============================================================
-
-def test_valid_segment():
-    segment = Segment(
-        segment_id="SEG_001",
-    )
-
-    assert segment.segment_id == "SEG_001"
-
-
-def test_empty_segment_id_is_rejected():
-    with pytest.raises(
-        ValidationError,
-        match="identifier must not be empty",
-    ):
-        Segment(
-            segment_id="   ",
-        )
-
-
-def test_segment_id_whitespace_is_removed():
-    segment = Segment(
-        segment_id="  SEG_001  ",
-    )
-
-    assert segment.segment_id == "SEG_001"
-
-
-def test_segment_extra_sumo_field_is_rejected():
-    with pytest.raises(ValidationError):
-        Segment(
-            segment_id="SEG_001",
-            sumo_edge_ids=["edge_1"],
         )

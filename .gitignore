@@ -14,6 +14,12 @@ Thumbs.db
 # RCRC sample data - publication permission pending
 /data/raw/rcrc_sample/
 /data/processed/rcrc_sample/
+.pytest_cache/
+
+# SUMO Stress Test v2 generated results
+/simulation/outputs/tests/stress_test_v2/
+# Movement Smoke Test generated results
+/simulation/outputs/tests/movement_smoke/
 
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db

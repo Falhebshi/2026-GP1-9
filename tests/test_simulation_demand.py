@@ -15,7 +15,6 @@ def valid_demand_data():
         "demand_id": "DEM_001",
         "interval_start": "2026-10-10T08:00:00+03:00",
         "interval_end": "2026-10-10T08:15:00+03:00",
-        "intersection_id": "INT_001",
         "movement_id": "MOV_E_W",
         "vehicle_count": 32,
         "source": "rcrc",
@@ -27,7 +26,6 @@ def test_valid_rcrc_demand():
     demand = SimulationDemand(**valid_demand_data())
 
     assert demand.demand_id == "DEM_001"
-    assert demand.intersection_id == "INT_001"
     assert demand.movement_id == "MOV_E_W"
     assert demand.vehicle_count == 32
     assert demand.source.value == "rcrc"
@@ -163,7 +161,6 @@ def test_invalid_source_is_rejected():
     "field",
     [
         "demand_id",
-        "intersection_id",
         "movement_id",
     ],
 )
@@ -307,6 +304,15 @@ def test_missing_required_field_is_rejected():
 def test_extra_field_is_rejected():
     data = valid_demand_data()
     data["sumo_route_id"] = "route_001"
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
+
+def test_intersection_id_is_not_a_field():
+    """Rule (a): the intersection is found through movement_id."""
+
+    data = valid_demand_data()
+    data["intersection_id"] = "INT_001"
 
     with pytest.raises(ValidationError):
         SimulationDemand(**data)
