@@ -31,6 +31,13 @@ class SimulationDemandSource(str, Enum):
     FORECAST = "forecast"
 
 
+class ImputationMethod(str, Enum):
+    """How the count of a detector that did not report was estimated."""
+
+    NEIGHBOUR_REGRESSION = "neighbour_regression"
+    HISTORICAL_AVERAGE = "historical_average"
+
+
 # ============================================================
 # TRAFFIC OBSERVATION
 # ============================================================
@@ -134,6 +141,34 @@ class TrafficObservation(BaseModel):
 # SIMULATION DEMAND
 # ============================================================
 
+class ImputedDetector(BaseModel):
+    """A detector whose missing count was estimated for a demand."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    site_id: str
+    detector_id: str
+    method: ImputationMethod
+
+    @field_validator(
+        "site_id",
+        "detector_id",
+    )
+    @classmethod
+    def validate_ids(cls, value: str) -> str:
+        """Reject empty or whitespace-only identifiers."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+
+
 class SimulationDemand(BaseModel):
     """
     Movement-level traffic demand that Jaadah asks SUMO to simulate.
@@ -146,8 +181,10 @@ class SimulationDemand(BaseModel):
     stored here.
 
     allocated_observation_ids lists the source observations whose count
-    was split between movements (shared-lane detectors). Part of such a
-    demand is a modelled assumption, not a measured count.
+    was split between movements (shared-lane detectors).
+    imputed_detectors lists the detectors that did not report and whose
+    count was estimated. Part of such a demand is a modelled
+    assumption, not a measured count.
     """
 
     model_config = ConfigDict(
@@ -166,6 +203,7 @@ class SimulationDemand(BaseModel):
     source: SimulationDemandSource
     source_observation_ids: list[str]
     allocated_observation_ids: list[str] = Field(default_factory=list)
+    imputed_detectors: list[ImputedDetector] = Field(default_factory=list)
 
     @field_validator(
         "demand_id",
@@ -265,10 +303,21 @@ class SimulationDemand(BaseModel):
                 SimulationDemandSource.SYNTHETIC,
             }
             and not self.source_observation_ids
+            and not self.imputed_detectors
         ):
             raise ValueError(
                 f"{self.source.value} demand must reference "
-                "at least one source observation"
+                "at least one source observation or imputed detector"
+            )
+
+        imputed_keys = [
+            (detector.site_id, detector.detector_id)
+            for detector in self.imputed_detectors
+        ]
+
+        if len(imputed_keys) != len(set(imputed_keys)):
+            raise ValueError(
+                "imputed_detectors must not contain the same detector twice"
             )
 
         unknown_ids = sorted(
@@ -291,3 +340,10 @@ class SimulationDemand(BaseModel):
         """True when part of the count was split from a shared lane."""
 
         return bool(self.allocated_observation_ids)
+
+    @computed_field
+    @property
+    def is_imputed(self) -> bool:
+        """True when part of the count was estimated for a missing detector."""
+
+        return bool(self.imputed_detectors)

@@ -82,16 +82,18 @@ A `TrafficObservation` intentionally does **not** contain Jaadah movement or int
 
 The movement-level traffic demand that Jaadah intends SUMO to simulate.
 
-Fields: `demand_id`, `interval_start`, `interval_end`, `movement_id`, `vehicle_count`, `source`, `source_observation_ids`, `allocated_observation_ids`; computed: `is_allocated`.
+Fields: `demand_id`, `interval_start`, `interval_end`, `movement_id`, `vehicle_count`, `source`, `source_observation_ids`, `allocated_observation_ids`, `imputed_detectors`; computed: `is_allocated`, `is_imputed`.
 
-The intersection is found through `movement_id` (`Movement`), not stored here. RCRC and synthetic demand must reference at least one source observation; forecast demand may reference none.
+The intersection is found through `movement_id` (`Movement`), not stored here. RCRC and synthetic demand must reference at least one source observation or imputed detector; forecast demand may reference none.
 
 **Allocated demand.** A shared-lane detector counts two movements together, so its count is split between them by the demand transformation (see [Traffic demand transformation](traffic_demand_transformation.md)). `allocated_observation_ids` lists the observations whose count was split; it is empty when nothing was split, and every ID must also be in `source_observation_ids`. Detector IDs are not stored again; they are reached through each `TrafficObservation`. `is_allocated` is true when the list is not empty. Part of an allocated demand is a modelled assumption, not a measured count, so the KPI engine adds *modelled assumption* to `input_origins` for KPIs that use it, whatever the `source`.
 
-`is_allocated` is a computed field, like those of `KpiResult` (section 6.8): it appears in `model_dump()` and JSON output but cannot be passed in. For storage, dump without it:
+**Imputed demand.** When a detector did not report, the demand transformation may estimate its count (see [Traffic demand transformation](traffic_demand_transformation.md)). Such a detector has no observation to reference, so `imputed_detectors` lists it directly as an `ImputedDetector`: `site_id`, `detector_id` and `method` (`ImputationMethod`: `neighbour_regression` or `historical_average`). The same detector may appear only once. `is_imputed` is true when the list is not empty. A demand may consist of imputed detectors only, with no source observation. Like allocated demand, imputed demand is a modelled assumption, and the KPI engine adds *modelled assumption* to `input_origins` for KPIs that use it.
+
+`is_allocated` and `is_imputed` are computed fields, like those of `KpiResult` (section 6.8): they appear in `model_dump()` and JSON output but cannot be passed in. For storage, dump without them:
 
 ```python
-demand.model_dump(exclude={"is_allocated"})
+demand.model_dump(exclude={"is_allocated", "is_imputed"})
 ```
 
 Unlike `TrafficObservation`, `SimulationDemand` is **derived simulation input**:
@@ -735,3 +737,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
 | 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |
 | 20 Oct 2026 (demand allocation) | Added `SimulationDemand.allocated_observation_ids` (a subset of `source_observation_ids`) and the computed `is_allocated`, marking demand that includes part of a split shared-lane detector count |
+| 20 Oct 2026 (demand imputation) | Added `ImputationMethod`, `ImputedDetector`, `SimulationDemand.imputed_detectors` and the computed `is_imputed`, marking demand that includes an estimated count for a detector that did not report. RCRC and synthetic demand may consist of imputed detectors only |
