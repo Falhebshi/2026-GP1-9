@@ -163,3 +163,39 @@ def test_mapping_path_can_be_given_explicitly() -> None:
 
     assert explicit_result.demands == default_result.demands
     assert explicit_result.errors == default_result.errors
+
+
+def test_window_with_warm_up_and_clearance_is_fully_covered() -> None:
+    window_start = INTERVAL_START - timedelta(minutes=15)
+    observations = []
+
+    for step in range(6):
+        start = window_start + step * timedelta(minutes=15)
+        end = start + timedelta(minutes=15)
+        observations += [
+            TrafficObservation(
+                observation_id=(
+                    f"OBS_SYN_9_{detector_id}_{end.strftime('%Y%m%dT%H%M')}"
+                ),
+                source=TrafficObservationSource.SYNTHETIC,
+                site_id="9",
+                detector_id=str(detector_id),
+                interval_start=start,
+                interval_end=end,
+                vehicle_count=10 * detector_id,
+            )
+            for detector_id in range(1, 17)
+        ]
+
+    result = build_simulation_demand(
+        observations=observations,
+        window_start=window_start,
+        window_end=window_start + timedelta(minutes=90),
+    )
+
+    assert result.errors == []
+    assert len(result.demands) == 6 * 9
+    assert all(
+        demand.interval_end - demand.interval_start == timedelta(minutes=15)
+        for demand in result.demands
+    )

@@ -202,14 +202,15 @@ backend/demand/service.py
 Its workflow is:
 
 ```text
-1. Map each observation to its movement, or set it aside if it comes from a shared-lane detector
-2. Record observations that cannot be mapped
+1. Refuse observations whose interval is not 15 minutes on a quarter hour, or outside the requested window
+2. Map each observation to its movement, or set it aside if it comes from a shared-lane detector, and record observations that cannot be mapped
 3. Group mapped observations by source, movement and interval
 4. Estimate the counts of usable detectors that did not report, when history is given
 5. Split each shared-lane count between its movements
 6. Check each group for conflicting or missing detectors
 7. Sum the vehicle counts of each complete group, including its parts of shared-lane counts and its estimated counts
-8. Return demands and transformation errors
+8. When a window is given, report every movement and interval of the window that received nothing
+9. Return demands and transformation errors
 ```
 
 For example, if the north left turn `MOV_N_E` is counted by detectors `4`, `5` and `6`:
@@ -249,6 +250,36 @@ error_count
 ```
 
 Demands are returned in interval order.
+
+---
+
+## Time Window and Interval Length
+
+### Every Demand Is One 15-Minute Interval
+
+Every `SimulationDemand` covers exactly 15 minutes, starting on :00, :15, :30 or :45. An observation with any other interval length, or one that does not start on a quarter hour, is refused:
+
+```text
+observation interval must be 15 minutes
+observation interval must start on a quarter hour
+```
+
+The models only require an interval to end after it starts, and the synthetic adapter happens to produce 15-minute intervals. This check makes the guarantee explicit, whatever the source. History observations with other intervals are ignored when estimating missing detectors.
+
+### The Requested Window
+
+`window_start` and `window_end` give the period the demand is for. They must be given together, include a time zone, lie on quarter hours, and end after they start.
+
+When a window is given:
+
+- observations outside it are refused with `observation is outside the requested window`;
+- every movement that has detectors gets, for every 15-minute interval of the window, either a demand or an error. An interval in which nothing at all was received is reported like any missing detector, for example `no observation from detector(s) 4, 5, 6`.
+
+So the window is fully accounted for: SUMO input generation never has to guess whether an interval is missing.
+
+The window must include the simulation's warm-up and clearance. For an 08:00–09:00 analysis with 15 minutes of each, the window is 07:45–09:15: six intervals, and with the current mapping 6 × 9 = 54 demand records when every detector reports. The warm-up and clearance lengths are decided by SUMO input generation (M8); the transformation delivers whatever window it is given.
+
+The synthetic source and ingestion use the same convention: a request from 07:45 to 09:15 returns the intervals whose end time is after 07:45 and at most 09:15, which are exactly these six intervals.
 
 ---
 
@@ -505,6 +536,9 @@ The possible messages are:
 
 | Message | Cause |
 |---|---|
+| `observation interval must be 15 minutes` | The observation does not cover exactly 15 minutes |
+| `observation interval must start on a quarter hour` | The interval starts at another minute, e.g. 08:05 |
+| `observation is outside the requested window` | The interval is not inside `window_start` to `window_end` |
 | `detector has no mapping` | No mapping for the observation's source, site and detector |
 | `detector mapping is unresolved` | The detector cannot be linked to a movement |
 | `split of shared detector ... needs detector(s) ...` | An exclusive-lane detector needed for the split did not report or sent different counts |
@@ -538,6 +572,18 @@ For sensitivity runs, `share_adjustments` is passed on to the split (see [Sensit
 result = build_simulation_demand(
     observations=batch.observations,
     history=history.observations,
+)
+```
+
+For a simulation, the window including warm-up and clearance is ingested and passed on, so that every interval is accounted for (see [Time Window and Interval Length](#time-window-and-interval-length)):
+
+```python
+window = ingest_synthetic_observations(client=client, start=window_start, end=window_end)
+
+result = build_simulation_demand(
+    observations=window.observations,
+    window_start=window_start,
+    window_end=window_end,
 )
 ```
 
@@ -629,7 +675,9 @@ The tests cover:
 - estimating a missing detector from its neighbours, using the median, or from its average in the same time slot and day type;
 - the history minimums, the one-hour gap limit, and shared-lane detectors never being estimated;
 - marking imputed demand, including an estimated lane used by the shared-lane split;
-- the full path from the synthetic source through ingestion to demand, with and without a missing detector.
+- the full path from the synthetic source through ingestion to demand, with and without a missing detector;
+- refusing intervals that are not 15 minutes on a quarter hour, and observations outside the window;
+- reporting every movement and interval of the window without demand, and a 07:45–09:15 window with warm-up and clearance fully covered, both with the real mapping file and through the synthetic source and ingestion.
 
 The transformation tests are also included in the full Jaadah project test suite.
 
@@ -661,6 +709,7 @@ Its main design principles are:
 - detectors that serve exactly one movement are summed directly;
 - shared-lane counts are split by a documented modelled assumption, and the split demand is marked;
 - missing data is never treated as zero: it is estimated by a documented method and marked, or reported;
+- every demand covers one 15-minute interval, and a requested window is fully accounted for;
 - repeated observations are never counted twice;
 - every demand keeps the IDs of the observations it came from;
 - demand IDs are stable and readable;

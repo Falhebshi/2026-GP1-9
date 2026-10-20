@@ -724,3 +724,138 @@ def test_detector_mapped_to_unknown_movement_is_rejected() -> None:
                 ),
             ]
         )
+
+
+def test_observation_longer_than_15_minutes_is_rejected() -> None:
+    observation = TrafficObservation(
+        observation_id="OBS_SYN_9_4_20261014T0830",
+        source=TrafficObservationSource.SYNTHETIC,
+        site_id="9",
+        detector_id="4",
+        interval_start=FIRST_START,
+        interval_end=FIRST_START + timedelta(minutes=30),
+        vehicle_count=20,
+    )
+
+    result = transform_observations(
+        observations=[observation],
+        config=make_valid_config(),
+    )
+
+    assert result.demands == []
+    assert result.errors[0].message == (
+        "observation interval must be 15 minutes"
+    )
+
+
+def test_observation_off_the_quarter_hour_is_rejected() -> None:
+    start = FIRST_START + timedelta(minutes=5)
+    observation = TrafficObservation(
+        observation_id="OBS_SYN_9_4_20261014T0820",
+        source=TrafficObservationSource.SYNTHETIC,
+        site_id="9",
+        detector_id="4",
+        interval_start=start,
+        interval_end=start + timedelta(minutes=15),
+        vehicle_count=20,
+    )
+
+    result = transform_observations(
+        observations=[observation],
+        config=make_valid_config(),
+    )
+
+    assert result.demands == []
+    assert result.errors[0].message == (
+        "observation interval must start on a quarter hour"
+    )
+
+
+def test_observation_outside_the_window_is_rejected() -> None:
+    result = transform_observations(
+        observations=make_north_left_observations(),
+        config=make_valid_config(),
+        window_start=FIRST_START + timedelta(minutes=15),
+        window_end=FIRST_START + timedelta(minutes=30),
+    )
+
+    assert result.demands == []
+    assert [
+        error.detector_id
+        for error in result.errors
+        if error.message == "observation is outside the requested window"
+    ] == ["4", "5", "6"]
+
+
+def test_window_reports_intervals_that_received_nothing() -> None:
+    result = transform_observations(
+        observations=make_north_left_observations(),
+        config=make_valid_config(),
+        window_start=FIRST_START - timedelta(minutes=15),
+        window_end=FIRST_START + timedelta(minutes=30),
+    )
+
+    assert [
+        demand.interval_start
+        for demand in result.demands
+    ] == [FIRST_START]
+    assert [
+        (error.interval_end, error.message)
+        for error in result.errors
+        if error.movement_id == "MOV_N_E"
+    ] == [
+        (FIRST_START, "no observation from detector(s) 4, 5, 6"),
+        (
+            FIRST_START + timedelta(minutes=30),
+            "no observation from detector(s) 4, 5, 6",
+        ),
+    ]
+
+
+def test_every_movement_and_interval_of_the_window_is_answered() -> None:
+    result = transform_observations(
+        observations=make_north_left_observations(),
+        config=make_valid_config(),
+        window_start=FIRST_START - timedelta(minutes=15),
+        window_end=FIRST_START + timedelta(minutes=30),
+    )
+
+    answered = {
+        (demand.movement_id, demand.interval_end)
+        for demand in result.demands
+    } | {
+        (error.movement_id, error.interval_end)
+        for error in result.errors
+        if error.movement_id is not None
+    }
+
+    assert len(answered) == 3 * 3
+
+
+@pytest.mark.parametrize(
+    "window_start,window_end,message",
+    [
+        (FIRST_START, None, "must be given together"),
+        (
+            FIRST_START + timedelta(minutes=5),
+            FIRST_START + timedelta(minutes=20),
+            "on a quarter hour",
+        ),
+        (FIRST_START, FIRST_START, "later than window_start"),
+    ],
+)
+def test_invalid_window_is_rejected(
+    window_start: datetime,
+    window_end: datetime | None,
+    message: str,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=message,
+    ):
+        transform_observations(
+            observations=make_north_left_observations(),
+            config=make_valid_config(),
+            window_start=window_start,
+            window_end=window_end,
+        )

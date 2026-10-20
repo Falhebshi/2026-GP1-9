@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.demand.imputation import (
+    INTERVAL,
     ImputedCount,
     build_history_index,
     impute_count,
@@ -466,11 +467,78 @@ def impute_missing_detectors(
     return imputed
 
 
+def is_quarter_hour(moment: datetime) -> bool:
+    """True when a time is on :00, :15, :30 or :45 exactly."""
+
+    return (
+        moment.minute % 15 == 0
+        and moment.second == 0
+        and moment.microsecond == 0
+    )
+
+
+def validate_window(
+    window_start: datetime | None,
+    window_end: datetime | None,
+) -> None:
+    """Reject a requested window that is incomplete or not aligned."""
+
+    if (window_start is None) != (window_end is None):
+        raise ValueError(
+            "window_start and window_end must be given together"
+        )
+
+    if window_start is None:
+        return
+
+    for moment in (window_start, window_end):
+        if moment.tzinfo is None or moment.utcoffset() is None:
+            raise ValueError(
+                "window times must include timezone information"
+            )
+
+        if not is_quarter_hour(moment):
+            raise ValueError("window times must be on a quarter hour")
+
+    if window_end <= window_start:
+        raise ValueError("window_end must be later than window_start")
+
+
+def interval_problem(
+    observation: TrafficObservation,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
+) -> str | None:
+    """
+    Return why an observation's interval cannot be used, or None.
+
+    Demand is built for 15-minute intervals starting on a quarter hour,
+    so other intervals are refused. When a window is given, intervals
+    outside it are refused too.
+    """
+
+    if observation.interval_end - observation.interval_start != INTERVAL:
+        return "observation interval must be 15 minutes"
+
+    if not is_quarter_hour(observation.interval_start):
+        return "observation interval must start on a quarter hour"
+
+    if window_start is not None and (
+        observation.interval_start < window_start
+        or observation.interval_end > window_end
+    ):
+        return "observation is outside the requested window"
+
+    return None
+
+
 def transform_observations(
     observations: list[TrafficObservation],
     config: NetworkMappingConfig,
     share_adjustments: dict[str, float] | None = None,
     history: list[TrafficObservation] | None = None,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
 ) -> DemandTransformationResult:
     """
     Turn detector observations into movement demand for each interval.
@@ -489,6 +557,13 @@ def transform_observations(
     its past counts (see imputation.py), and the demand records it in
     imputed_detectors.
 
+    Every demand covers one 15-minute interval starting on a quarter
+    hour; observations with any other interval are reported. When
+    window_start and window_end are given, observations outside the
+    window are reported, and every movement with detectors gets either
+    a demand or an error for every interval of the window, including
+    intervals in which nothing was received.
+
     Observations that cannot be mapped, and movement intervals with a
     missing or conflicting detector, are reported instead of becoming
     demand.
@@ -500,6 +575,10 @@ def transform_observations(
         share_adjustments=share_adjustments,
         config=config,
     )
+    validate_window(
+        window_start=window_start,
+        window_end=window_end,
+    )
 
     errors: list[DemandTransformationError] = []
     groups = defaultdict(dict)
@@ -508,6 +587,25 @@ def transform_observations(
     conflicted_detectors = set()
 
     for observation in observations:
+        problem = interval_problem(
+            observation=observation,
+            window_start=window_start,
+            window_end=window_end,
+        )
+
+        if problem is not None:
+            errors.append(
+                DemandTransformationError(
+                    message=problem,
+                    observation_ids=(observation.observation_id,),
+                    site_id=observation.site_id,
+                    detector_id=observation.detector_id,
+                    interval_end=observation.interval_end,
+                )
+            )
+
+            continue
+
         mapping = find_detector_mapping(
             observation=observation,
             config=config,
@@ -582,7 +680,11 @@ def transform_observations(
     imputed = (
         impute_missing_detectors(
             observations=observations,
-            history=history,
+            history=[
+                observation
+                for observation in history
+                if interval_problem(observation) is None
+            ],
             config=config,
             groups=groups,
             conflicted_detectors=conflicted_detectors,
@@ -804,10 +906,90 @@ def transform_observations(
             )
         )
 
+    if window_start is not None:
+        errors.extend(
+            find_window_gaps(
+                observations=observations,
+                config=config,
+                handled=(
+                    set(groups) | set(allocated) | set(blocked) | set(imputed)
+                ),
+                movement_detectors=movement_detectors,
+                shared_detectors=shared_detectors,
+                window_start=window_start,
+                window_end=window_end,
+            )
+        )
+
     return DemandTransformationResult(
         demands=demands,
         errors=errors,
     )
+
+
+def find_window_gaps(
+    observations: list[TrafficObservation],
+    config: NetworkMappingConfig,
+    handled: set[tuple],
+    movement_detectors: dict,
+    shared_detectors: dict,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[DemandTransformationError]:
+    """
+    Report every movement and interval of the window that received no
+    observation at all, so the window is fully accounted for.
+    """
+
+    sources = sorted(
+        {observation.source for observation in observations}
+        or {mapping.source for mapping in config.detector_mappings},
+        key=lambda source: source.value,
+    )
+    needed = defaultdict(set)
+
+    for detectors in (movement_detectors, shared_detectors):
+        for (source, movement_id), detector_keys in list(detectors.items()):
+            needed[(source, movement_id)] |= detector_keys
+
+    gaps = []
+    interval_start = window_start
+
+    while interval_start < window_end:
+        interval_end = interval_start + INTERVAL
+
+        for source in sources:
+            for movement_id in sorted(
+                movement
+                for (movement_source, movement) in needed
+                if movement_source == source
+            ):
+                group_key = (source, movement_id, interval_start, interval_end)
+
+                if group_key in handled:
+                    continue
+
+                gaps.append(
+                    DemandTransformationError(
+                        message=(
+                            "no observation from detector(s) "
+                            + ", ".join(
+                                sorted(
+                                    detector_id
+                                    for _, detector_id in needed[
+                                        (source, movement_id)
+                                    ]
+                                )
+                            )
+                        ),
+                        movement_id=movement_id,
+                        interval_end=interval_end,
+                    )
+                )
+
+        interval_start = interval_end
+
+    return gaps
 
 
 def build_simulation_demand(
@@ -815,15 +997,17 @@ def build_simulation_demand(
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
     share_adjustments: dict[str, float] | None = None,
     history: list[TrafficObservation] | None = None,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
 ) -> DemandTransformationResult:
     """
     Load the network mappings and transform a batch of observations
     into movement demand.
 
     The observations are usually the accepted observations of one
-    ingestion batch. share_adjustments (sensitivity runs) and history
-    (estimating detectors that did not report) are passed on to
-    transform_observations.
+    ingestion batch. share_adjustments (sensitivity runs), history
+    (estimating detectors that did not report) and the requested window
+    are passed on to transform_observations.
     """
 
     config = load_network_mappings(mapping_path)
@@ -833,4 +1017,6 @@ def build_simulation_demand(
         config=config,
         share_adjustments=share_adjustments,
         history=history,
+        window_start=window_start,
+        window_end=window_end,
     )

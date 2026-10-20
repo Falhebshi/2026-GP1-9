@@ -29,6 +29,10 @@ BATCH_START = datetime(2026, 10, 18, 8, 0, tzinfo=TIMEZONE)
 BATCH_END = BATCH_START + timedelta(minutes=15)
 HISTORY_START = BATCH_START - timedelta(days=7)
 
+# An 08:00-09:00 analysis with 15 minutes of warm-up and clearance
+WINDOW_START = BATCH_START - timedelta(minutes=15)
+WINDOW_END = BATCH_START + timedelta(minutes=75)
+
 
 def artificial_profiles() -> SyntheticTrafficProfiles:
     """
@@ -113,7 +117,8 @@ def artificial_profiles() -> SyntheticTrafficProfiles:
 def client(tmp_path, monkeypatch) -> SyntheticTrafficClient:
     """
     Return an ingestion client connected to a real synthetic source
-    holding one week of traffic before the batch and the batch itself.
+    holding one week of traffic before the batch, and the batch and the
+    08:00-09:00 window with its warm-up and clearance intervals.
     """
 
     profiles = artificial_profiles()
@@ -126,7 +131,7 @@ def client(tmp_path, monkeypatch) -> SyntheticTrafficClient:
         config,
     )
     storage.insert_observations(
-        producer._generate_window(HISTORY_START, BATCH_END)
+        producer._generate_window(HISTORY_START, WINDOW_END)
     )
 
     with TestClient(
@@ -218,3 +223,30 @@ def test_missing_source_detector_is_estimated_from_ingested_history(
         (detector.detector_id, detector.method)
         for detector in demand.imputed_detectors
     ] == [("6", ImputationMethod.NEIGHBOUR_REGRESSION)]
+
+
+def test_ingested_window_gets_demand_for_every_movement_and_interval(
+    client,
+) -> None:
+    ingestion = ingest_synthetic_observations(
+        client=client,
+        start=WINDOW_START,
+        end=WINDOW_END,
+    )
+
+    result = build_simulation_demand(
+        observations=ingestion.observations,
+        window_start=WINDOW_START,
+        window_end=WINDOW_END,
+    )
+
+    assert ingestion.accepted_count == 6 * 16
+    assert result.errors == []
+    assert len(result.demands) == 6 * 9
+    assert {
+        demand.interval_start
+        for demand in result.demands
+    } == {
+        WINDOW_START + step * timedelta(minutes=15)
+        for step in range(6)
+    }
