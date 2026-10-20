@@ -5,6 +5,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationInfo,
+    computed_field,
     field_validator,
     model_validator,
 )
@@ -142,6 +144,10 @@ class SimulationDemand(BaseModel):
 
     The intersection is found through movement_id (Movement), not
     stored here.
+
+    allocated_observation_ids lists the source observations whose count
+    was split between movements (shared-lane detectors). Part of such a
+    demand is a modelled assumption, not a measured count.
     """
 
     model_config = ConfigDict(
@@ -159,6 +165,7 @@ class SimulationDemand(BaseModel):
 
     source: SimulationDemandSource
     source_observation_ids: list[str]
+    allocated_observation_ids: list[str] = Field(default_factory=list)
 
     @field_validator(
         "demand_id",
@@ -207,17 +214,22 @@ class SimulationDemand(BaseModel):
 
         return value
 
-    @field_validator("source_observation_ids")
+    @field_validator(
+        "source_observation_ids",
+        "allocated_observation_ids",
+    )
     @classmethod
-    def validate_source_observation_ids(
+    def validate_observation_ids(
         cls,
         values: list[str],
+        info: ValidationInfo,
     ) -> list[str]:
         """
-        Normalize source observation IDs and reject empty or duplicate
+        Normalize observation IDs and reject empty or duplicate
         references.
         """
 
+        label = info.field_name.removesuffix("_ids").replace("_", " ")
         cleaned_values = []
 
         for value in values:
@@ -225,14 +237,14 @@ class SimulationDemand(BaseModel):
 
             if not value:
                 raise ValueError(
-                    "source observation ID must not be empty"
+                    f"{label} ID must not be empty"
                 )
 
             cleaned_values.append(value)
 
         if len(cleaned_values) != len(set(cleaned_values)):
             raise ValueError(
-                "source_observation_ids must not contain duplicates"
+                f"{info.field_name} must not contain duplicates"
             )
 
         return cleaned_values
@@ -259,4 +271,23 @@ class SimulationDemand(BaseModel):
                 "at least one source observation"
             )
 
+        unknown_ids = sorted(
+            set(self.allocated_observation_ids)
+            - set(self.source_observation_ids)
+        )
+
+        if unknown_ids:
+            raise ValueError(
+                "allocated observations must also be source "
+                "observations: "
+                + ", ".join(unknown_ids)
+            )
+
         return self
+
+    @computed_field
+    @property
+    def is_allocated(self) -> bool:
+        """True when part of the count was split from a shared lane."""
+
+        return bool(self.allocated_observation_ids)

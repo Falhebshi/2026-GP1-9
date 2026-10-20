@@ -316,3 +316,84 @@ def test_intersection_id_is_not_a_field():
 
     with pytest.raises(ValidationError):
         SimulationDemand(**data)
+
+# ============================================================
+# ALLOCATED OBSERVATION TESTS
+# ============================================================
+
+
+def test_demand_is_not_allocated_by_default():
+    demand = SimulationDemand(**valid_demand_data())
+
+    assert demand.allocated_observation_ids == []
+    assert demand.is_allocated is False
+
+
+def test_demand_with_allocated_observation_is_allocated():
+    data = valid_demand_data()
+    data["source_observation_ids"] = ["OBS_001", "OBS_002"]
+    data["allocated_observation_ids"] = ["OBS_002"]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.allocated_observation_ids == ["OBS_002"]
+    assert demand.is_allocated is True
+
+
+def test_allocated_observation_must_be_a_source_observation():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_999"]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated observations must also be source observations",
+    ):
+        SimulationDemand(**data)
+
+
+def test_empty_allocated_observation_id_is_rejected():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = [" "]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated observation ID must not be empty",
+    ):
+        SimulationDemand(**data)
+
+
+def test_duplicate_allocated_observation_ids_are_rejected():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_001", "OBS_001"]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated_observation_ids must not contain duplicates",
+    ):
+        SimulationDemand(**data)
+
+
+def test_allocated_observation_id_whitespace_is_removed():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = [" OBS_001 "]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.allocated_observation_ids == ["OBS_001"]
+
+
+def test_is_allocated_appears_in_json_output():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_001"]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.model_dump()["is_allocated"] is True
+
+
+def test_is_allocated_cannot_be_passed_in():
+    data = valid_demand_data()
+    data["is_allocated"] = True
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
