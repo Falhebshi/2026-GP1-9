@@ -20,3 +20,7 @@ Thumbs.db
 /simulation/outputs/tests/stress_test_v2/
 # Movement Smoke Test generated results
 /simulation/outputs/tests/movement_smoke/
+
+# Generated synthetic traffic database
+/data/synthetic_traffic/*.db
+/data/synthetic_traffic/*.db-*
