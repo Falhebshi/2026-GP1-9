@@ -1,0 +1,225 @@
+/* Approach chips along the bottom of the 3D scene, and the card that opens above them */
+.approach-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  max-height: 100%;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+}
+
+.approach-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-float);
+}
+
+.approach-chips-label {
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.approach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.approach-chip:hover {
+  background: var(--color-selected-bg);
+}
+
+.approach-chip.approach-chip-active {
+  border-color: var(--color-selected);
+  background: var(--color-selected-bg);
+}
+
+.approach-chip-name {
+  font-weight: 600;
+}
+
+.approach-chip-delay {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.approach-card {
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+}
+
+.approach-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: 10px 12px 6px;
+}
+
+.approach-card-title {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.approach-card-road {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.approach-close {
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.approach-close:hover {
+  color: var(--color-text);
+}
+
+.approach-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.approach-table th,
+.approach-table td {
+  padding: 6px 7px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.approach-table thead th {
+  font-weight: 500;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approach-table thead small {
+  font-size: 10px;
+}
+
+.approach-table tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+
+.approach-movement-row th {
+  padding-left: 14px;
+  color: var(--color-text-muted);
+}
+
+.approach-movement-row td {
+  color: var(--color-text);
+}
+
+.approach-movement-row {
+  cursor: pointer;
+}
+
+.approach-movement-row:hover {
+  background: var(--color-selected-bg);
+}
+
+/* the movement name, as a button so it can be reached with the keyboard */
+.approach-movement-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.approach-arrow {
+  display: inline-block;
+  width: 8px;
+  transition: transform 0.15s;
+}
+
+.approach-movement-open .approach-arrow {
+  transform: rotate(90deg);
+}
+
+.approach-movement-details td {
+  padding: 2px 8px 10px 36px;
+  text-align: left;
+  white-space: normal;
+}
+
+/* the four extra KPIs side by side, name above value */
+.approach-movement-details dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0;
+}
+
+.approach-movement-details dt {
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+}
+
+.approach-movement-details dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* the shared-lane sentence under the table */
+.approach-note {
+  margin: 0;
+  padding: 6px 12px 10px;
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+}
+
+.approach-kpi-missing {
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+}
+
+.approach-kpi-over {
+  color: var(--color-danger-text);
+  font-weight: 600;
+}
+
+/* LosBadge, a little smaller to fit the table rows and chips */
+.approach-los {
+  width: 18px;
+  height: 18px;
+  font-size: 10.5px;
+}
+
+.approach-total th,
+.approach-total td {
+  font-weight: 600;
+  border-top: 1px solid var(--color-border);
+}
+
+.approach-total + .approach-movement-row {
+  border-top: 1px solid var(--color-border);
+}
