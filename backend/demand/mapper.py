@@ -33,8 +33,8 @@ def map_observation_to_movement(
     """
 
     mapping = find_detector_mapping(
-        observation,
-        config,
+        observation=observation,
+        config=config,
     )
 
     if mapping is None:

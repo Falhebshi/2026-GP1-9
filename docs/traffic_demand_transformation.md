@@ -119,7 +119,7 @@ This is the same key used by `NetworkMappingConfig` to reject duplicate detector
 
 The site is part of the key because detector numbers repeat between sites. Detector `4` at site `9` is not detector `4` at site `1028`.
 
-If a mapping leaves its `site_id` empty, it does not match any observation. A missing site is reported as an unmapped detector rather than being matched to the wrong site.
+Every detector mapping must have a `site_id`; the mapping model rejects one without it.
 
 ### Mapping an Observation to a Movement
 
@@ -151,7 +151,7 @@ The result depends on the detector's mapping status:
 
 A `usable` mapping always has exactly one movement. This is enforced by the `DetectorMapping` model.
 
-Shared-lane detectors are not split. Their observations are reported until the team adopts a documented allocation method.
+Shared-lane detectors are not split. Their observations are reported until the team adopts a documented allocation method. The movements they serve are also held back; see [Shared-Lane Detector](#shared-lane-detector).
 
 ---
 
@@ -200,7 +200,7 @@ Its workflow is:
 1. Map each observation to its movement
 2. Record observations that cannot be mapped
 3. Group mapped observations by source, movement and interval
-4. Check each group for missing or conflicting detectors
+4. Check each group for conflicting, shared-lane or missing detectors
 5. Sum the vehicle counts of each complete group
 6. Return demands and transformation errors
 ```
@@ -272,6 +272,31 @@ Summing only detectors `4` and `5` would give `22`, which looks like a valid tot
 
 This means SUMO receives no demand for that movement and interval. Filling such gaps with a documented estimation method is an open team decision.
 
+### Shared-Lane Detector
+
+Some movements are also counted by a shared-lane detector. For example, the west left turn `MOV_W_N` uses lane 1 (detector `1`, left only) and lane 2 (detector `2`, shared with the west through movement):
+
+```text
+Detector 1   left only           30 vehicles
+Detector 2   left and through    40 vehicles, split unknown
+```
+
+Summing detector `1` alone would give `30`, which looks like a valid total but leaves out the left-turning part of lane 2. The result is therefore:
+
+```text
+No demand for MOV_W_N at 08:00-08:15
+Error: movement also uses shared detector(s) 2; no allocation rule adopted
+```
+
+With the current mapping this holds back four movements:
+
+| Shared detector | Movements held back |
+|---|---|
+| `2` (west, lane 2) | `MOV_W_N`, `MOV_W_E` |
+| `10` (east, lane 2) | `MOV_E_S`, `MOV_E_W` |
+
+Other movements are not affected. When an allocation rule is adopted, this check is where its result is added.
+
 ### Repeated Observation
 
 The same detector may report the same interval more than once, for example after a source re-sends data.
@@ -323,6 +348,7 @@ The possible messages are:
 | `detector has no mapping` | No mapping for the observation's source, site and detector |
 | `detector mapping is unresolved` | The detector cannot be linked to a movement |
 | `detector serves ...; no allocation rule adopted` | Shared-lane detector |
+| `movement also uses shared detector(s) ...; no allocation rule adopted` | The movement's total needs a shared-lane detector's split |
 | `no observation from detector(s) ...` | A detector of the movement did not report |
 | `duplicate observation ignored` | The same count was reported twice |
 | `detector sent different counts: ...` | Two different counts for the same detector and interval |
@@ -385,6 +411,7 @@ The tests cover:
 - usable detectors mapped to their movement;
 - exact matching on source, site and detector;
 - unmapped, unresolved and shared-lane detectors;
+- movements held back because they use a shared-lane detector;
 - stable demand IDs for synthetic and RCRC sources;
 - summing usable detectors into one demand;
 - preserving every source observation ID;
@@ -408,7 +435,7 @@ The following decisions are open and are not implemented:
 
 | Decision | Current behavior |
 |---|---|
-| Allocation method for shared left-through lanes | Reported, not split |
+| Allocation method for shared left-through lanes | Reported, not split; the four movements that use them get no demand |
 | East and west through detectors also counting ramp and U-turn traffic | Depends on how these detectors are mapped |
 | Movements with no detector (U-turns, tunnel, tunnel on-ramp) | No demand produced |
 | Filling missing detector intervals, and marking estimated demand | Reported, not filled |
@@ -425,7 +452,7 @@ Its main design principles are:
 
 - detectors are matched exactly on source, site and detector;
 - only detectors that serve exactly one movement produce demand;
-- shared lanes are not split without a documented method;
+- shared lanes are not split without a documented method, and movements that need them get no demand;
 - missing data is reported, never treated as zero;
 - repeated observations are never counted twice;
 - every demand keeps the IDs of the observations it came from;

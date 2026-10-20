@@ -65,16 +65,36 @@ def make_valid_config(
 
     if detector_mappings is None:
         detector_mappings = [
-            make_detector_mapping("4", "APP_N", ["MOV_N_E"], "usable"),
-            make_detector_mapping("5", "APP_N", ["MOV_N_E"], "usable"),
-            make_detector_mapping("6", "APP_N", ["MOV_N_E"], "usable"),
             make_detector_mapping(
-                "2",
-                "APP_W",
-                ["MOV_W_N", "MOV_W_E"],
-                "requires_allocation",
+                detector_id="4",
+                approach_id="APP_N",
+                movement_ids=["MOV_N_E"],
+                mapping_status="usable",
             ),
-            make_detector_mapping("3", "APP_W", [], "unresolved"),
+            make_detector_mapping(
+                detector_id="5",
+                approach_id="APP_N",
+                movement_ids=["MOV_N_E"],
+                mapping_status="usable",
+            ),
+            make_detector_mapping(
+                detector_id="6",
+                approach_id="APP_N",
+                movement_ids=["MOV_N_E"],
+                mapping_status="usable",
+            ),
+            make_detector_mapping(
+                detector_id="2",
+                approach_id="APP_W",
+                movement_ids=["MOV_W_N", "MOV_W_E"],
+                mapping_status="requires_allocation",
+            ),
+            make_detector_mapping(
+                detector_id="3",
+                approach_id="APP_W",
+                movement_ids=[],
+                mapping_status="unresolved",
+            ),
         ]
 
     return NetworkMappingConfig.model_validate(
@@ -141,17 +161,29 @@ def make_north_left_observations(
     """Return observations from all three north left-turn detectors."""
 
     return [
-        make_observation("4", 10, interval_start),
-        make_observation("5", 12, interval_start),
-        make_observation("6", 7, interval_start),
+        make_observation(
+            detector_id="4",
+            vehicle_count=10,
+            interval_start=interval_start,
+        ),
+        make_observation(
+            detector_id="5",
+            vehicle_count=12,
+            interval_start=interval_start,
+        ),
+        make_observation(
+            detector_id="6",
+            vehicle_count=7,
+            interval_start=interval_start,
+        ),
     ]
 
 
 def test_demand_id_uses_source_movement_and_interval_end() -> None:
     demand_id = build_demand_id(
-        TrafficObservationSource.SYNTHETIC,
-        "MOV_N_E",
-        datetime.fromisoformat("2026-10-14T08:15:00+03:00"),
+        source=TrafficObservationSource.SYNTHETIC,
+        movement_id="MOV_N_E",
+        interval_end=datetime.fromisoformat("2026-10-14T08:15:00+03:00"),
     )
 
     assert demand_id == "DEM_SYN_MOV_N_E_20261014T0815"
@@ -159,9 +191,9 @@ def test_demand_id_uses_source_movement_and_interval_end() -> None:
 
 def test_rcrc_demand_id_uses_rcrc_code() -> None:
     demand_id = build_demand_id(
-        TrafficObservationSource.RCRC,
-        "MOV_N_E",
-        datetime.fromisoformat("2026-10-14T08:15:00+03:00"),
+        source=TrafficObservationSource.RCRC,
+        movement_id="MOV_N_E",
+        interval_end=datetime.fromisoformat("2026-10-14T08:15:00+03:00"),
     )
 
     assert demand_id == "DEM_RCRC_MOV_N_E_20261014T0815"
@@ -173,14 +205,14 @@ def test_same_inputs_give_same_demand_id() -> None:
     )
 
     first = build_demand_id(
-        TrafficObservationSource.SYNTHETIC,
-        "MOV_N_E",
-        interval_end,
+        source=TrafficObservationSource.SYNTHETIC,
+        movement_id="MOV_N_E",
+        interval_end=interval_end,
     )
     second = build_demand_id(
-        TrafficObservationSource.SYNTHETIC,
-        "MOV_N_E",
-        interval_end,
+        source=TrafficObservationSource.SYNTHETIC,
+        movement_id="MOV_N_E",
+        interval_end=interval_end,
     )
 
     assert first == second
@@ -188,8 +220,8 @@ def test_same_inputs_give_same_demand_id() -> None:
 
 def test_usable_detectors_are_summed_into_one_demand() -> None:
     result = transform_observations(
-        make_north_left_observations(),
-        make_valid_config(),
+        observations=make_north_left_observations(),
+        config=make_valid_config(),
     )
 
     assert result.errors == []
@@ -209,8 +241,8 @@ def test_demand_keeps_every_source_observation_id() -> None:
     observations = make_north_left_observations()
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert sorted(result.demands[0].source_observation_ids) == sorted(
@@ -223,9 +255,11 @@ def test_each_interval_gets_its_own_demand() -> None:
     second_start = FIRST_START + timedelta(minutes=15)
 
     result = transform_observations(
-        make_north_left_observations(FIRST_START)
-        + make_north_left_observations(second_start),
-        make_valid_config(),
+        observations=(
+            make_north_left_observations(FIRST_START)
+            + make_north_left_observations(second_start)
+        ),
+        config=make_valid_config(),
     )
 
     assert [
@@ -246,8 +280,8 @@ def test_vehicle_counts_are_conserved() -> None:
         )
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert result.demand_count == 4
@@ -264,8 +298,8 @@ def test_missing_detector_is_reported_and_gets_no_demand() -> None:
     observations = make_north_left_observations()[:2]
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -280,11 +314,11 @@ def test_missing_detector_is_reported_and_gets_no_demand() -> None:
 
 def test_identical_duplicate_is_used_once_and_reported() -> None:
     observations = make_north_left_observations()
-    observations.append(make_observation("4", 10))
+    observations.append(make_observation(detector_id="4", vehicle_count=10))
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert result.demands[0].vehicle_count == 29
@@ -294,11 +328,11 @@ def test_identical_duplicate_is_used_once_and_reported() -> None:
 
 def test_conflicting_duplicate_is_reported_and_gets_no_demand() -> None:
     observations = make_north_left_observations()
-    observations.append(make_observation("4", 14))
+    observations.append(make_observation(detector_id="4", vehicle_count=14))
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -311,8 +345,8 @@ def test_conflicting_duplicate_is_reported_and_gets_no_demand() -> None:
 
 def test_shared_lane_observation_is_reported() -> None:
     result = transform_observations(
-        [make_observation("2", 40)],
-        make_valid_config(),
+        observations=[make_observation(detector_id="2", vehicle_count=40)],
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -320,10 +354,76 @@ def test_shared_lane_observation_is_reported() -> None:
     assert "MOV_W_N, MOV_W_E" in result.errors[0].message
 
 
+def test_movement_with_shared_detector_gets_no_demand() -> None:
+    config = make_valid_config(
+        detector_mappings=[
+            make_detector_mapping(
+                detector_id="1",
+                approach_id="APP_W",
+                movement_ids=["MOV_W_N"],
+                mapping_status="usable",
+            ),
+            make_detector_mapping(
+                detector_id="2",
+                approach_id="APP_W",
+                movement_ids=["MOV_W_N", "MOV_W_E"],
+                mapping_status="requires_allocation",
+            ),
+        ]
+    )
+
+    result = transform_observations(
+        observations=[
+            make_observation(
+                detector_id="1",
+                vehicle_count=30,
+            ),
+            make_observation(
+                detector_id="2",
+                vehicle_count=40,
+            ),
+        ],
+        config=config,
+    )
+
+    assert result.demands == []
+
+    movement_errors = [
+        error
+        for error in result.errors
+        if error.movement_id == "MOV_W_N"
+    ]
+
+    assert len(movement_errors) == 1
+    assert movement_errors[0].message == (
+        "movement also uses shared detector(s) 2; "
+        "no allocation rule adopted"
+    )
+    assert movement_errors[0].observation_ids == (
+        "OBS_SYN_9_1_20261014T0815",
+    )
+
+
+def test_shared_detector_does_not_block_other_movements() -> None:
+    observations = make_north_left_observations()
+    observations.append(make_observation(detector_id="2", vehicle_count=40))
+
+    result = transform_observations(
+        observations=observations,
+        config=make_valid_config(),
+    )
+
+    assert [
+        demand.movement_id
+        for demand in result.demands
+    ] == ["MOV_N_E"]
+    assert result.demands[0].vehicle_count == 29
+
+
 def test_unresolved_observation_is_reported() -> None:
     result = transform_observations(
-        [make_observation("3", 25)],
-        make_valid_config(),
+        observations=[make_observation(detector_id="3", vehicle_count=25)],
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -332,8 +432,8 @@ def test_unresolved_observation_is_reported() -> None:
 
 def test_unmapped_detector_is_reported() -> None:
     result = transform_observations(
-        [make_observation("99", 5)],
-        make_valid_config(),
+        observations=[make_observation(detector_id="99", vehicle_count=5)],
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -343,14 +443,14 @@ def test_unmapped_detector_is_reported() -> None:
 def test_good_observations_still_become_demand_next_to_errors() -> None:
     observations = make_north_left_observations()
     observations += [
-        make_observation("2", 40),
-        make_observation("3", 25),
-        make_observation("99", 5),
+        make_observation(detector_id="2", vehicle_count=40),
+        make_observation(detector_id="3", vehicle_count=25),
+        make_observation(detector_id="99", vehicle_count=5),
     ]
 
     result = transform_observations(
-        observations,
-        make_valid_config(),
+        observations=observations,
+        config=make_valid_config(),
     )
 
     assert result.demand_count == 1
@@ -360,8 +460,8 @@ def test_good_observations_still_become_demand_next_to_errors() -> None:
 
 def test_empty_batch_gives_empty_result() -> None:
     result = transform_observations(
-        [],
-        make_valid_config(),
+        observations=[],
+        config=make_valid_config(),
     )
 
     assert result.demands == []
@@ -374,12 +474,12 @@ def test_detector_mapped_to_unknown_movement_is_rejected() -> None:
         match="unmapped movement",
     ):
         make_valid_config(
-            [
+            detector_mappings=[
                 make_detector_mapping(
-                    "4",
-                    "APP_N",
-                    ["MOV_N_X"],
-                    "usable",
+                    detector_id="4",
+                    approach_id="APP_N",
+                    movement_ids=["MOV_N_X"],
+                    mapping_status="usable",
                 ),
             ]
         )

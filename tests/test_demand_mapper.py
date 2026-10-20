@@ -135,8 +135,8 @@ def test_usable_detector_returns_its_movement() -> None:
     observation = make_observation(detector_id="4")
 
     movement_id = map_observation_to_movement(
-        observation,
-        make_valid_config(),
+        observation=observation,
+        config=make_valid_config(),
     )
 
     assert movement_id == "MOV_N_E"
@@ -146,8 +146,8 @@ def test_matching_detector_mapping_is_found() -> None:
     observation = make_observation(detector_id="2")
 
     mapping = find_detector_mapping(
-        observation,
-        make_valid_config(),
+        observation=observation,
+        config=make_valid_config(),
     )
 
     assert mapping is not None
@@ -158,8 +158,8 @@ def test_unknown_detector_has_no_mapping() -> None:
     observation = make_observation(detector_id="99")
 
     mapping = find_detector_mapping(
-        observation,
-        make_valid_config(),
+        observation=observation,
+        config=make_valid_config(),
     )
 
     assert mapping is None
@@ -173,8 +173,8 @@ def test_unknown_detector_is_rejected() -> None:
         match="detector has no mapping",
     ):
         map_observation_to_movement(
-            observation,
-            make_valid_config(),
+            observation=observation,
+            config=make_valid_config(),
         )
 
 
@@ -189,8 +189,8 @@ def test_same_detector_at_another_site_is_rejected() -> None:
         match="detector has no mapping",
     ):
         map_observation_to_movement(
-            observation,
-            make_valid_config(),
+            observation=observation,
+            config=make_valid_config(),
         )
 
 
@@ -205,8 +205,8 @@ def test_same_detector_from_another_source_is_rejected() -> None:
         match="detector has no mapping",
     ):
         map_observation_to_movement(
-            observation,
-            make_valid_config(),
+            observation=observation,
+            config=make_valid_config(),
         )
 
 
@@ -218,8 +218,8 @@ def test_unresolved_detector_is_rejected() -> None:
         match="detector mapping is unresolved",
     ):
         map_observation_to_movement(
-            observation,
-            make_valid_config(),
+            observation=observation,
+            config=make_valid_config(),
         )
 
 
@@ -231,6 +231,6 @@ def test_shared_lane_detector_is_rejected_with_its_movements() -> None:
         match="detector serves MOV_W_N, MOV_W_E",
     ):
         map_observation_to_movement(
-            observation,
-            make_valid_config(),
+            observation=observation,
+            config=make_valid_config(),
         )

@@ -66,7 +66,7 @@ def build_demand_id(
 
 def find_movement_detectors(
     config: NetworkMappingConfig,
-) -> dict[tuple, set[tuple[str | None, str]]]:
+) -> dict[tuple, set[tuple[str, str]]]:
     """
     Return the usable detectors of each movement, keyed by source and
     movement ID. A movement total needs all of them.
@@ -87,6 +87,31 @@ def find_movement_detectors(
     return movement_detectors
 
 
+def find_shared_detectors(
+    config: NetworkMappingConfig,
+) -> dict[tuple, set[tuple[str, str]]]:
+    """
+    Return the shared-lane detectors of each movement, keyed by source and
+    movement ID. These detectors also count another movement, so the
+    movement total is not known until their counts are split.
+    """
+
+    shared_detectors = defaultdict(set)
+
+    for mapping in config.detector_mappings:
+        if mapping.mapping_status != MappingStatus.REQUIRES_ALLOCATION:
+            continue
+
+        for movement_id in mapping.movement_ids:
+            shared_detectors[
+                (mapping.source, movement_id)
+            ].add(
+                (mapping.site_id, mapping.detector_id)
+            )
+
+    return shared_detectors
+
+
 def transform_observations(
     observations: list[TrafficObservation],
     config: NetworkMappingConfig,
@@ -95,8 +120,9 @@ def transform_observations(
     Turn detector observations into movement demand for each interval.
 
     Usable detectors are summed by movement and interval. Observations
-    that cannot be mapped, and movement intervals with a missing or
-    conflicting detector, are reported instead of becoming demand.
+    that cannot be mapped, and movement intervals with a missing,
+    conflicting or shared-lane detector, are reported instead of
+    becoming demand.
     """
 
     errors: list[DemandTransformationError] = []
@@ -106,8 +132,8 @@ def transform_observations(
     for observation in observations:
         try:
             movement_id = map_observation_to_movement(
-                observation,
-                config,
+                observation=observation,
+                config=config,
             )
 
         except ValueError as exc:
@@ -173,6 +199,7 @@ def transform_observations(
         )
 
     movement_detectors = find_movement_detectors(config)
+    shared_detectors = find_shared_detectors(config)
     demands: list[SimulationDemand] = []
 
     for group_key in sorted(
@@ -191,6 +218,27 @@ def transform_observations(
                 for observation in group.values()
             )
         )
+
+        needed_shared = sorted(
+            detector_id
+            for _, detector_id in shared_detectors[(source, movement_id)]
+        )
+
+        if needed_shared:
+            errors.append(
+                DemandTransformationError(
+                    message=(
+                        "movement also uses shared detector(s) "
+                        + ", ".join(needed_shared)
+                        + "; no allocation rule adopted"
+                    ),
+                    observation_ids=observation_ids,
+                    movement_id=movement_id,
+                    interval_end=interval_end,
+                )
+            )
+
+            continue
 
         missing_detectors = sorted(
             detector_id
@@ -218,9 +266,9 @@ def transform_observations(
         demands.append(
             SimulationDemand(
                 demand_id=build_demand_id(
-                    source,
-                    movement_id,
-                    interval_end,
+                    source=source,
+                    movement_id=movement_id,
+                    interval_end=interval_end,
                 ),
                 interval_start=interval_start,
                 interval_end=interval_end,
