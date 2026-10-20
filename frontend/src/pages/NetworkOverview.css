@@ -1,0 +1,70 @@
+/* The map fills the whole page under the nav bar; the panels float on top of it */
+.network-overview {
+  position: relative;
+  margin: calc(-1 * var(--page-padding));
+  height: calc(100vh - var(--nav-height));
+  min-height: 560px;
+  overflow: hidden;
+}
+
+/* title and intersection picker, top left */
+.network-overview-side {
+  position: absolute;
+  top: var(--space-lg);
+  left: var(--space-lg);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  max-width: 340px;
+}
+
+.network-overview-title h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.network-overview-picker .card-title {
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.network-overview-picker .select-field,
+.network-overview-picker .select-wrap,
+.network-overview-picker .select {
+  width: 100%;
+}
+
+/* Segments / Heatmap, top right */
+.network-overview-view {
+  position: absolute;
+  top: var(--space-lg);
+  right: var(--space-lg);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+}
+
+.network-overview-view .segmented {
+  box-shadow: var(--shadow-float);
+}
+
+/* timeline along the bottom */
+.network-overview-timeline {
+  position: absolute;
+  left: var(--space-lg);
+  right: var(--space-lg);
+  bottom: var(--space-md);
+  z-index: 1;
+}
+
+.network-overview-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 var(--space-xs);
+  background: var(--color-border);
+}

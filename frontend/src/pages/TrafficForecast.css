@@ -1,0 +1,25 @@
+/* Simulation, then KPIs and alerts side by side (same layout as Current Traffic) */
+.traffic-forecast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.traffic-forecast-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.traffic-forecast-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+@media (max-width: 900px) {
+  .traffic-forecast-row {
+    grid-template-columns: 1fr;
+  }
+}
