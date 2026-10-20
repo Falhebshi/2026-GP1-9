@@ -47,7 +47,8 @@ Tests are located under:
 ```text
 tests/
 ├── test_demand_mapper.py
-└── test_demand_service.py
+├── test_demand_service.py
+└── test_demand_integration.py
 ```
 
 Each module has a separate responsibility:
@@ -55,7 +56,7 @@ Each module has a separate responsibility:
 | Module | Responsibility |
 |---|---|
 | `mapper.py` | Finds the detector mapping of one observation and returns its movement ID, or rejects it |
-| `service.py` | Groups mapped observations by movement and interval, builds `SimulationDemand`, and reports everything that could not become demand |
+| `service.py` | Groups mapped observations by movement and interval, builds `SimulationDemand`, and reports everything that could not become demand. Also loads the network mappings for a batch |
 
 This separation keeps the decision for a single observation independent of the batch-level checks.
 
@@ -359,6 +360,32 @@ Observations that can be transformed are kept even when other observations in th
 
 ---
 
+## Using the Transformation
+
+`build_simulation_demand()` loads the network mappings and transforms one batch of observations:
+
+```python
+from backend.demand.service import build_simulation_demand
+
+result = build_simulation_demand(
+    observations=ingestion_result.observations,
+)
+```
+
+By default it reads:
+
+```text
+data/processed/road_network/network_mappings.json
+```
+
+The path is found from the location of `service.py`, so the call works from any working directory. Another mapping file can be given with `mapping_path`.
+
+The mappings are loaded with the one-argument `load_network_mappings()`, which checks the JSON structure and relationships but not the SUMO network.
+
+The function takes a list of `TrafficObservation` rather than an `IngestionResult`, so the transformation does not depend on the ingestion package. Records that ingestion rejected never reach it; they stay in the ingestion errors.
+
+---
+
 ## Separation from SUMO
 
 The transformation package has no dependency on SUMO files.
@@ -401,10 +428,11 @@ Run all transformation tests with:
 ```bash
 python -m pytest -v \
   tests/test_demand_mapper.py \
-  tests/test_demand_service.py
+  tests/test_demand_service.py \
+  tests/test_demand_integration.py
 ```
 
-The tests use small mapping configurations built inside the test files. They do not need the real SUMO network or the real mapping file.
+The mapper and service tests use small mapping configurations built inside the test files. The integration tests use the real mapping file with one observation from each of the 16 synthetic detectors. No test needs the SUMO network.
 
 The tests cover:
 
@@ -421,7 +449,9 @@ The tests cover:
 - identical and conflicting repeated observations;
 - valid observations processed alongside rejected ones;
 - empty batches;
-- rejection of detector mappings that reference unknown movements.
+- rejection of detector mappings that reference unknown movements;
+- the real mappings: demand for the five movements without shared lanes, and the four shared-lane movements held back;
+- every observation either used in demand or reported.
 
 The transformation tests are also included in the full Jaadah project test suite.
 

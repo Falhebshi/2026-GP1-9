@@ -1,8 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from backend.demand.mapper import map_observation_to_movement
+from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.mappings import (
     MappingStatus,
     NetworkMappingConfig,
@@ -12,6 +14,18 @@ from jaadah.models.traffic import (
     SimulationDemandSource,
     TrafficObservation,
     TrafficObservationSource,
+)
+
+
+# Project and mapping paths
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_MAPPING_PATH = (
+    REPO_ROOT
+    / "data"
+    / "processed"
+    / "road_network"
+    / "network_mappings.json"
 )
 
 
@@ -285,4 +299,24 @@ def transform_observations(
     return DemandTransformationResult(
         demands=demands,
         errors=errors,
+    )
+
+
+def build_simulation_demand(
+    observations: list[TrafficObservation],
+    mapping_path: str | Path = DEFAULT_MAPPING_PATH,
+) -> DemandTransformationResult:
+    """
+    Load the network mappings and transform a batch of observations
+    into movement demand.
+
+    The observations are usually the accepted observations of one
+    ingestion batch.
+    """
+
+    config = load_network_mappings(mapping_path)
+
+    return transform_observations(
+        observations=observations,
+        config=config,
     )
