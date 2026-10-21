@@ -41,10 +41,12 @@ jaadah/
     ├── __init__.py
     ├── planner.py
     ├── writer.py
+    ├── checks.py
     └── sumo_demand_tests/
         ├── __init__.py
         ├── test_sumo_demand_planner.py
-        └── test_sumo_demand_writer.py
+        ├── test_sumo_demand_writer.py
+        └── test_sumo_demand_checks.py
 ```
 
 The tests are kept with the module, in `jaadah/sumo_demand/sumo_demand_tests/`.
@@ -55,6 +57,7 @@ Each module has a separate responsibility:
 |---|---|
 | `planner.py` | Builds the run window, checks the demand records and plans every vehicle's departure |
 | `writer.py` | Writes the SUMO route file, the manifest and the demand file, and returns their fingerprints |
+| `checks.py` | Checks the files of a generated folder before a run |
 
 The planner contains no file output, and the writer contains no planning logic.
 
@@ -359,6 +362,34 @@ The result is not stored by itself. The simulation run passes `route_file` to SU
 
 ---
 
+## Validation and Test Run
+
+### File checks
+
+`check_generated_demand(output_dir, mapping, network_path)` reads the three files of a generated folder and confirms that every record has exactly its `vehicle_count` vehicles, that the manifest and route file list the same vehicles, order and departure times, that every vehicle uses its movement's route with the agreed vehicle type and insertion settings, and that every route equals the mapping. It first runs the mapping validator (`validate_network_mappings`) against the network, so every route SUMO receives is legal in the network. All problems are reported together in a `DemandCheckError`.
+
+### SUMO test run
+
+```bash
+python simulation/scripts/tests/run_sumo_demand_check.py
+```
+
+The script generates hand-made demand (20 vehicles per demand movement and interval for an 08:00–09:00 analysis), checks the files and runs SUMO until the end of the clearance. With `--demand`, it uses exported `SimulationDemand` records instead. The run passes when:
+
+| Rule | Measured from |
+|---|---|
+| SUMO reports no errors | SUMO log |
+| Every vehicle enters | Statistics output |
+| Every vehicle due before the end of the analysis period has left the network | Trip output |
+| No teleports and no collisions | Statistics output |
+| At least 95 % of slip-road vehicles cross the stop line in their own interval | Route output with edge exit times |
+
+Insertion delay is reported but not judged. Slip roads are used for the timing rule because they have no signal, so a vehicle's crossing time depends only on its departure and speed; preferred speeds vary by about ±10 %, which is why the rule requires 95 % rather than all vehicles. Results are saved in `simulation/outputs/tests/sumo_demand_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
+
+For example, with seed 42 the study-area run inserts all 1,080 vehicles, 296 of the 300 slip-road vehicles cross in their interval (98.7 %), and the mean insertion delay is 0.1 s.
+
+---
+
 ## Usage
 
 ```python
@@ -370,6 +401,7 @@ from jaadah.sumo_demand.planner import (
     movement_routes,
     plan_departures,
 )
+from jaadah.sumo_demand.checks import check_generated_demand
 from jaadah.sumo_demand.writer import write_sumo_demand
 
 network = "data/processed/road_network/jaadah_study_area.net.xml"
@@ -393,6 +425,7 @@ result = write_sumo_demand(
     mapping,
     output_dir="simulation/outputs/baseline",
 )
+check_generated_demand("simulation/outputs/baseline", mapping, network)
 ```
 
 `demands` are the `SimulationDemand` records for the whole run window, warm-up and clearance included.
@@ -403,8 +436,9 @@ result = write_sumo_demand(
 
 | Test file | Tests | Covers |
 |---|---:|---|
-| `test_sumo_demand_planner.py` | 37 | Run window, exact counts, timing and shift, reproducibility, vehicle IDs, stored fields, invalid records, free-flow times on a small network and on the study-area network |
+| `test_sumo_demand_planner.py` | 38 | Run window, exact counts, timing and shift, reproducibility, vehicle IDs, stored fields, invalid records, stop-line edges and free-flow times on a small network and on the study-area network |
 | `test_sumo_demand_writer.py` | 19 | Route file content, manifest and demand file round trips, fingerprints, file names, line endings, temporary files, invalid input and write failures |
+| `test_sumo_demand_checks.py` | 13 | A correct folder, and each check failing on a deliberately broken file: missing files, counts, departures, routes, demand IDs, vehicle type, insertion settings, order and network validity |
 
 The study-area tests read `data/processed/road_network/network_mappings.json` and `jaadah_study_area.net.xml`, and are skipped when those files are not present.
 
@@ -413,6 +447,8 @@ Run the tests from the repository root:
 ```bash
 python -m pytest jaadah/sumo_demand/sumo_demand_tests
 ```
+
+The SUMO test run is separate from pytest because it needs SUMO (see Validation and Test Run).
 
 ---
 
