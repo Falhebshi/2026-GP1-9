@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import BrandMark from '../components/BrandMark'
 import Button from '../components/Button'
 import intersectionImage from '../assets/login-intersection.jpg'
@@ -15,6 +15,8 @@ import './Login.css'
 // now. To see the error messages, add ?demo=invalid or ?demo=error to the
 // page address.
 
+const CURRENT_YEAR = new Date().getFullYear()
+
 // Where to go after signing in
 const AFTER_LOGIN = '/overview'
 
@@ -24,6 +26,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function Login() {
   const navigate = useNavigate()
+  
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -92,10 +95,10 @@ function Login() {
 
       <main className="login-main">
         <div className="login-panel">
-          <div className="login-brand">
+          <Link to="/" className="login-brand">
             <BrandMark size="md" />
-            Jaadah
-          </div>
+            <span>Jaadah</span>
+          </Link>
 
           <h2 className="login-title">Welcome to Jaadah</h2>
           <p className="login-subtitle">

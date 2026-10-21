@@ -8,6 +8,14 @@
   background: var(--color-surface);
 }
 
+.login-brand {
+  text-decoration: none;
+  color: inherit;
+}
+
+.login-brand:hover {
+  color: var(--color-text);
+}
 /* ---- Left: picture and title -------------------------------------------- */
 
 .login-side {

@@ -58,9 +58,6 @@ function Welcome() {
               <span aria-hidden="true">→</span>
             </Button>
 
-            <p className="welcome-login-note">
-              Access Jaadah with your authorized account.
-            </p>
           </div>
 
           <DesktopPicture />

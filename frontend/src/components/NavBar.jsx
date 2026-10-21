@@ -25,7 +25,7 @@ function NavBar() {
 
   function handleLogout() {
     // Real logout (ending the session) is added when the backend exists.
-    navigate('/login')
+    navigate('/')
   }
 
   return (
