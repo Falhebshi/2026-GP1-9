@@ -12,7 +12,11 @@
   z-index: 100;
 }
 
+/* The logo square and the name, side by side */
 .nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
   font-size: var(--text-lg);
   font-weight: 600;
   color: var(--color-text);

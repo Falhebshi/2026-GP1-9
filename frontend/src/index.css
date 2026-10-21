@@ -35,7 +35,7 @@
   --color-surface: var(--white);         /* cards, nav bar, panels, inputs */
   --color-surface-muted: var(--lavender);/* inner detail boxes, chart tracks */
   --color-border: #dddfec;               /* card and input outlines, dividers */
-  --color-border-strong: #c5c8dc; 
+  --color-border-strong: #c5c8dc;
 
   /* Text */
   --color-text: var(--navy);             /* headings, values, body text */
@@ -58,8 +58,8 @@
   --color-success-text: #1f6b55;
   --color-warning: var(--amber);         /* fills and icons only */
   --color-warning-bg: #fbeed6;
-  --color-warning-text: #8a5a10;         
-  --color-danger: #c8473f;              
+  --color-warning-text: #8a5a10;
+  --color-danger: #c8473f;
   --color-danger-bg: #f9e4e2;
   --color-danger-text: #9e2f28;
 
@@ -102,16 +102,21 @@
   --los-e: var(--blue);
   --los-f: var(--navy);
 
-  /* 3D intersection scene (TrafficScene3D): the sky behind the roads, only seen when the camera
-     tilts. Day is a hazy desert sky; night fades in over it as it gets dark. */
-  --scene-sky-day-1: #b4c4d0;
-  --scene-sky-day-2: #d9dfe2;
-  --scene-sky-day-3: #dcd8ce;
-  --scene-sky-day-4: #c9c2b3;
-  --scene-sky-night-1: #050a18;
-  --scene-sky-night-2: #0c1830;
-  --scene-sky-night-3: #1b2638;
-  --scene-sky-night-4: #232a33;
+  /* Brand (BrandMark, Welcome and Login pages) */
+  --gradient-brand: linear-gradient(135deg, var(--teal), var(--indigo));
+                                         /* the logo square (BrandMark) */
+  --gradient-headline: linear-gradient(90deg, var(--teal), var(--blue) 55%, var(--indigo));
+                                         /* the ombre words in a headline,
+                                            e.g. "before it happens." */
+  --gradient-dark: linear-gradient(135deg, var(--navy), var(--indigo));
+                                         /* a dark highlighted card */
+  --color-device: var(--navy);           /* frame of a drawn screen or monitor */
+
+  /* Steps in order, light to dark (numbered steps, goal icons) */
+  --color-step-1: var(--teal);
+  --color-step-2: var(--blue);
+  --color-step-3: var(--indigo);
+  --color-step-4: var(--navy);
 
   /* ---- 3. SIZES ---------------------------------------------------------- */
 
@@ -135,6 +140,22 @@
   --radius-pill: 999px; /* badges and status pills */
 
   --shadow-float: 0 2px 8px rgba(23, 28, 74, 0.12); /* panels floating on the map */
+  --shadow-raised: 0 24px 48px rgba(23, 28, 74, 0.1); /* large cards that stand
+                                                         off the page */
+  --shadow-device: 0 30px 60px rgba(23, 28, 74, 0.22); /* a drawn monitor */
+
+  --icon-sm: 20px;      /* small icons, small logo square */
+  --icon-md: 28px;      /* logo square on the Login page */
+  --icon-box-sm: 32px;  /* square tile behind an icon */
+  --icon-box-md: 36px;  /* round icon of a numbered step */
+
+  --control-height: 44px; /* form inputs and full-width form buttons */
+
+  --content-narrow: 400px;  /* forms */
+  --content-text: 420px;    /* a paragraph beside a picture */
+  --content-picture: 500px; /* a picture beside text */
+  --content-wide: 560px;    /* a wide paragraph */
+  --content-max: 1080px;    /* widest a centered page column gets */
 
   --nav-height: 64px;
   --page-padding: 32px;
