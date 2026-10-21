@@ -19,7 +19,7 @@ from jaadah.sumo_demand.planner import (
 )
 
 RIYADH = timezone(timedelta(hours=3))
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MAPPING_PATH = PROJECT_ROOT / "data/processed/road_network/network_mappings.json"
 NETWORK_PATH = PROJECT_ROOT / "data/processed/road_network/jaadah_study_area.net.xml"
 
