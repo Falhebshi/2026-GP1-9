@@ -215,21 +215,8 @@ def movement_routes(config: NetworkMappingConfig) -> dict[str, list[str]]:
     }
 
 
-def compute_free_flow_times(
-    config: NetworkMappingConfig,
-    network_path: str | Path,
-) -> dict[str, float]:
-    """
-    Free-flow travel time, in seconds, from the start of each movement's
-    route to its stop line.
-
-    The stop line is the end of the last SUMO segment of the canonical
-    lanes that serve the movement. The time is the sum, over the route
-    edges up to and including that edge, of edge length divided by the
-    edge's highest lane speed limit. Internal junction lanes are not
-    included; they add a few metres. Movements served by no canonical
-    lane (U-turns, ramps, tunnels) have no stop line and are left out.
-    """
+def _read_network_edges(network_path: str | Path):
+    """Length, highest lane speed limit and lanes of every non-internal edge."""
 
     root = ET.parse(network_path).getroot()
     edge_length = {}
@@ -246,33 +233,77 @@ def compute_free_flow_times(
         edge_speed[edge_id] = max(float(lane.get("speed")) for lane in lanes)
         for lane in lanes:
             lane_edge[lane.get("id")] = edge_id
+    return edge_length, edge_speed, lane_edge
 
+
+def stop_line_edges(
+    config: NetworkMappingConfig,
+    network_path: str | Path,
+) -> dict[str, str]:
+    """
+    The SUMO edge that ends at each movement's stop line.
+
+    It is the edge of the last SUMO segment of the canonical lanes that
+    serve the movement; all of a movement's lanes must end on the same
+    edge, and that edge must be on the movement's route. Movements
+    served by no canonical lane (U-turns, ramps, tunnels) have no stop
+    line and are left out.
+    """
+
+    _, _, lane_edge = _read_network_edges(network_path)
     sumo_lanes = {item.lane_id: item.sumo_lane_ids for item in config.lane_mappings}
-    stop_edges: dict[str, set[str]] = {}
+    candidates: dict[str, set[str]] = {}
     for lane in config.approach_lanes:
         if lane.lane_id not in sumo_lanes:
             continue
         stop_edge = lane_edge.get(sumo_lanes[lane.lane_id][-1])
         for movement_id in lane.served_movement_ids:
-            stop_edges.setdefault(movement_id, set()).add(stop_edge)
+            candidates.setdefault(movement_id, set()).add(stop_edge)
 
     problems = []
-    times = {}
+    edges = {}
     routes = movement_routes(config)
-    for movement_id, edges in sorted(stop_edges.items()):
-        if len(edges) != 1 or None in edges:
+    for movement_id, found in sorted(candidates.items()):
+        if len(found) != 1 or None in found:
             problems.append(
                 f"{movement_id}: lanes do not end on one known stop-line edge: "
-                f"{sorted(str(edge) for edge in edges)}"
+                f"{sorted(str(edge) for edge in found)}"
             )
             continue
-        stop_edge = next(iter(edges))
-        route = routes[movement_id]
-        if stop_edge not in route:
+        stop_edge = next(iter(found))
+        if stop_edge not in routes[movement_id]:
             problems.append(
                 f"{movement_id}: stop-line edge {stop_edge} is not on its route"
             )
             continue
+        edges[movement_id] = stop_edge
+
+    if problems:
+        raise DemandPlanningError(problems)
+    return edges
+
+
+def compute_free_flow_times(
+    config: NetworkMappingConfig,
+    network_path: str | Path,
+) -> dict[str, float]:
+    """
+    Free-flow travel time, in seconds, from the start of each movement's
+    route to its stop line.
+
+    The time is the sum, over the route edges up to and including the
+    stop-line edge (stop_line_edges), of edge length divided by the
+    edge's highest lane speed limit. Internal junction lanes are not
+    included; they add a few metres.
+    """
+
+    edge_length, edge_speed, _ = _read_network_edges(network_path)
+    routes = movement_routes(config)
+
+    problems = []
+    times = {}
+    for movement_id, stop_edge in stop_line_edges(config, network_path).items():
+        route = routes[movement_id]
         upstream = route[: route.index(stop_edge) + 1]
         missing = [edge for edge in upstream if edge not in edge_length]
         if missing:

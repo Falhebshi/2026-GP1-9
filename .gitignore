@@ -24,6 +24,7 @@ Thumbs.db
 
 # SUMO demand generation output (regenerated from the demand records and seed)
 /simulation/outputs/baseline*/
+/simulation/outputs/tests/sumo_demand_check/
 
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db

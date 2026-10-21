@@ -15,6 +15,7 @@ from jaadah.sumo_demand.planner import (
     demand_movement_ids,
     plan_departures,
     record_random_generator,
+    stop_line_edges,
     vehicle_id,
 )
 
@@ -398,6 +399,15 @@ def test_free_flow_time_sums_edges_up_to_the_stop_line(tmp_path):
     times = compute_free_flow_times(small_config(), network)
 
     assert times == {"MOV_E_W": 12.0}
+
+
+def test_stop_line_edge_is_the_edge_of_the_last_lane_segment(tmp_path):
+    # LANE_E_1 ends on lane e_stop_1, so MOV_E_W's stop line is the end of
+    # e_stop; the U-turn is served by no lane and has no stop line.
+    network = tmp_path / "small.net.xml"
+    network.write_text(SMALL_NETWORK, encoding="utf-8")
+
+    assert stop_line_edges(small_config(), network) == {"MOV_E_W": "e_stop"}
 
 
 def test_free_flow_rejects_stop_line_edge_not_on_route(tmp_path):
