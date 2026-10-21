@@ -108,7 +108,7 @@ class PlannedDeparture(BaseModel):
     """
     One vehicle to be created in SUMO.
 
-    Stores only the facts M8 creates. The movement and interval are
+    Stores only the facts the planner creates. The movement and interval are
     found through demand_id, and the stop-line time is depart_s plus the
     movement's free-flow time, so neither is stored a second time.
     """
@@ -313,7 +313,7 @@ def vehicle_id(movement_id: str, interval_end: datetime, number: int) -> str:
     vehicle of 08:00-08:15.
 
     The interval is labelled by its end, as in the source records and the
-    M7 demand IDs.
+    SimulationDemand IDs.
     """
 
     return f"{movement_id}__{interval_end:%Y%m%dT%H%M}__{number:03d}"
