@@ -384,7 +384,7 @@ def find_neighbour_detectors(
 
 
 def impute_missing_detectors(
-    observations: list[TrafficObservation],
+    accepted: list[TrafficObservation],
     history: list[TrafficObservation],
     config: NetworkMappingConfig,
     groups: dict,
@@ -394,17 +394,25 @@ def impute_missing_detectors(
     Estimate the counts of usable detectors that did not report in an
     interval of the batch, at a site that did report.
 
+    The estimates are learned from the valid history and the accepted
+    observations of the batch only: rejected and conflicting
+    observations are never used.
+
     Returns the estimates keyed like the movement groups: source,
     movement and interval, then site and detector ID. Shared-lane
     detectors are never estimated.
     """
 
-    history_index = build_history_index(history + observations)
+    history_index = build_history_index(history + accepted)
     known = [
         interval
         for counts in history_index.values()
         for interval in counts
     ]
+
+    if not known:
+        return {}
+
     first_known, last_known = min(known), max(known)
     neighbours = find_neighbour_detectors(config)
 
@@ -582,7 +590,7 @@ def transform_observations(
 
     errors: list[DemandTransformationError] = []
     groups = defaultdict(dict)
-    conflicted_groups = set()
+    conflicted_groups = defaultdict(list)
     shared_groups = defaultdict(dict)
     conflicted_detectors = set()
 
@@ -666,7 +674,7 @@ def transform_observations(
             movement_id=movement_id,
             errors=errors,
         ):
-            conflicted_groups.add(group_key)
+            conflicted_groups[group_key].append(observation)
             conflicted_detectors.add(
                 (
                     observation.source,
@@ -677,9 +685,22 @@ def transform_observations(
                 )
             )
 
+    accepted = [
+        observation
+        for group in list(groups.values()) + list(shared_groups.values())
+        for observation in group.values()
+        if (
+            observation.source,
+            observation.interval_start,
+            observation.interval_end,
+            observation.site_id,
+            observation.detector_id,
+        )
+        not in conflicted_detectors
+    ]
     imputed = (
         impute_missing_detectors(
-            observations=observations,
+            accepted=accepted,
             history=[
                 observation
                 for observation in history
@@ -803,9 +824,6 @@ def transform_observations(
         set(groups) | set(allocated) | set(blocked) | set(imputed),
         key=lambda key: (key[2], key[1], key[0].value),
     ):
-        if group_key in conflicted_groups:
-            continue
-
         source, movement_id, interval_start, interval_end = group_key
         group = groups.get(group_key, {})
         shared_parts = allocated.get(group_key, {})
@@ -818,6 +836,39 @@ def transform_observations(
                 for observation, _ in shared_parts.values()
             ]
         )
+
+        if group_key in conflicted_groups:
+            conflicting = conflicted_groups[group_key]
+
+            errors.append(
+                DemandTransformationError(
+                    message=(
+                        "no demand because detector(s) "
+                        + ", ".join(
+                            sorted(
+                                {
+                                    observation.detector_id
+                                    for observation in conflicting
+                                }
+                            )
+                        )
+                        + " sent different counts"
+                    ),
+                    observation_ids=tuple(
+                        sorted(
+                            set(observation_ids)
+                            | {
+                                observation.observation_id
+                                for observation in conflicting
+                            }
+                        )
+                    ),
+                    movement_id=movement_id,
+                    interval_end=interval_end,
+                )
+            )
+
+            continue
 
         if group_key in blocked:
             reason, shared_observation_id = blocked[group_key]

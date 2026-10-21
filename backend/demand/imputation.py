@@ -53,18 +53,32 @@ def build_history_index(
     """
     Return the past counts of each detector, keyed by source, site and
     detector ID, then by interval start.
+
+    A detector interval with different counts is left out, so the index
+    does not depend on the order of the observations. A repeated
+    identical count is kept once.
     """
 
     index = defaultdict(dict)
+    conflicts = set()
 
     for observation in history:
-        index[
-            (
-                observation.source,
-                observation.site_id,
-                observation.detector_id,
-            )
-        ][observation.interval_start] = observation.vehicle_count
+        detector_key = (
+            observation.source,
+            observation.site_id,
+            observation.detector_id,
+        )
+        counts = index[detector_key]
+        first_count = counts.setdefault(
+            observation.interval_start,
+            observation.vehicle_count,
+        )
+
+        if first_count != observation.vehicle_count:
+            conflicts.add((detector_key, observation.interval_start))
+
+    for detector_key, interval_start in conflicts:
+        del index[detector_key][interval_start]
 
     return index
 

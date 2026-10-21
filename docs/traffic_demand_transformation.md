@@ -359,7 +359,7 @@ MOV_W_N    = 22
 
 ### Marking Allocated Demand
 
-Every demand that contains part of a shared-lane count lists that observation in `allocated_observation_ids`, and its computed `is_allocated` is true (see [Data models](data_models.md), section 1.2). The observation is also in `source_observation_ids`. The KPI engine uses `is_allocated` to label its results *modelled assumption*, even when the source is RCRC.
+Every demand that contains part of a shared-lane count lists that observation in `allocated_observation_ids`, and its computed `is_allocated` is true (see [Data models](data_models.md), section 1.2). The observation is also in `source_observation_ids`. The KPI engine must use `is_allocated` to label its results *modelled assumption*, even when the source is RCRC. This is a requirement for the KPI engine, which does not read these fields yet.
 
 ### Missing or Conflicting Data
 
@@ -405,6 +405,8 @@ There is no single recommended method. The FHWA Traffic Monitoring Guide does no
 
 Estimation needs past observations, passed as `history`. Without history, nothing is estimated and missing detectors are reported as before.
 
+Estimates are learned only from data that passed the checks: history observations with a valid 15-minute interval, and the batch observations that were accepted. Rejected observations and detectors that sent different counts are never used. When the history or the batch holds different counts for the same detector and interval, that interval is left out of the history, so the result does not depend on the order of the observations. When no valid history remains, nothing is estimated.
+
 ### Neighbours First
 
 A detector's neighbours are the other `usable` detectors on the same approach that count the same movement, for example detectors `4`, `5` and `6` of the north left turn.
@@ -442,7 +444,7 @@ Estimates are rounded to whole vehicles and are never negative. An estimated exc
 
 ### Marking Imputed Demand
 
-Every demand that contains an estimated count lists the detector in `imputed_detectors`, with its site, detector ID and method (`neighbour_regression` or `historical_average`), and its computed `is_imputed` is true (see [Data models](data_models.md), section 1.2). A demand whose detectors were all estimated has no source observation IDs. The KPI engine uses `is_imputed` to label its results *modelled assumption*.
+Every demand that contains an estimated count lists the detector in `imputed_detectors`, with its site, detector ID and method (`neighbour_regression` or `historical_average`), and its computed `is_imputed` is true (see [Data models](data_models.md), section 1.2). A demand whose detectors were all estimated has no source observation IDs. The KPI engine must use `is_imputed` to label its results *modelled assumption*. This is a requirement for the KPI engine, which does not read these fields yet.
 
 With synthetic data, the regression lines describe how the synthetic generator relates its detectors, not real drivers. They should be fitted again on RCRC history.
 
@@ -504,7 +506,10 @@ If the reports carry different vehicle counts:
 ```text
 No demand for that movement and interval
 Report: detector sent different counts: 10 and 14
+Report: no demand because detector(s) 4 sent different counts
 ```
+
+The second report is about the movement interval and lists every observation withheld with it, so each observation is still either used or reported.
 
 Different counts cannot both be correct, and choosing one would be a hidden guess. Adding them would count the same vehicles twice.
 
@@ -547,6 +552,7 @@ The possible messages are:
 | `no observation from detector(s) ...` | A detector of the movement did not report |
 | `duplicate observation ignored` | The same count was reported twice |
 | `detector sent different counts: ...` | Two different counts for the same detector and interval |
+| `no demand because detector(s) ... sent different counts` | The movement interval has a detector with different counts; lists all its observations |
 
 Errors about a single observation carry its site and detector. Errors about a movement interval carry the movement ID and all related observation IDs.
 
@@ -674,6 +680,8 @@ The tests cover:
 - every observation either used in demand or reported;
 - estimating a missing detector from its neighbours, using the median, or from its average in the same time slot and day type;
 - the history minimums, the one-hour gap limit, and shared-lane detectors never being estimated;
+- rejected and conflicting observations never used for estimates, in any input order, and history with no valid observation;
+- conflicts reporting every observation withheld with the movement interval;
 - marking imputed demand, including an estimated lane used by the shared-lane split;
 - the full path from the synthetic source through ingestion to demand, with and without a missing detector;
 - refusing intervals that are not 15 minutes on a quarter hour, and observations outside the window;

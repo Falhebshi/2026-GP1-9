@@ -513,3 +513,133 @@ def test_estimated_exclusive_lane_is_used_for_the_split() -> None:
             detector.detector_id
             for detector in demands[movement_id].imputed_detectors
         ] == ["3"]
+
+
+def north_left_demand(result) -> int:
+    """Return the MOV_N_E demand at NOW in a transformation result."""
+
+    return next(
+        demand.vehicle_count
+        for demand in result.demands
+        if demand.movement_id == "MOV_N_E"
+        and demand.interval_start == NOW
+    )
+
+
+def make_rejected_observation() -> TrafficObservation:
+    """Return a 30-minute detector 6 observation, which is rejected."""
+
+    return TrafficObservation(
+        observation_id="OBS_REJECTED",
+        source=TrafficObservationSource.SYNTHETIC,
+        site_id="9",
+        detector_id="6",
+        interval_start=NOW - INTERVAL,
+        interval_end=NOW + INTERVAL,
+        vehicle_count=9999,
+    )
+
+
+def test_rejected_observation_is_not_used_for_estimates() -> None:
+    result = transform_observations(
+        observations=[
+            make_observation(detector_id="4", vehicle_count=16),
+            make_observation(detector_id="5", vehicle_count=15),
+            make_rejected_observation(),
+        ],
+        config=make_config(),
+        history=make_history(days=6),
+    )
+
+    assert north_left_demand(result) == 16 + 15 + (2 * 15 - 3)
+    assert [
+        error.message
+        for error in result.errors
+    ] == ["observation interval must be 15 minutes"]
+
+
+def test_conflicting_batch_counts_are_not_used_in_any_order() -> None:
+    earlier = NOW - INTERVAL
+    current = [
+        make_observation(
+            detector_id="4",
+            vehicle_count=16,
+        ),
+        make_observation(
+            detector_id="5",
+            vehicle_count=15,
+        ),
+        make_observation(
+            detector_id="4",
+            vehicle_count=12,
+            interval_start=earlier,
+        ),
+        make_observation(
+            detector_id="5",
+            vehicle_count=11,
+            interval_start=earlier,
+        ),
+    ]
+    conflicting = [
+        make_observation(
+            detector_id="6",
+            vehicle_count=19,
+            interval_start=earlier,
+        ),
+        make_observation(
+            detector_id="6",
+            vehicle_count=9999,
+            interval_start=earlier,
+        ),
+    ]
+
+    for ordered in (conflicting, conflicting[::-1]):
+        result = transform_observations(
+            observations=current + ordered,
+            config=make_config(),
+            history=make_history(days=6),
+        )
+
+        assert north_left_demand(result) == 16 + 15 + (2 * 15 - 3)
+
+
+def test_conflicting_history_counts_are_not_used_in_any_order() -> None:
+    history = make_history(days=6)
+    conflicting = make_observation(
+        detector_id="6",
+        vehicle_count=9999,
+        interval_start=NOW - INTERVAL,
+    )
+
+    for ordered in (history + [conflicting], [conflicting] + history):
+        result = transform_observations(
+            observations=[
+                make_observation(detector_id="4", vehicle_count=16),
+                make_observation(detector_id="5", vehicle_count=15),
+            ],
+            config=make_config(),
+            history=ordered,
+        )
+
+        assert north_left_demand(result) == 16 + 15 + (2 * 15 - 3)
+
+
+def test_history_without_valid_observations_gives_window_errors() -> None:
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=[make_rejected_observation()],
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+    )
+
+    assert result.demands == []
+    assert [
+        (error.movement_id, error.message)
+        for error in result.errors
+    ] == [
+        ("MOV_N_E", "no observation from detector(s) 4, 5, 6"),
+        ("MOV_W_E", "no observation from detector(s) 2, 3"),
+        ("MOV_W_N", "no observation from detector(s) 1, 2"),
+        ("MOV_W_S_SLIP", "no observation from detector(s) 13"),
+    ]

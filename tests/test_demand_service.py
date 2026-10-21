@@ -338,11 +338,35 @@ def test_conflicting_duplicate_is_reported_and_gets_no_demand() -> None:
     )
 
     assert result.demands == []
-    assert result.error_count == 1
-    assert result.errors[0].message == (
-        "detector sent different counts: 10 and 14"
+    assert [
+        error.message
+        for error in result.errors
+    ] == [
+        "detector sent different counts: 10 and 14",
+        "no demand because detector(s) 4 sent different counts",
+    ]
+    assert result.errors[1].movement_id == "MOV_N_E"
+
+
+def test_conflict_reports_every_withheld_observation() -> None:
+    observations = make_north_left_observations()
+    conflicting = make_observation(
+        detector_id="4",
+        vehicle_count=14,
+    ).model_copy(update={"observation_id": "OBS_CONFLICT"})
+
+    result = transform_observations(
+        observations=observations + [conflicting],
+        config=make_valid_config(),
     )
-    assert result.errors[0].movement_id == "MOV_N_E"
+
+    assert result.demands == []
+    assert result.errors[-1].observation_ids == (
+        "OBS_CONFLICT",
+        "OBS_SYN_9_4_20261014T0815",
+        "OBS_SYN_9_5_20261014T0815",
+        "OBS_SYN_9_6_20261014T0815",
+    )
 
 
 def make_west_config() -> NetworkMappingConfig:
