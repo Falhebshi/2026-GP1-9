@@ -316,3 +316,172 @@ def test_intersection_id_is_not_a_field():
 
     with pytest.raises(ValidationError):
         SimulationDemand(**data)
+
+# ============================================================
+# ALLOCATED OBSERVATION TESTS
+# ============================================================
+
+
+def test_demand_is_not_allocated_by_default():
+    demand = SimulationDemand(**valid_demand_data())
+
+    assert demand.allocated_observation_ids == []
+    assert demand.is_allocated is False
+
+
+def test_demand_with_allocated_observation_is_allocated():
+    data = valid_demand_data()
+    data["source_observation_ids"] = ["OBS_001", "OBS_002"]
+    data["allocated_observation_ids"] = ["OBS_002"]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.allocated_observation_ids == ["OBS_002"]
+    assert demand.is_allocated is True
+
+
+def test_allocated_observation_must_be_a_source_observation():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_999"]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated observations must also be source observations",
+    ):
+        SimulationDemand(**data)
+
+
+def test_empty_allocated_observation_id_is_rejected():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = [" "]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated observation ID must not be empty",
+    ):
+        SimulationDemand(**data)
+
+
+def test_duplicate_allocated_observation_ids_are_rejected():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_001", "OBS_001"]
+
+    with pytest.raises(
+        ValidationError,
+        match="allocated_observation_ids must not contain duplicates",
+    ):
+        SimulationDemand(**data)
+
+
+def test_allocated_observation_id_whitespace_is_removed():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = [" OBS_001 "]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.allocated_observation_ids == ["OBS_001"]
+
+
+def test_is_allocated_appears_in_json_output():
+    data = valid_demand_data()
+    data["allocated_observation_ids"] = ["OBS_001"]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.model_dump()["is_allocated"] is True
+
+
+def test_is_allocated_cannot_be_passed_in():
+    data = valid_demand_data()
+    data["is_allocated"] = True
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
+
+
+# ============================================================
+# IMPUTED DETECTOR TESTS
+# ============================================================
+
+
+def imputed_detector(detector_id: str = "6") -> dict:
+    """Return one imputed detector entry for testing."""
+
+    return {
+        "site_id": "9",
+        "detector_id": detector_id,
+        "method": "neighbour_regression",
+    }
+
+
+def test_demand_is_not_imputed_by_default():
+    demand = SimulationDemand(**valid_demand_data())
+
+    assert demand.imputed_detectors == []
+    assert demand.is_imputed is False
+
+
+def test_demand_with_imputed_detector_is_imputed():
+    data = valid_demand_data()
+    data["imputed_detectors"] = [imputed_detector()]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.is_imputed is True
+    assert demand.imputed_detectors[0].method.value == (
+        "neighbour_regression"
+    )
+
+
+def test_fully_imputed_demand_needs_no_source_observation():
+    data = valid_demand_data()
+    data["source_observation_ids"] = []
+    data["imputed_detectors"] = [imputed_detector()]
+
+    demand = SimulationDemand(**data)
+
+    assert demand.source_observation_ids == []
+
+
+def test_same_imputed_detector_twice_is_rejected():
+    data = valid_demand_data()
+    data["imputed_detectors"] = [imputed_detector(), imputed_detector()]
+
+    with pytest.raises(
+        ValidationError,
+        match="must not contain the same detector twice",
+    ):
+        SimulationDemand(**data)
+
+
+def test_unknown_imputation_method_is_rejected():
+    data = valid_demand_data()
+    data["imputed_detectors"] = [
+        {
+            "site_id": "9",
+            "detector_id": "6",
+            "method": "guess",
+        }
+    ]
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
+
+
+def test_empty_imputed_detector_id_is_rejected():
+    data = valid_demand_data()
+    data["imputed_detectors"] = [imputed_detector(detector_id=" ")]
+
+    with pytest.raises(
+        ValidationError,
+        match="identifier must not be empty",
+    ):
+        SimulationDemand(**data)
+
+
+def test_is_imputed_cannot_be_passed_in():
+    data = valid_demand_data()
+    data["is_imputed"] = True
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
