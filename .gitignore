@@ -18,8 +18,12 @@ Thumbs.db
 
 # SUMO Stress Test v2 generated results
 /simulation/outputs/tests/stress_test_v2/
+
 # Movement Smoke Test generated results
 /simulation/outputs/tests/movement_smoke/
+
+# SUMO demand generation output (regenerated from the demand records and seed)
+/simulation/outputs/baseline*/
 
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db
