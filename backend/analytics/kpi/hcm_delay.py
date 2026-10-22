@@ -7,6 +7,10 @@ Control delay d = d1 + d2 + d3 (HCM 7th edition, Equation 19-18):
 - d2 incremental delay (Equations 19-26 and 19-27),
 - d3 initial queue delay (Equations 19-44 to 19-49).
 
+Uniform delay assumes one green per cycle, shorter than the cycle: a
+lane group whose movements are served in more than one phase, or that
+is green for the whole cycle, has no HCM delay.
+
 The intervals of the analysis period are calculated in order: the
 residual queue at the end of one interval is the initial queue of the
 next (a multiple-period analysis). The first interval starts with no
@@ -36,6 +40,12 @@ ANALYSIS_PERIOD_H = ANALYSIS_INTERVAL_S / 3600
 
 NO_DEMAND_REASON = "no demand in this interval"
 NO_CAPACITY_REASON = "the lane group has no capacity result"
+FULL_CYCLE_GREEN_REASON = (
+    "green for the whole cycle: not a signal-controlled movement"
+)
+MULTIPLE_GREENS_REASON = (
+    "movement served in more than one phase: HCM delay not supported yet"
+)
 CHAIN_BROKEN_REASON = (
     "the initial queue is unknown because an earlier interval of this "
     "lane group has no result"
@@ -117,7 +127,14 @@ def uniform_delay(
     """
     Uniform delay d1 without an initial queue (HCM Equation 19-19):
     PF x 0.5 C (1 - g/C)^2 / (1 - min(1, X) g/C).
+
+    Raises ValueError unless the green is shorter than the cycle: with
+    green for the whole cycle there is no red, and the equation divides
+    by zero.
     """
+
+    if not 0 < green_s < cycle_s:
+        raise ValueError("green_s must be above 0 and shorter than cycle_s")
 
     green_ratio = green_s / cycle_s
 
@@ -298,7 +315,11 @@ def calculate_hcm_delays(
         for group_id, group in capacity.lane_groups.items():
             initial_queue = queues.get(group_id, 0.0)
 
-            if initial_queue is None:
+            if group.status == KpiStatus.OK and group.green_periods > 1:
+                delay = _unavailable(group_id, MULTIPLE_GREENS_REASON)
+            elif group.status == KpiStatus.OK and group.green_s >= program.cycle_length_s:
+                delay = _unavailable(group_id, FULL_CYCLE_GREEN_REASON)
+            elif initial_queue is None:
                 delay = _unavailable(group_id, CHAIN_BROKEN_REASON)
             elif group.status != KpiStatus.OK:
                 delay = _unavailable(group_id, NO_CAPACITY_REASON)

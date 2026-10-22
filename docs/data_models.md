@@ -523,7 +523,7 @@ result.model_dump()
 
 # for storage
 result.model_dump(exclude={"value_computation", "replication_count", "is_shared_value"})
-comparison.model_dump(exclude={"percent_change"})
+comparison.model_dump(exclude={"percent_change", "is_partial_sample"})
 ```
 
 ## 6.9 `KpiComparison`
@@ -534,7 +534,7 @@ The change in one KPI for one element and one interval between a baseline and an
 | --- | --- |
 | What, where, when | `kpi`, `method`, `unit`, `level` and one matching ID, `interval_start`, `interval_end` (same checks and tables as `KpiResult`) |
 | Scenarios | `baseline_scenario_id`, `intervention_scenario_id` (must differ), `replication_set_id` |
-| Pairs | `used_pairs`: the `ReplicationPair`s the change is based on |
+| Pairs | `used_pairs`: the `ReplicationPair`s the change is based on; `pair_count`: the number of pairs in the `ReplicationSet`; computed `is_partial_sample` |
 | Change | `status`, `reason`, `mean_change`, `standard_deviation`, `baseline_mean`; computed `percent_change` |
 | Level of service | `baseline_los_grade`, `intervention_los_grade` |
 | Provenance and slips | `input_origins`, `uncontrolled_movements` |
@@ -544,6 +544,7 @@ The change in one KPI for one element and one interval between a baseline and an
 - **`mean_change` may be negative**, unlike `KpiResult.value`; the intervention mean (`baseline_mean + mean_change`) may not.
 - **`baseline_mean`** is the baseline mean over the used pairs, which can differ from the baseline `KpiResult` when pairs were left out. `percent_change` = 100 × `mean_change` / `baseline_mean`; it is empty when the baseline mean is 0.
 - **Level of service** has no numeric change: an `ok` LOS comparison holds both grades and no numbers.
+- **`pair_count`** is required on simulation comparisons (at least 1, and not fewer than the used pairs) and not allowed on HCM comparisons. **`is_partial_sample`** (computed) is true when a comparison with a value used fewer pairs than `pair_count`: its baseline values can then differ from the baseline scenario's own results, which use all its runs. The dashboard shows it as a tag, e.g. "Based on 2 of 3 matched runs". `pair_count` repeats a fact of the `ReplicationSet` on purpose, so the tag needs no lookup; the KPI engine fills it from the set.
 - Missing values follow section 6.3: without status `ok` there is no change, no grade, no pair, no origin, and a `reason` is required.
 - **Both scenario IDs are stored** (the same exception as `KpiResult.scenario_id`): an HCM comparison has no `ReplicationSet` to look them up from. For simulation comparisons the KPI engine checks that they agree with the set.
 
@@ -581,7 +582,7 @@ Rules that need several objects at once cannot live inside one model, and are ch
 
 ## 7.7 Calculated values are properties, not inputs
 
-Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`,`value_computation`, `is_shared_value`, `percent_change`, `is_allocated`, `is_imputed`.
+Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`,`value_computation`, `is_shared_value`, `percent_change`, `is_partial_sample`, `is_allocated`, `is_imputed`.
 ---
 
 # 8. Why Pydantic Is Used
@@ -765,3 +766,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 20 Oct 2026 (KPI comparison) | Added `KpiComparison` (baseline vs intervention over matched pairs, computed `percent_change`) and `UncontrolledMovements` with `KpiResult.uncontrolled_movements`. Lane-group ID examples updated to the engine's format (`APP_E_LT`); KPI engine location updated to `backend/analytics/kpi/` |
 | 20 Oct 2026 (demand allocation) | Added `SimulationDemand.allocated_observation_ids` (a subset of `source_observation_ids`) and the computed `is_allocated`, marking demand that includes part of a split shared-lane detector count |
 | 20 Oct 2026 (demand imputation) | Added `ImputationMethod`, `ImputedDetector`, `SimulationDemand.imputed_detectors` and the computed `is_imputed`, marking demand that includes an estimated count for a detector that did not report. RCRC and synthetic demand may consist of imputed detectors only |
+| 22 Oct 2026 (KPI comparison review) | Added `KpiComparison.pair_count` and the computed `is_partial_sample`, marking comparisons based on fewer pairs than the replication set holds |

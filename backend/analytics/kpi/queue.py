@@ -68,6 +68,11 @@ def interval_queues(
     return result
 
 
+PERIOD_INCOMPLETE_REASON = (
+    "no cycle records in at least one interval of the analysis period"
+)
+
+
 def period_percentile_queues(
     run_id: str,
     lane_ids: list[str],
@@ -78,7 +83,11 @@ def period_percentile_queues(
     Return the 95th-percentile cycle queue of each lane over the whole
     analysis period (all its intervals together).
 
-    The value is None when a lane has no cycle record in the period.
+    The value is None (unavailable, PERIOD_INCOMPLETE_REASON) when a
+    lane has no cycle record in any one of the intervals: a lane-area
+    detector writes a record every cycle, even with no queue, so a
+    missing interval is missing data, and the percentile of the other
+    intervals would not represent the whole period.
     """
 
     cycles = _cycles_by_lane_and_interval(
@@ -88,15 +97,15 @@ def period_percentile_queues(
     result = {}
 
     for lane_id in lane_ids:
+        if any(not cycles[(lane_id, interval)] for interval in intervals):
+            result[lane_id] = None
+            continue
+
         records = [
             record
             for interval in intervals
             for record in cycles[(lane_id, interval)]
         ]
-
-        if not records:
-            result[lane_id] = None
-            continue
 
         result[lane_id] = LaneQueue(
             length_m=nearest_rank_percentile(

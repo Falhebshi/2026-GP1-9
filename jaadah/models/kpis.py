@@ -678,6 +678,14 @@ class KpiComparison(BaseModel):
     HCM comparisons have no runs: used_pairs and replication_set_id
     are empty, and mean_change is the plain difference.
 
+    pair_count is the number of pairs in the ReplicationSet (simulation
+    comparisons only). When fewer pairs were used, is_partial_sample is
+    true: the comparison's baseline values can then differ from the
+    baseline scenario's own results, which use all its runs. pair_count
+    repeats a fact of the ReplicationSet on purpose, so the dashboard
+    can show "based on 1 of 3 matched runs" without a lookup; the KPI
+    engine fills it from the set.
+
     Level of service is a letter, so it has no change: a comparison of
     LOS holds baseline_los_grade and intervention_los_grade instead.
 
@@ -686,9 +694,10 @@ class KpiComparison(BaseModel):
     them up from. For simulation comparisons the KPI engine checks
     that they agree with the ReplicationSet.
 
-    percent_change is a computed field. For storage, dump with
-    exclude={"percent_change"}; otherwise reloading the dump fails,
-    because extra fields are forbidden.
+    percent_change and is_partial_sample are computed fields. For
+    storage, dump with exclude={"percent_change", "is_partial_sample"};
+    otherwise reloading the dump fails, because extra fields are
+    forbidden.
     """
 
     model_config = ConfigDict(
@@ -715,6 +724,7 @@ class KpiComparison(BaseModel):
     intervention_scenario_id: str
     replication_set_id: str | None = None
     used_pairs: list[ReplicationPair] = Field(default_factory=list)
+    pair_count: int | None = Field(default=None, ge=1)
 
     status: KpiStatus
     reason: str | None = None
@@ -770,6 +780,16 @@ class KpiComparison(BaseModel):
             raise ValueError("input_origins must not contain duplicates")
 
         return values
+
+    @field_validator("pair_count", mode="before")
+    @classmethod
+    def validate_pair_count(cls, value):
+        """Reject booleans being interpreted as a number of pairs."""
+
+        if isinstance(value, bool):
+            raise ValueError("pair_count must be an integer, not a boolean")
+
+        return value
 
     @field_validator("interval_start", "interval_end")
     @classmethod
@@ -859,13 +879,27 @@ class KpiComparison(BaseModel):
                     "simulation comparisons require a replication_set_id"
                 )
 
+            if self.pair_count is None:
+                raise ValueError(
+                    "simulation comparisons require a pair_count"
+                )
+
             if self.status == KpiStatus.OK and not self.used_pairs:
                 raise ValueError(
                     "a simulation comparison with status 'ok' "
                     "requires at least one used pair"
                 )
 
-        elif self.replication_set_id is not None or self.used_pairs:
+            if len(self.used_pairs) > self.pair_count:
+                raise ValueError(
+                    "used_pairs cannot hold more pairs than pair_count"
+                )
+
+        elif (
+            self.replication_set_id is not None
+            or self.used_pairs
+            or self.pair_count is not None
+        ):
             raise ValueError(
                 "HCM comparisons have no replication set or pairs"
             )
@@ -1019,3 +1053,18 @@ class KpiComparison(BaseModel):
             return None
 
         return 100 * self.mean_change / self.baseline_mean
+
+    @computed_field
+    @property
+    def is_partial_sample(self) -> bool:
+        """
+        True when a simulation comparison with a value used fewer pairs
+        than the ReplicationSet holds (the dashboard's "based on 1 of 3
+        matched runs" tag).
+        """
+
+        return (
+            self.status == KpiStatus.OK
+            and self.pair_count is not None
+            and len(self.used_pairs) < self.pair_count
+        )

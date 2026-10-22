@@ -76,7 +76,13 @@ class RunValue(NamedTuple):
 
 
 class KpiSpec(NamedTuple):
-    """What a KpiResult describes; everything except its value."""
+    """
+    What a KpiResult describes; everything except its value.
+
+    A movement value taken from a shared lane names it in
+    measured_on_lane_id (queues), or from a shared lane group in
+    measured_on_lane_group_id (HCM values); at most one of the two.
+    """
 
     kpi: KpiName
     level: KpiLevel
@@ -87,6 +93,7 @@ class KpiSpec(NamedTuple):
     scenario_id: str
     input_origins: list[InputOrigin]
     measured_on_lane_id: str | None = None
+    measured_on_lane_group_id: str | None = None
     uncontrolled_movements: UncontrolledMovements | None = None
 
 
@@ -288,6 +295,7 @@ def _result(
         level=spec.level,
         **_element_fields(spec.level, spec.element_id),
         measured_on_lane_id=spec.measured_on_lane_id if ok else None,
+        measured_on_lane_group_id=spec.measured_on_lane_group_id if ok else None,
         uncontrolled_movements=spec.uncontrolled_movements if ok else None,
         interval_start=spec.interval.start,
         interval_end=spec.interval.end,
@@ -541,6 +549,14 @@ def compare_runs(
     if spec.method != KpiMethod.SIMULATION:
         raise ValueError("compare_runs is for simulation results")
 
+    _check_labels(
+        spec,
+        replication_set.baseline_scenario_id,
+        replication_set.intervention_scenario_id,
+        replication_set.replication_set_id,
+        "set",
+    )
+
     pairs = replication_set.pairs
 
     for pair in pairs:
@@ -559,6 +575,7 @@ def compare_runs(
             spec,
             KpiStatus.UNAVAILABLE,
             reason=f"unavailable in {len(unavailable)} of {len(pairs)} pairs",
+            pair_count=len(pairs),
         )
 
     used = [
@@ -569,7 +586,12 @@ def compare_runs(
     ]
 
     if not used:
-        return _comparison(spec, KpiStatus.NOT_APPLICABLE, reason=NO_PAIR_VALUE_REASON)
+        return _comparison(
+            spec,
+            KpiStatus.NOT_APPLICABLE,
+            reason=NO_PAIR_VALUE_REASON,
+            pair_count=len(pairs),
+        )
 
     differences = [
         intervention[p.intervention_run_id].value - baseline[p.baseline_run_id].value
@@ -580,6 +602,7 @@ def compare_runs(
         spec,
         KpiStatus.OK,
         used_pairs=used,
+        pair_count=len(pairs),
         mean_change=statistics.fmean(differences),
         standard_deviation=statistics.stdev(differences) if len(used) > 1 else None,
         baseline_mean=statistics.fmean(baseline[p.baseline_run_id].value for p in used),
@@ -614,15 +637,70 @@ def compare_single(
 
 def compare_level_of_service(
     spec: ComparisonSpec,
-    baseline: KpiResult,
-    intervention: KpiResult,
-    replication_set: ReplicationSet | None = None,
+    delay: KpiComparison,
 ) -> KpiComparison:
     """
-    Compare two level-of-service results: the two grades, e.g. D -> C.
-    For simulation results the used pairs are those whose runs are in
-    both results.
+    Compare simulation-based level of service, graded from the delay
+    comparison of the same element and interval (section 12.4): the
+    baseline grade from its baseline mean, the intervention grade from
+    baseline mean + change. Both grades therefore come from the same
+    matched pairs as the delay change and never contradict it.
     """
+
+    if spec.method != KpiMethod.SIMULATION or spec.kpi != KpiName.LEVEL_OF_SERVICE:
+        raise ValueError("compare_level_of_service is for simulation level of service")
+
+    if (
+        delay.kpi != KpiName.CONTROL_DELAY
+        or delay.method != KpiMethod.SIMULATION
+        or delay.level != spec.level
+        or getattr(delay, f"{spec.level.value}_id") != spec.element_id
+        or (delay.interval_start, delay.interval_end) != (spec.interval.start, spec.interval.end)
+    ):
+        raise ValueError(
+            "the delay comparison must be the simulation control delay "
+            "of the same element and interval"
+        )
+
+    _check_labels(
+        spec,
+        delay.baseline_scenario_id,
+        delay.intervention_scenario_id,
+        delay.replication_set_id,
+        "delay comparison",
+    )
+
+    if delay.status != KpiStatus.OK:
+        return _comparison(
+            spec, delay.status, reason=delay.reason, pair_count=delay.pair_count
+        )
+
+    intervention_mean = max(0.0, delay.baseline_mean + delay.mean_change)
+
+    return _comparison(
+        spec,
+        KpiStatus.OK,
+        used_pairs=delay.used_pairs,
+        pair_count=delay.pair_count,
+        baseline_los_grade=level_of_service(delay.baseline_mean),
+        intervention_los_grade=level_of_service(intervention_mean),
+    )
+
+
+def compare_hcm_level_of_service(
+    spec: ComparisonSpec,
+    baseline: KpiResult,
+    intervention: KpiResult,
+) -> KpiComparison:
+    """
+    Compare two HCM level-of-service results: the two grades, e.g.
+    D -> C. HCM results have no runs, so both grades are kept as
+    graded (including the v/c > 1 override at lane-group and movement
+    level).
+    """
+
+    if spec.method != KpiMethod.HCM or spec.kpi != KpiName.LEVEL_OF_SERVICE:
+        raise ValueError("compare_hcm_level_of_service is for HCM level of service")
 
     statuses = (baseline.status, intervention.status)
 
@@ -632,28 +710,39 @@ def compare_level_of_service(
     if statuses != (KpiStatus.OK, KpiStatus.OK):
         return _comparison(spec, KpiStatus.NOT_APPLICABLE, reason=NO_PAIR_VALUE_REASON)
 
-    used = []
-
-    if spec.method == KpiMethod.SIMULATION:
-        used = [
-            pair
-            for pair in replication_set.pairs
-            if pair.baseline_run_id in baseline.run_ids
-            and pair.intervention_run_id in intervention.run_ids
-        ]
-
-        if not used:
-            return _comparison(
-                spec, KpiStatus.NOT_APPLICABLE, reason=NO_PAIR_VALUE_REASON
-            )
-
     return _comparison(
         spec,
         KpiStatus.OK,
-        used_pairs=used,
         baseline_los_grade=baseline.los_grade,
         intervention_los_grade=intervention.los_grade,
     )
+
+
+def _check_labels(
+    spec: ComparisonSpec,
+    baseline_scenario_id: str,
+    intervention_scenario_id: str,
+    replication_set_id: str | None,
+    source: str,
+) -> None:
+    """
+    Raise ValueError unless the spec's scenario and replication-set IDs
+    are those of the data the comparison is calculated from, so a
+    result can never carry the labels of another experiment.
+    """
+
+    mismatches = [
+        f"{name}: spec says {expected}, {source} is {actual}"
+        for name, expected, actual in (
+            ("baseline_scenario_id", spec.baseline_scenario_id, baseline_scenario_id),
+            ("intervention_scenario_id", spec.intervention_scenario_id, intervention_scenario_id),
+            ("replication_set_id", spec.replication_set_id, replication_set_id),
+        )
+        if expected != actual
+    ]
+
+    if mismatches:
+        raise ValueError("labels do not match: " + "; ".join(mismatches))
 
 
 def _comparison(
@@ -661,6 +750,7 @@ def _comparison(
     status: KpiStatus,
     reason: str | None = None,
     used_pairs: list[ReplicationPair] | None = None,
+    pair_count: int | None = None,
     **values,
 ) -> KpiComparison:
     ok = status == KpiStatus.OK
@@ -677,6 +767,7 @@ def _comparison(
         intervention_scenario_id=spec.intervention_scenario_id,
         replication_set_id=spec.replication_set_id,
         used_pairs=used_pairs or [],
+        pair_count=pair_count,
         status=status,
         reason=reason,
         input_origins=spec.input_origins if ok else [],

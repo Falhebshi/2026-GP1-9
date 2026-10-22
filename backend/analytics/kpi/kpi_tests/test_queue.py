@@ -8,6 +8,7 @@ from backend.analytics.kpi.queue import (
     LaneQueue,
     interval_queues,
     nearest_rank_percentile,
+    PERIOD_INCOMPLETE_REASON,
     period_percentile_queues,
     storage_ratio,
 )
@@ -193,6 +194,7 @@ def test_percentile_ignores_warmup_and_clearance_cycles():
     queues = per_period([
         cycle(at(7, 58), 500.0, 70),
         cycle(at(8, 0), 20.0, 3),
+        cycle(at(8, 16), 10.0, 2),
         cycle(at(8, 30), 500.0, 70),
     ])
 
@@ -203,6 +205,36 @@ def test_percentile_for_lane_without_records_is_missing():
     queues = per_period([cycle(at(8, 0), 20.0, 3)])
 
     assert queues["LANE_E_1"] is None
+
+
+def test_percentile_with_a_missing_interval_is_missing():
+    """
+    LANE_E_2 has cycles from 08:00 to 08:14 only; 08:15-08:30 is
+    missing. The percentile of the first interval alone would look like
+    a whole-period value, so the period value is unavailable.
+    """
+
+    records = [
+        cycle(at(8, 0) + timedelta(minutes=2 * index), 30.0, 4)
+        for index in range(7)
+    ]
+
+    queues = per_period(records)
+
+    assert queues["LANE_E_2"] is None
+    assert per_interval(records)[("LANE_E_2", INTERVALS[0])] == LaneQueue(30.0, 4)
+
+
+def test_every_interval_with_records_gives_a_percentile():
+    queues = per_period([cycle(at(8, 0), 20.0, 3), cycle(at(8, 16), 10.0, 2)])
+
+    assert queues["LANE_E_2"] == LaneQueue(20.0, 3)
+
+
+def test_period_incomplete_reason():
+    assert PERIOD_INCOMPLETE_REASON == (
+        "no cycle records in at least one interval of the analysis period"
+    )
 
 
 def test_queue_percentile_constant():

@@ -33,6 +33,7 @@ def comparison_data(**overrides):
         "intervention_scenario_id": "SCN_INT",
         "replication_set_id": "RS_1",
         "used_pairs": PAIRS,
+        "pair_count": 3,
         "status": "ok",
         "mean_change": -5.0,
         "standard_deviation": 1.0,
@@ -62,6 +63,7 @@ def hcm_data(**overrides):
         method="hcm",
         replication_set_id=None,
         used_pairs=[],
+        pair_count=None,
         mean_change=-0.12,
         standard_deviation=None,
         baseline_mean=0.95,
@@ -310,21 +312,74 @@ def test_non_riyadh_time_rejected():
         )
 
 
-def test_extra_fields_rejected():
+@pytest.mark.parametrize("field", ["percent_change", "is_partial_sample"])
+def test_computed_fields_cannot_be_passed_in(field):
     with pytest.raises(ValidationError):
-        KpiComparison(**comparison_data(percent_change=-10.0))
+        KpiComparison(**comparison_data(**{field: True}))
 
 
 # ============================================================
 # STORAGE
 # ============================================================
 
+COMPUTED_FIELDS = {"percent_change", "is_partial_sample"}
+
+
 def test_storage_round_trip_without_percent_change():
     original = KpiComparison(**comparison_data())
-    reloaded = KpiComparison(**original.model_dump(exclude={"percent_change"}))
+    reloaded = KpiComparison(**original.model_dump(exclude=COMPUTED_FIELDS))
 
     assert reloaded == original
 
 
 def test_percent_change_appears_in_dump():
     assert KpiComparison(**comparison_data()).model_dump()["percent_change"] == pytest.approx(-10.0)
+
+
+# ============================================================
+# PAIR COUNT AND THE PARTIAL-SAMPLE TAG (PR #33 review)
+# ============================================================
+
+def test_all_pairs_used_is_not_partial():
+    assert KpiComparison(**comparison_data()).is_partial_sample is False
+
+
+def test_fewer_pairs_used_is_partial():
+    """Based on 2 of 3 matched runs."""
+
+    result = KpiComparison(**comparison_data(used_pairs=PAIRS[:2]))
+
+    assert result.is_partial_sample is True
+
+
+def test_comparison_without_value_is_never_partial():
+    result = KpiComparison(**comparison_data(status="unavailable", reason="x"))
+
+    assert result.is_partial_sample is False
+
+
+def test_simulation_comparison_requires_pair_count():
+    with pytest.raises(ValidationError, match="require a pair_count"):
+        KpiComparison(**comparison_data(pair_count=None))
+
+
+def test_more_used_pairs_than_pair_count_rejected():
+    with pytest.raises(ValidationError, match="more pairs than pair_count"):
+        KpiComparison(**comparison_data(pair_count=2))
+
+
+def test_hcm_comparison_cannot_have_pair_count():
+    with pytest.raises(ValidationError, match="no replication set or pairs"):
+        KpiComparison(**hcm_data(pair_count=3))
+
+
+@pytest.mark.parametrize("bad_value", [True, 0])
+def test_invalid_pair_count_rejected(bad_value):
+    with pytest.raises(ValidationError):
+        KpiComparison(**comparison_data(pair_count=bad_value))
+
+
+def test_partial_tag_appears_in_dump():
+    dumped = KpiComparison(**comparison_data(used_pairs=PAIRS[:2])).model_dump()
+
+    assert dumped["is_partial_sample"] is True

@@ -12,6 +12,7 @@ from backend.analytics.kpi.comparison import (
     check_replication_set,
     combine_runs,
     combined_origins,
+    compare_hcm_level_of_service,
     compare_level_of_service,
     compare_runs,
     compare_single,
@@ -27,6 +28,7 @@ from jaadah.models.kpis import (
     KpiLevel,
     KpiMethod,
     KpiName,
+    KpiResult,
     KpiStatus,
     KpiUnit,
     LevelOfServiceGrade,
@@ -627,21 +629,203 @@ def test_wrong_method_rejected():
         compare_single(comparison_spec(), ok(1), ok(2))
 
 
-def test_level_of_service_comparison_shows_both_grades():
-    los_spec = delay_spec(kpi=KpiName.LEVEL_OF_SERVICE, unit=KpiUnit.GRADE)
-    baseline = measured_level_of_service(
-        los_spec, combine_runs(delay_spec(), {"B1": ok(40), "B2": ok(50), "B3": ok(60)})
-    )
-    intervention = measured_level_of_service(
-        los_spec._replace(scenario_id="SCN_INT"),
-        combine_runs(
-            delay_spec(scenario_id="SCN_INT"), {"I1": ok(20), "I2": ok(25), "I3": ok(30)}
-        ),
-    )
+def test_full_sample_has_no_partial_tag():
+    result = compare_runs(comparison_spec(), SET, BASELINE, INTERVENTION)
 
-    spec = comparison_spec(kpi=KpiName.LEVEL_OF_SERVICE, unit=KpiUnit.GRADE)
-    result = compare_level_of_service(spec, baseline, intervention, SET)
+    assert result.pair_count == 3
+    assert result.is_partial_sample is False
+
+
+def test_skipped_pair_sets_the_partial_tag():
+    """Based on 2 of 3 matched runs: may differ from the scenario's own values."""
+
+    baseline = {**BASELINE, "B3": RunValue(NA, None, "no arrivals")}
+
+    result = compare_runs(comparison_spec(), SET, baseline, INTERVENTION)
+
+    assert result.pair_count == 3
+    assert len(result.used_pairs) == 2
+    assert result.is_partial_sample is True
+
+
+def test_unavailable_comparison_keeps_the_pair_count_but_no_tag():
+    intervention = {**INTERVENTION, "I2": RunValue(UNAVAILABLE, None)}
+
+    result = compare_runs(comparison_spec(), SET, BASELINE, intervention)
+
+    assert result.pair_count == 3
+    assert result.is_partial_sample is False
+
+
+def los_spec_for_comparison():
+    return comparison_spec(kpi=KpiName.LEVEL_OF_SERVICE, unit=KpiUnit.GRADE)
+
+
+def test_level_of_service_comparison_shows_both_grades():
+    """40/50/60 -> 35/44/56 s: mean 50 -> 45 s, LOS D -> D."""
+
+    delay = compare_runs(comparison_spec(), SET, BASELINE, INTERVENTION)
+
+    result = compare_level_of_service(los_spec_for_comparison(), delay)
 
     assert result.baseline_los_grade == LevelOfServiceGrade.D
-    assert result.intervention_los_grade == LevelOfServiceGrade.C
+    assert result.intervention_los_grade == LevelOfServiceGrade.D
     assert len(result.used_pairs) == 3
+    assert result.is_partial_sample is False
+
+
+def test_level_of_service_follows_the_matched_pairs():
+    """
+    The reviewer's example: baseline 10, 100, NA; intervention 20, NA,
+    NA. Only pair 1 is matched, so the delay goes 10 -> 20 s (worse) and
+    the LOS A -> B (worse too). Grading the baseline from all its runs
+    (mean 55 s, LOS D) would have shown D -> B, an apparent improvement.
+    """
+
+    baseline = {"B1": ok(10), "B2": ok(100), "B3": RunValue(NA, None)}
+    intervention = {"I1": ok(20), "I2": RunValue(NA, None), "I3": RunValue(NA, None)}
+
+    delay = compare_runs(comparison_spec(), SET, baseline, intervention)
+    result = compare_level_of_service(los_spec_for_comparison(), delay)
+
+    assert delay.mean_change == pytest.approx(10)
+    assert result.baseline_los_grade == LevelOfServiceGrade.A
+    assert result.intervention_los_grade == LevelOfServiceGrade.B
+    assert [p.baseline_run_id for p in result.used_pairs] == ["B1"]
+    assert result.is_partial_sample is True
+
+
+def test_level_of_service_without_delay_change_follows_its_status():
+    intervention = {**INTERVENTION, "I2": RunValue(UNAVAILABLE, None)}
+    delay = compare_runs(comparison_spec(), SET, BASELINE, intervention)
+
+    result = compare_level_of_service(los_spec_for_comparison(), delay)
+
+    assert result.status == UNAVAILABLE
+    assert result.reason == "unavailable in 1 of 3 pairs"
+
+
+def test_level_of_service_needs_the_matching_delay_comparison():
+    other_element = compare_runs(
+        comparison_spec(element_id="MOV_E_L"), SET, BASELINE, INTERVENTION
+    )
+
+    with pytest.raises(ValueError, match="same element and interval"):
+        compare_level_of_service(los_spec_for_comparison(), other_element)
+
+
+def hcm_los(scenario_id, grade):
+    """An HCM level-of-service result for East through (no runs)."""
+
+    return KpiResult(
+        kpi="level_of_service",
+        level="movement",
+        movement_id="MOV_E_T",
+        interval_start=INTERVAL.start,
+        interval_end=INTERVAL.end,
+        los_grade=grade,
+        unit="grade",
+        status="ok",
+        method="hcm",
+        input_origins=["modelled_assumption"],
+        scenario_id=scenario_id,
+    )
+
+
+def test_hcm_level_of_service_keeps_both_grades():
+    """HCM has no runs, so nothing is left out: the grades are kept."""
+
+    spec = comparison_spec(
+        kpi=KpiName.LEVEL_OF_SERVICE,
+        unit=KpiUnit.GRADE,
+        method=KpiMethod.HCM,
+        replication_set_id=None,
+        input_origins=[InputOrigin.MODELLED_ASSUMPTION],
+    )
+
+    result = compare_hcm_level_of_service(spec, hcm_los("SCN_BASE", "E"), hcm_los("SCN_INT", "C"))
+
+    assert result.baseline_los_grade == LevelOfServiceGrade.E
+    assert result.intervention_los_grade == LevelOfServiceGrade.C
+    assert result.used_pairs == []
+    assert result.pair_count is None
+    assert result.is_partial_sample is False
+
+
+# ============================================================
+# LABELS MATCH THE DATA (PR #33 review)
+# ============================================================
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"baseline_scenario_id": "SCN_OTHER"}, "baseline_scenario_id: spec says SCN_OTHER, set is SCN_BASE"),
+        ({"intervention_scenario_id": "SCN_OTHER"}, "intervention_scenario_id: spec says SCN_OTHER, set is SCN_INT"),
+        ({"replication_set_id": "RS_9"}, "replication_set_id: spec says RS_9, set is RS_1"),
+    ],
+)
+def test_spec_labels_must_match_the_set(overrides, message):
+    """Otherwise RS_1's runs could be saved under another experiment's names."""
+
+    with pytest.raises(ValueError, match=message):
+        compare_runs(comparison_spec(**overrides), SET, BASELINE, INTERVENTION)
+
+
+def test_level_of_service_labels_must_match_the_delay_comparison():
+    delay = compare_runs(comparison_spec(), SET, BASELINE, INTERVENTION)
+    spec = comparison_spec(
+        kpi=KpiName.LEVEL_OF_SERVICE, unit=KpiUnit.GRADE, replication_set_id="RS_9"
+    )
+
+    with pytest.raises(ValueError, match="delay comparison is RS_1"):
+        compare_level_of_service(spec, delay)
+
+
+# ============================================================
+# SHARED LANE GROUP ON HCM MOVEMENT VALUES (PR #33 review)
+# ============================================================
+
+def hcm_capacity_spec(**overrides):
+    """HCM capacity of East left, which partly uses the shared group APP_E_LT."""
+
+    values = dict(
+        kpi=KpiName.CAPACITY,
+        level=KpiLevel.MOVEMENT,
+        element_id="MOV_E_L",
+        unit=KpiUnit.VEHICLES_PER_HOUR,
+        method=KpiMethod.HCM,
+        interval=INTERVAL,
+        scenario_id="SCN_BASE",
+        input_origins=[InputOrigin.MODELLED_ASSUMPTION],
+        measured_on_lane_group_id="APP_E_LT",
+    )
+    values.update(overrides)
+    return KpiSpec(**values)
+
+
+def test_shared_lane_group_reaches_the_result():
+    result = single_result(hcm_capacity_spec(), OK, 410.0)
+
+    assert result.measured_on_lane_group_id == "APP_E_LT"
+    assert result.is_shared_value is True
+
+
+def test_movement_without_shared_group_has_no_tag():
+    result = single_result(hcm_capacity_spec(measured_on_lane_group_id=None), OK, 410.0)
+
+    assert result.is_shared_value is False
+
+
+def test_shared_lane_group_dropped_without_a_value():
+    result = single_result(hcm_capacity_spec(), UNAVAILABLE, None, reason="no capacity")
+
+    assert result.measured_on_lane_group_id is None
+
+
+def test_lane_and_lane_group_together_rejected():
+    """A value is measured on a lane or on a lane group, not both."""
+
+    spec = hcm_capacity_spec(measured_on_lane_id="LANE_E_2")
+
+    with pytest.raises(ValueError, match="not both"):
+        single_result(spec, OK, 410.0)

@@ -500,6 +500,10 @@ SPLIT_PHASES_REASON = (
     "shared lane whose movements are served in different phases "
     "is not supported"
 )
+MULTIPLE_GREENS_CRITICAL_REASON = (
+    "a movement served in more than one phase would be counted once per "
+    "phase: not supported yet"
+)
 MISSING_DEMAND_REASON = "no demand for a movement of this approach"
 NO_DEMAND_REASON = "no demand in this interval"
 LANE_GROUP_UNAVAILABLE_REASON = (
@@ -511,7 +515,13 @@ INTERSECTION_UNAVAILABLE_REASON = (
 
 
 class LaneGroupCapacity(NamedTuple):
-    """HCM results of one lane group in one interval."""
+    """
+    HCM results of one lane group in one interval.
+
+    green_periods is the number of phases that serve the lane group's
+    movements. Capacity adds the effective greens of all of them; the
+    HCM delay supports one green per cycle only (section 9.5).
+    """
 
     lane_group_id: str
     status: KpiStatus
@@ -521,6 +531,7 @@ class LaneGroupCapacity(NamedTuple):
     green_s: float | None
     capacity_veh_h: float | None
     volume_to_capacity: float | None
+    green_periods: int = 1
 
     @property
     def flow_ratio(self) -> float | None:
@@ -660,7 +671,7 @@ def _group_capacity(
 
     green = lane_group_green(group, program)
 
-    if green is None:
+    if green is None or _split_by_a_phase(group, program):
         return _unavailable_group(group, SPLIT_PHASES_REASON)
 
     demand = distribution.group_flows[group.lane_group_id]
@@ -676,6 +687,7 @@ def _group_capacity(
         green_s=green,
         capacity_veh_h=capacity,
         volume_to_capacity=demand / capacity,
+        green_periods=len(_serving_phases(group, program)),
     )
 
 
@@ -686,16 +698,37 @@ def lane_group_green(group: LaneGroup, program: SignalProgram) -> float | None:
     all of them.
     """
 
-    phases = [
-        phase
-        for phase in program.phases
-        if group.movement_ids <= set(phase.served_movement_ids)
-    ]
+    phases = _serving_phases(group, program)
 
     if not phases:
         return None
 
     return sum(effective_green(phase) for phase in phases)
+
+
+def _serving_phases(group: LaneGroup, program: SignalProgram) -> list[SignalPhase]:
+    """The phases that serve all of a lane group's movements."""
+
+    return [
+        phase
+        for phase in program.phases
+        if group.movement_ids <= set(phase.served_movement_ids)
+    ]
+
+
+def _split_by_a_phase(group: LaneGroup, program: SignalProgram) -> bool:
+    """
+    True when a phase serves some, but not all, of a lane group's
+    movements: e.g. a shared left-through lane with an extra phase for
+    the through only. Its traffic then also moves in that phase, which
+    the lane group's green does not include.
+    """
+
+    return any(
+        group.movement_ids & set(phase.served_movement_ids)
+        and not group.movement_ids <= set(phase.served_movement_ids)
+        for phase in program.phases
+    )
 
 
 def effective_green(phase: SignalPhase) -> float:
@@ -839,6 +872,9 @@ def _critical_volume_to_capacity(
 
     if any(r.status != KpiStatus.OK for r in group_results.values()):
         return None, KpiStatus.UNAVAILABLE, INTERSECTION_UNAVAILABLE_REASON
+
+    if any(r.green_periods > 1 for r in group_results.values()):
+        return None, KpiStatus.UNAVAILABLE, MULTIPLE_GREENS_CRITICAL_REASON
 
     total_critical = 0.0
 

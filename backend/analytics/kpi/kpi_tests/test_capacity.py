@@ -3,6 +3,7 @@ import pytest
 from backend.analytics.kpi import capacity
 from backend.analytics.kpi.capacity import (
     MISSING_DEMAND_REASON,
+    MULTIPLE_GREENS_CRITICAL_REASON,
     NO_DEMAND_REASON,
     PERMITTED_LEFT_REASON,
     SPLIT_PHASES_REASON,
@@ -643,3 +644,92 @@ def test_shared_lane_split_over_phases_is_unavailable():
 )
 def test_signal_timing_origin(source, expected):
     assert signal_timing_origin(program(source=source)) == expected
+
+
+# ============================================================
+# MOVEMENTS SERVED IN MORE THAN ONE PHASE (PR #33 review)
+# ============================================================
+
+def two_greens_for_north():
+    """North left gets 5 s twice (phases 2 and 5); C stays 120 s."""
+
+    return program(
+        phases=[
+            phase("P_E", 0, ["MOV_E_L", "MOV_E_T"], 40),
+            phase("P_N1", 1, ["MOV_N_L"], 5),
+            phase("P_W", 2, ["MOV_W_L", "MOV_W_T"], 30),
+            phase("P_S", 3, ["MOV_S_T"], 15),
+            phase("P_N2", 4, ["MOV_N_L"], 5),
+        ]
+    )
+
+
+def through_only_phase_for_east():
+    """East left + through for 30 s, then East through alone for 5 s."""
+
+    return program(
+        phases=[
+            phase("P_E", 0, ["MOV_E_L", "MOV_E_T"], 30),
+            phase("P_ET", 1, ["MOV_E_T"], 5),
+            phase("P_N", 2, ["MOV_N_L"], 15),
+            phase("P_W", 3, ["MOV_W_L", "MOV_W_T"], 30),
+            phase("P_S", 4, ["MOV_S_T"], 15),
+        ]
+    )
+
+
+def test_baseline_has_one_green_per_lane_group():
+    assert all(g.green_periods == 1 for g in results().lane_groups.values())
+
+
+def test_two_greens_keep_capacity():
+    """c = s x (g1 + g2) / C is correct for capacity."""
+
+    north = results(signal_program=two_greens_for_north()).lane_groups["APP_N_L"]
+
+    assert north.status == KpiStatus.OK
+    assert north.green_periods == 2
+    assert north.green_s == pytest.approx(5 + 5)
+    assert north.capacity_veh_h == pytest.approx(north.saturation_flow_veh_h * 10 / 120)
+
+
+def test_two_greens_make_critical_ratio_unavailable():
+    """North's demand would be counted in both of its phases."""
+
+    result = results(signal_program=two_greens_for_north())
+
+    assert result.critical_status == KpiStatus.UNAVAILABLE
+    assert result.critical_reason == MULTIPLE_GREENS_CRITICAL_REASON
+    assert result.critical_volume_to_capacity is None
+
+
+def test_two_greens_leave_other_groups_alone():
+    result = results(signal_program=two_greens_for_north())
+
+    assert result.lane_groups["APP_E_T"].status == KpiStatus.OK
+    assert result.lane_groups["APP_E_T"].green_periods == 1
+
+
+def test_shared_lane_with_a_through_only_phase_is_unavailable():
+    """
+    The shared lane's through cars also move in the through-only phase,
+    which the lane group's green would leave out.
+    """
+
+    result = results(signal_program=through_only_phase_for_east())
+    shared = result.lane_groups["APP_E_LT"]
+
+    assert shared.status == KpiStatus.UNAVAILABLE
+    assert shared.reason == SPLIT_PHASES_REASON
+
+
+def test_through_only_phase_adds_green_to_exclusive_through_lanes():
+    result = results(signal_program=through_only_phase_for_east())
+
+    through = result.lane_groups["APP_E_T"]
+    left = result.lane_groups["APP_E_L"]
+
+    assert through.green_periods == 2
+    assert through.green_s == pytest.approx(30 + 5)
+    assert left.green_periods == 1
+    assert left.status == KpiStatus.OK

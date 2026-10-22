@@ -5,6 +5,8 @@ import pytest
 from backend.analytics.kpi.capacity import LaneGroupCapacity
 from backend.analytics.kpi.hcm_delay import (
     CHAIN_BROKEN_REASON,
+    FULL_CYCLE_GREEN_REASON,
+    MULTIPLE_GREENS_REASON,
     NO_CAPACITY_REASON,
     NO_DEMAND_REASON,
     calculate_hcm_delays,
@@ -15,8 +17,14 @@ from backend.analytics.kpi.hcm_delay import (
     uniform_delay,
 )
 from backend.analytics.kpi.intervals import analysis_intervals
-from backend.analytics.kpi.kpi_tests.test_capacity import DEMAND, program, results
+from backend.analytics.kpi.kpi_tests.test_capacity import (
+    DEMAND,
+    program,
+    results,
+    two_greens_for_north,
+)
 from jaadah.models.kpis import KpiStatus, LevelOfServiceGrade
+from jaadah.models.signals import SignalPhase
 
 
 RIYADH = timezone(timedelta(hours=3))
@@ -307,3 +315,79 @@ def test_movement_without_capacity_is_not_reported():
     )[0]
 
     assert out.movements["MOV_W_T"].status == KpiStatus.UNAVAILABLE
+
+
+# ============================================================
+# TWO GREENS PER CYCLE (PR #33 review)
+# ============================================================
+
+def test_two_greens_have_no_hcm_delay_in_any_interval():
+    """Uniform delay assumes one green per cycle."""
+
+    timing = two_greens_for_north()
+    capacity = [(i, results(signal_program=timing)) for i in INTERVALS]
+
+    out = calculate_hcm_delays(capacity, timing)
+
+    for interval_result in out:
+        north = interval_result.lane_groups["APP_N_L"]
+        assert north.status == KpiStatus.UNAVAILABLE
+        assert north.reason == MULTIPLE_GREENS_REASON
+
+
+def test_two_greens_leave_other_delays_alone():
+    timing = two_greens_for_north()
+    out = calculate_hcm_delays([(INTERVALS[0], results(signal_program=timing))], timing)[0]
+
+    assert out.lane_groups["APP_E_T"].status == KpiStatus.OK
+    assert out.movements["MOV_N_L"].status == KpiStatus.UNAVAILABLE
+
+
+# ============================================================
+# GREEN FOR THE WHOLE CYCLE (PR #33 review)
+# ============================================================
+
+def always_green_south():
+    """One phase, South through, 120 s green with no yellow or all-red."""
+
+    return program(
+        phases=[
+            SignalPhase(
+                phase_id="P_S",
+                sequence_order=0,
+                served_movement_ids=["MOV_S_T"],
+                green_time_s=120,
+                yellow_time_s=0,
+                all_red_time_s=0,
+            )
+        ]
+    )
+
+
+@pytest.mark.parametrize("green", [120, 130, 0])
+def test_uniform_delay_rejects_green_outside_the_cycle(green):
+    """The reviewer's example, uniform_delay(120, 120, 0.5), no longer divides by zero."""
+
+    with pytest.raises(ValueError, match="shorter than cycle_s"):
+        uniform_delay(120, green, 0.5)
+
+
+def test_whole_cycle_green_has_no_hcm_delay():
+    timing = always_green_south()
+    capacity = [(i, results(signal_program=timing)) for i in INTERVALS[:2]]
+
+    out = calculate_hcm_delays(capacity, timing)
+
+    for interval_result in out:
+        south = interval_result.lane_groups["APP_S_T"]
+        assert south.status == KpiStatus.UNAVAILABLE
+        assert south.reason == FULL_CYCLE_GREEN_REASON
+
+
+def test_whole_cycle_green_keeps_capacity():
+    """c = s x g / C = s."""
+
+    south = results(signal_program=always_green_south()).lane_groups["APP_S_T"]
+
+    assert south.status == KpiStatus.OK
+    assert south.capacity_veh_h == pytest.approx(south.saturation_flow_veh_h)

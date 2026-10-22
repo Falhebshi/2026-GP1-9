@@ -4,7 +4,7 @@
 
 The KPI engine calculates Jaadah's traffic performance indicators (control delay, level of service, volume-to-capacity ratio, capacity, saturation flow, queue length, queue duration, queue storage ratio and throughput) for the case-study intersection of Prince Turki Al-Awwal Road and Imam Saud Road.
 
-It works on the canonical models described in `data_models.md`: its inputs are standardized simulation outputs and network models, and its output is a list of `KpiResult` records.
+It works on the canonical models described in `data_models.md`: its inputs are standardized simulation outputs and network models, and its outputs are `KpiResult` and `KpiComparison` records.
 
 Three rules shape the engine:
 
@@ -70,7 +70,7 @@ Each simulation run has three parts, each occurring once: a **warm-up** at the s
 
 ## 1.2 Movements analysed
 
-The analysis covers the movements at the case-study intersection's stop lines that have `MovementAttributes`: East through and left, West through and left, North left and South through, plus the right-turn slip roads South→East, West→South and North→West.
+The analysis covers the movements at the case-study intersection's stop lines that have `MovementAttributes`: East through and left, West through and left, North left and South left (`MOV_S_W`), plus the right-turn slip roads South→East, West→South and North→West. `MOV_S_W` is classified as a protected left turn: vehicles make a gentle left, although SUMO labels the connection straight (`dir="s"`) because of the skewed geometry (section 13.3).
 
 Right-turn slip roads are unsignalised. They receive simulation delay, queue length, queue duration, queue storage ratio and throughput. Level of service, volume-to-capacity ratio and capacity are reported as `not_applicable`, because these are signalised-intersection measures.
 
@@ -85,7 +85,7 @@ Each approach has its own measurement zone, measured from the stop line:
 | North | 0–500 m | ≈65 m | 50 km/h |
 | South | 0–500 m | ≈65 m | 50 km/h |
 
-The lane-area (E2) detectors used for queue measurement have the same lengths as the upstream zones.
+Delay is measured per vehicle over the whole zone. Per-lane queues are measured over each lane's own section (its lane chain), and the full queue of an approach over the whole upstream zone (section 13.1).
 
 Lane numbers in Jaadah count from the median (`ApproachLane.lane_index` 1 is the lane next to the median). Field references that count from the kerb are converted before use.
 
@@ -213,6 +213,8 @@ For each lane and interval, the reported queue is the **largest cycle queue** in
 ## 6.4 95th-percentile queue over the analysis period
 
 For the analysis page, each lane also receives the **95th-percentile cycle queue** over all cycles of the analysis period, calculated with the **nearest-rank method**: the cycle queues are sorted and the value at rank ⌈0.95 × n⌉ is taken. For example, with 20 cycles the 19th smallest queue is reported.
+
+A lane-area detector writes a record every cycle, even when there is no queue (then the queue is 0), so an interval without records is missing data. If any interval of the period has no records for a lane, that lane's period value is `unavailable` ("no cycle records in at least one interval of the analysis period"): the percentile of the remaining intervals would look like a whole-period value while missing part of the time, possibly the peak. Its approach, movements and the intersection follow through the roll-up (section 11.4).
 
 The HCM 7th edition calculates its percentile back of queue analytically and does not prescribe a method for taking a percentile from measured cycles. The nearest-rank method was chosen because the result is always a queue that actually occurred, in whole vehicles, and is simple to explain and to check by hand.
 
@@ -382,9 +384,14 @@ A fixed split (such as 50/50 or 60/40) was not used, because it would not respon
 
 ## 9.5 Green time of a lane group
 
-A lane group's effective green g is the green of the phases that serve **all** of its movements. The case-study intersection uses one phase per approach, so every movement of an approach, including both movements of a shared lane, moves in the same phase.
+A lane group's effective green g is the total effective green of the phases that serve **all** of its movements. The case-study intersection uses one phase per approach, so every movement of an approach, including both movements of a shared lane, moves in one phase, once per cycle. A signal plan can do otherwise, for example in an intervention; the engine supports one green per cycle and reports the rest as follows.
 
-If the movements of a shared lane group are served in different phases, the lane group's capacity, volume-to-capacity ratio and HCM delay are `unavailable`, with the reason "shared lane whose movements are served in different phases is not supported".
+| Signal pattern | Example | Capacity, v/c | HCM delay | Critical v/c (Xc) |
+| --- | --- | --- | --- | --- |
+| A movement is served in more than one phase | North left gets 5 s in phase 2 and 5 s in phase 5 | `ok`: g is the sum of the greens (c = s × (g₁ + g₂) / C is correct for capacity) | `unavailable`: "movement served in more than one phase: HCM delay not supported yet" (uniform delay assumes one green per cycle) | `unavailable`: "a movement served in more than one phase would be counted once per phase: not supported yet" |
+| A shared lane group whose movements are served in different phases, or with a phase that serves only some of them | East left + through in one phase, then East through alone | `unavailable`: "shared lane whose movements are served in different phases is not supported" (its through vehicles also move in the through-only phase, which g would leave out) | `unavailable` (no capacity) | `unavailable` (a lane group has no result) |
+
+Other lane groups are calculated normally. `LaneGroupCapacity.green_periods` gives the number of phases serving a lane group. Supporting several greens per cycle (uniform delay from the queue accumulation polygon, and counting such a movement once in Xc) is future work.
 
 ## 9.6 Values reported for movements
 
@@ -429,11 +436,13 @@ Control delay d = d1 + d2 + d3 (Equation 19-18), per lane group and interval:
 - **Incremental delay d2** (Equations 19-26 and 19-27): the extra delay from random cycle-to-cycle variation and from demand exceeding capacity. d2 = 900 T [(X − 1) + √((X − 1)² + 8 k I X / (c T))], with T = 0.25 h, k = 0.50 for pretimed phases (page 19-51) and I = 1.0 for an isolated intersection (Exhibit 19-11).
 - **Initial queue delay d3** (Equations 19-44 to 19-49): the extra delay caused by a queue left over from the previous interval (section 10.2).
 
+**Green for the whole cycle.** A lane group whose effective green equals the cycle (one phase with no yellow or all-red) never has red, so it is not signal-controlled, and Equation 19-19 would divide by zero. Its capacity and volume-to-capacity ratio are kept (c = s × g / C = s); its HCM delay is `unavailable`, with the reason "green for the whole cycle: not a signal-controlled movement". The simulation-based delay is still reported.
+
 ## 10.2 Queues carried from one interval to the next
 
 The intervals of the analysis period are calculated **in order** (a multiple-period analysis, as the HCM advises when the volume-to-capacity ratio exceeds 1.0, Chapter 19, "Interpretation of Results"). For each lane group:
 
-1. The **first interval** starts with no initial queue (Q_b = 0). The warm-up exists so that the simulated analysis period starts in normal conditions, and the HCM's guidance for simulation analyses requires the first analysis period to be undersaturated.
+1. The chain starts at the **start of the warm-up** with no initial queue (Q_b = 0), when the simulated network is also empty, and runs through the warm-up intervals with their demand; only the analysis intervals are reported. HCM and simulation therefore start from the same condition, and the first HCM period is one without a residual queue, as the HCM's guidance for multiple-period analyses requires. The warm-up must therefore be a whole number of 15-minute intervals.
 2. The queue left at the end of each interval, the **residual queue** Q_e = Q_b + t_A (v − c_A) (Equation 19-45), is the **initial queue** of the next interval.
 3. With an initial queue, the uniform delay is adjusted: for the part of the interval during which the initial queue is still being served (t, Equations 19-37 and 19-38), the lane group operates saturated, and d1 = d_s × t / T + d1,baseline × (T − t) / T (Equation 19-40), where d_s is the uniform delay at X = 1.
 4. d3 follows from Equation 19-44. It is 0 when there is no initial queue.
@@ -506,6 +515,7 @@ Each seed is one repetition of the experiment and counts once. For each KPI, ele
 - **A run without a result:** if any run is `unavailable`, the combined result is `unavailable`, with a reason such as "unavailable in 1 of 10 runs". The missing run is usually the most congested one (vehicles still queued at the end of the run), so averaging the others would make the result look better than it was. The remedy is a longer clearance.
 - **A run with nothing to measure:** runs that are `not_applicable` (for example, no vehicles arrived) are left out, not counted as zero: a mean over no vehicles does not exist, and a zero would pull the mean down and widen the spread. The result is `not_applicable` only if no run has a value.
 - `run_ids` lists the runs behind the value; a result without a value lists every run that was looked at.
+- A movement value taken from a shared lane carries `measured_on_lane_id` (queues, section 12.3), and one taken from a shared lane group carries `measured_on_lane_group_id` (HCM values, section 9.6); both are set on the `KpiSpec` and kept only on results with a value.
 
 Simulation-based level of service is graded from the combined delay (section 7.6). HCM results have no runs and need no combining.
 
@@ -530,7 +540,8 @@ Example (East delay): baseline 40, 50, 60 s; intervention 35, 44, 56 s; differen
 - If either run of any pair is `unavailable`, the comparison is `unavailable` ("unavailable in 1 of 10 pairs").
 - Pairs in which a side is `not_applicable` are left out; `used_pairs` lists the pairs used. With no pair left, the comparison is `not_applicable`.
 - For a queue, each side uses the runs of the lane its reported value comes from (section 12.3), so the change equals the difference between the two reported values.
-- **Level of service** is a letter: the comparison shows both grades (e.g. D → C).
+- **Level of service** is a letter: the comparison shows both grades (e.g. D → C). For simulation results both grades are graded from the **delay comparison** of the same element and interval: the baseline grade from its baseline mean, the intervention grade from baseline mean + change. They come from the same matched pairs as the delay change, so they never contradict it. Example: baseline delays 10, 100 s and no value; intervention 20 s and two without value. Only pair 1 is matched: the delay goes 10 → 20 s and the LOS A → B. Grading the baseline from all its runs (mean 55 s, LOS D) would have shown D → B, an apparent improvement while delay got worse. HCM level-of-service comparisons keep the two HCM grades, which include the v/c override (section 3.3); HCM results have no runs, so no pair is ever left out.
+- **Partial sample:** when pairs were left out, the comparison's baseline values (`baseline_mean`, the baseline grade) can differ from the baseline scenario's own results, which use all its runs (in the example, 10 s and A against 55 s and D). Such comparisons carry `is_partial_sample`, shown as a tag ("Based on 1 of 3 matched runs: may differ from the scenario's own values"); `pair_count` holds the number of pairs in the set. When every pair is used, the values are identical and there is no tag.
 - **HCM results** have no runs: the change is the plain difference, with no pairs and no standard deviation.
 
 ## 12.5 Input origins
@@ -556,6 +567,90 @@ Before comparing, the engine checks the `ReplicationSet` against its `Simulation
 - the two runs of a pair used different seeds, or two pairs used the same seed;
 - a run is not `completed`, or belongs to the wrong scenario;
 - the intervention scenario does not reference the baseline (`reference_scenario_id`);
-- the runs differ in network version, SUMO version or step length.
+- the runs differ in network version, SUMO version or step length;
+- the comparison's labels (baseline scenario, intervention scenario, replication set) differ from those of the `ReplicationSet` it is calculated from, or, for a level-of-service comparison, from those of its delay comparison.
 
 A wrong pairing would produce a convincing but false comparison. Demand and mapping versions are not recorded on `SimulationRun` yet, so they cannot be checked.
+
+---
+
+# 13. Input and Measurement Contracts
+
+What the engine expects from the components that prepare its inputs (network mapping, demand transformation, SUMO runs and output adapters). Items marked *to be built* are agreed but not yet implemented, because their inputs do not exist yet.
+
+## 13.1 Queue length: lanes and approaches
+
+- **Lanes and movements** report the queue of each lane over the lane's own section (its lane chain, `LaneMapping.sumo_lane_ids`): which lane is full, turn-bay and slip spillback, storage ratio.
+- **Approaches and the intersection** report the **full queue over the whole upstream zone** (section 1.3): how far back the queue reaches. Beyond a lane chain several lanes merge, so a vehicle queued there belongs to the approach but to no single Jaadah lane. Example: on West the lane chains are about 92 m long while the zone is 450 m; a queue reaching 250 m back is reported as 250 m on the approach.
+- A lane whose queue reaches the end of its section is reported as a **minimum value** (`is_lower_bound`, with the reason "queue reaches the end of this lane's measured section (… m); the full queue is shown on the approach").
+- *To be built:* the full-zone queue per approach and cycle (from a virtual lane-area detector over the zone or from vehicle positions), each lane's section length, and the `is_lower_bound` field on `KpiResult`.
+
+## 13.2 Uncontrolled right-turn slips
+
+All three slips (S→E `MOV_S_E_BYPASS`, W→S `MOV_W_S_SLIP`, N→W `MOV_N_W_SLIP`) are in the KPIs, as sections 1.2 and 11.3 describe.
+
+## 13.3 Movement attributes
+
+- The authoritative `MovementAttributes` of the nine KPI movements are stored in `network_mappings.json`, next to the movements and lanes, and checked by the mapping validator; U-turn, tunnel and ramp movements have none.
+- `MOV_S_W` is a **left** turn, signalized (protected; South's phase serves no opposing traffic). The SUMO connection's direction (`dir="s"`) is a label derived from the angle; it does not change how SUMO moves vehicles and is not changed. As a left turn, South's HCM saturation flow is about 3 % lower than as a through movement (left-turn factor 1/1.05; lane utilisation 0.971 instead of 0.952 for two lanes). The classification is to be checked against the measured saturation flow of those lanes once that calibration KPI exists.
+
+## 13.4 Initial HCM queue
+
+The HCM delay chain starts at the start of the warm-up with no initial queue and reports only the analysis intervals (section 10.2). The warm-up is a whole number of 15-minute intervals, and demand records cover the warm-up as well as the analysis period.
+
+## 13.5 Equivalent inputs between compared scenarios
+
+A comparison is valid only when baseline and intervention differ in the intervention alone. Besides the checks of section 12.6:
+
+- the two scenarios must cover the same time window (`start_time`, `end_time`, `time_context`);
+- each run records the mapping version and the demand it used, and both must be the same in every pair of a replication set.
+
+## 13.6 Vehicles, demand and signal timing
+
+- **A vehicle's movement** is found through the SUMO demand manifest (`vehicle_id` → `demand_id`) and the demand file (`demand_id` → `SimulationDemand`), never by parsing vehicle IDs. The same lookup gives `is_allocated` and `is_imputed` for every vehicle (section 12.5).
+- **Demand for capacity equals simulated demand:** each movement's demand is simulated on its main route; through counts are not split into ramp or U-turn routes, so the demand v of section 9.7 is exactly what is simulated at each stop line. For the same reason no vehicle crosses the intersection twice in the current demand.
+- **Signal timing has one source:** the `SignalProgram` of a run is built from the signal program in the SUMO network file, so that SUMO and the HCM calculation use the same greens.
+- **Incomplete passages are found from zone entry:** the output adapter records an `IncompletePassage` for every vehicle that entered the measurement zone during the analysis period and had not left it when the run ended (section 7.4). Selecting vehicles by their planned stop-line time is not equivalent: a vehicle can enter the zone before the end of the analysis period but be planned to reach the stop line after it.
+
+## 13.7 Vehicles that could not enter the network on time
+
+SUMO creates a vehicle at the network edge only when there is a safe gap; otherwise the vehicle waits outside the network (insertion delay). That waiting is not control delay (it happens before the vehicle exists in the model, outside the measurement zone) and is not added to it. A long wait means the queue reached the model edge, so the measured delay and queues of that approach are too low.
+
+- **Rule:** when any vehicle of an approach due in an interval waited more than **10 s** to enter, or had not entered when the run ended, that approach's measured control delay, queue duration and queue length for the interval are `unavailable`, with the reason "vehicles could not enter the network on time; queue reached the model edge". Its lanes and movements follow, and the intersection through the roll-up; other approaches, throughput and HCM results are not affected.
+- **Threshold:** 10 s is above SUMO's normal insertion rounding (one or two seconds when vehicles are due at the same moment) and well below the wait caused by a queue at the edge (most of a red period, 80–105 s here). It becomes a parameter in `parameters.py` and is to be reviewed after a run with realistic peak demand.
+- *To be built:* the output adapter provides, per approach and interval, the longest insertion delay of the vehicles due in that interval and the number of vehicles not yet inserted when the run ended (a new output record).
+
+## 13.8 Intervals close to capacity
+
+Demand comes from stop-line counts, which count vehicles as they are served: in an overloaded interval fewer vehicles are counted than arrived, so the simulated delay, queues and v/c ratios are too low. When an approach's HCM volume-to-capacity ratio is **0.95 or more** in an interval, its measured delay, queues and v/c for that interval are marked as minimum values (`is_lower_bound`, reason "demand counted at the stop line may be below the real demand (v/c ≥ 0.95)"). *To be built* with the `is_lower_bound` field (section 13.1).
+
+---
+
+# 14. Limitations
+
+- **Served volume:** stop-line counts are vehicles served, not vehicles arriving. In oversaturated periods the demand is underestimated, so simulated queues, delays and v/c ratios are lower than real ones (section 13.8).
+- **Random arrivals:** platoons from upstream signals are not represented, consistent with arrival type 3 in the HCM delay (section 10.1). The nearest signals are 1.3–2.1 km away.
+- **Driving behaviour:** SUMO passenger-car defaults, not calibrated. The comparison of measured and HCM saturation flow is the planned check.
+- **Instantaneous lane changes:** no lane-change duration is set, so a vehicle never blocks two lanes while changing lanes.
+- **Passenger cars only:** no heavy vehicles or buses (section 9.9).
+- **Signal patterns:** one green per movement and cycle; permitted left turns, several greens per cycle and greens lasting the whole cycle have no HCM delay (sections 9.3, 9.5, 10.1).
+- **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`.
+- **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
+
+---
+
+# 15. Difficulties
+
+The decisions that were hardest to make, what made each difficult, and what was decided.
+
+| Topic | Difficulty | Decision |
+| --- | --- | --- |
+| Shared left-through lanes | A shared lane's demand cannot be split between its movements by measurement, yet capacity depends on it. Equal flow ratios across lanes put too many left turners in the shared lane when they are few | HCM 7th Chapter 31 lane-choice procedure, plus a physical rule: no lane group carries more of a movement than its demand (section 9.4) |
+| Residual queues between intervals | Each 15-minute interval could be treated alone (simple) or as a chain carrying leftover queues (correct when overloaded, more complex) | Full multiple-period analysis with d3 and initial-queue d1 (section 10.2) |
+| HCM 6th to 7th edition | The switch after most values were chosen required re-checking every factor | All values verified against the 7th edition; North's three-lane left utilisation became 0.971, and groups with more lanes than listed take the smallest value |
+| Combining queues over runs | Taking each run's longest lane gives a higher value that no lane has; averaging each lane first names one real lane | Lanes first, then the longest lane (section 12.3) |
+| Baseline versus intervention | Comparing the two means hides the effect behind the variation between seeds | Paired differences over matched seeds, with LOS graded from the same pairs and a partial-sample tag (section 12.4) |
+| Runs without vehicles | Counting them as zero delay seemed natural but would lower the mean and widen the spread | Left out; a mean over no vehicles does not exist (section 12.1) |
+| Unsupported signal patterns | Several greens per cycle are a normal intervention design, but the HCM delay used here assumes one | Capacity kept, HCM delay and Xc `unavailable` until supported (section 9.5) |
+| Queue measurement area | Lane chains are 82–183 m long, the zones 388–500 m; per-lane detectors cannot see a queue beyond the point where lanes merge | Full-zone queue per approach, per-lane queues on the chains, and a minimum-value tag (section 13.1) |
+| Vehicles waiting to enter | Their waiting is real but happens outside the model and is not control delay | Not added to delay; the approach is `unavailable` above a 10 s threshold (section 13.7) |
