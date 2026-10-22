@@ -10,7 +10,14 @@ from pydantic import (
     model_validator,
 )
 
-from .network import Approach, ApproachLane, Intersection, Movement
+from .network import (
+    Approach,
+    ApproachLane,
+    Intersection,
+    Movement,
+    MovementAttributes,
+    MovementControl,
+)
 from .traffic import TrafficObservationSource
 
 
@@ -385,7 +392,15 @@ class MovementMapping(BaseModel):
 # ============================================================
 
 class NetworkMappingConfig(BaseModel):
-    """Defines study-area entities and their source/SUMO mappings."""
+    """
+    Defines study-area entities and their source/SUMO mappings.
+
+    movement_attributes holds the approved MovementAttributes of the
+    movements in the KPI analysis. It may be incomplete, as in a draft:
+    the attributes present are checked for consistency, while
+    completeness is checked by the integration tests and by the KPI
+    engine, which needs attributes for every movement it analyses.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -398,6 +413,7 @@ class NetworkMappingConfig(BaseModel):
     lane_mappings: list[LaneMapping] = Field(default_factory=list)
     detector_mappings: list[DetectorMapping] = Field(default_factory=list)
     movement_mappings: list[MovementMapping] = Field(default_factory=list)
+    movement_attributes: list[MovementAttributes] = Field(default_factory=list)
 
     @field_validator("schema_version", "mapping_version")
     @classmethod
@@ -449,6 +465,7 @@ class NetworkMappingConfig(BaseModel):
             ("lane_id mapping", [item.lane_id for item in self.lane_mappings]),
             ("approach lane index", [(item.approach_id, item.lane_index) for item in self.approach_lanes]),
             ("detector key", detector_keys),
+            ("movement attributes", [item.movement_id for item in self.movement_attributes]),
         ):
             if len(keys) != len(set(keys)):
                 raise ValueError(f"duplicate {label} mapping")
@@ -503,5 +520,32 @@ class NetworkMappingConfig(BaseModel):
                 # An approach-owned detector can only claim movements of that approach.
                 if detector_approach and movements[movement_id].approach_id != detector_approach:
                     raise ValueError("detector/movement approach mismatch")
+
+        movement_mappings = {item.movement_id: item for item in self.movement_mappings}
+        attributes = {item.movement_id: item for item in self.movement_attributes}
+
+        for item in self.movement_attributes:
+            if item.movement_id not in movements:
+                raise ValueError(f"movement attributes refer to an unmapped movement: {item.movement_id}")
+            # Analysed movements roll up to an approach (MovementAttributes rule).
+            if movements[item.movement_id].approach_id is None:
+                raise ValueError(f"movement with attributes has no approach_id: {item.movement_id}")
+            signalized = item.control == MovementControl.SIGNALIZED
+            if signalized != movement_mappings[item.movement_id].signal_controlled:
+                raise ValueError(
+                    f"movement attributes control '{item.control.value}' disagrees with "
+                    f"signal_controlled of {item.movement_id}"
+                )
+
+        for lane in self.approach_lanes:
+            controls = {
+                attributes[movement_id].control
+                for movement_id in lane.served_movement_ids
+                if movement_id in attributes
+            }
+            if len(controls) > 1:
+                raise ValueError(
+                    f"lane {lane.lane_id} serves both signalized and uncontrolled movements"
+                )
 
         return self

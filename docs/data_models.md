@@ -210,7 +210,9 @@ Fields: `movement_id`, `movement_type`, `control`.
 
 **Scope:** only movements included in the KPI analysis of the case-study intersection receive `MovementAttributes`. Other simulated movements (ramps, tunnel paths, slips and U-turns elsewhere in the network) remain plain `Movement`s and have no KPIs.
 
-A movement with `MovementAttributes` must have `Movement.approach_id` set, because its results roll up to an approach. That rule spans two models, so it is checked where both are combined, not inside either.
+A movement with `MovementAttributes` must have `Movement.approach_id` set, because its results roll up to an approach. That rule spans two models, so it is checked where both are combined, not inside either: `NetworkMappingConfig` checks it.
+
+**Source:** the approved values are stored in `NetworkMappingConfig.movement_attributes` in `network_mappings.json`, the single source for the KPI engine. `control` must agree with the movement mapping's `signal_controlled` flag, and no lane may serve both a signalized and an uncontrolled movement. See [movement attributes](network_mapping.md#movement-attributes).
 
 ## 2.5 `ApproachLane`
 
@@ -234,11 +236,13 @@ the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 | East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
 | West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
 | North | 3 lanes, all left |
-| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
+| South | 2 lanes, both left (`MOV_S_W`) |
 
-The analytical left/signalized classification of `MOV_S_W` remains pending
-KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
-movement identity, physical routing, and signal behavior remain unchanged.
+`MOV_S_W` is classified as a protected left turn (`left`, `signalized`): it
+leaves the south approach to the driver's left on its own protected phase.
+SUMO labels the connection `dir="s"`; that label describes the network
+geometry, not the HCM classification, and the movement's identity, routing,
+and signal behaviour are unchanged.
 
 ## 2.6 Canonical Identity vs. SUMO Identity
 
@@ -639,7 +643,8 @@ canonical objects from those records through `canonical_intersection`,
 
 `approach_lanes` holds the canonical lane definitions, while `lane_mappings`
 connects them to SUMO lane segments. A known lane may still be waiting for its
-SUMO mapping. The checks catch inconsistent references and ownership; creating
+SUMO mapping. `movement_attributes` holds the movement type and control of the
+analysed movements. The checks catch inconsistent references and ownership; creating
 canonical objects from the same records does not independently confirm their
 geographic correctness. See [Network mapping](network_mapping.md) for the full
 rules, M7 usage, and test commands.
@@ -770,3 +775,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 20 Oct 2026 (demand imputation) | Added `ImputationMethod`, `ImputedDetector`, `SimulationDemand.imputed_detectors` and the computed `is_imputed`, marking demand that includes an estimated count for a detector that did not report. RCRC and synthetic demand may consist of imputed detectors only |
 | 22 Oct 2026 (KPI comparison review) | Added `KpiComparison.pair_count` and the computed `is_partial_sample`, marking comparisons based on fewer pairs than the replication set holds |
 | 23 Oct 2026 (run inputs) | Added `SimulationRun.mapping_version`, `demand_sha256` and `route_file_sha256`, required for running and completed runs, so that compared runs can be checked for identical inputs |
+| 23 Oct 2026 (movement attributes) | Added `NetworkMappingConfig.movement_attributes`, optional and empty by default, holding the approved `MovementAttributes` of the nine analysed movements. Checks: no duplicates, known movement with an approach, `control` agrees with `signal_controlled`, no lane mixing signalized and uncontrolled movements. `MOV_S_W` classified as a protected left. `mapping_version` set to `2.2-movement-attributes`; `schema_version` stays `2.0` |
