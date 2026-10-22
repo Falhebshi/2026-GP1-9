@@ -1,6 +1,12 @@
 traci==1.27.0
 sumolib==1.27.0
 pandas==3.0.6
+numpy==2.5.4
 openpyxl==3.1.5
 pydantic==2.13.5
 pytest==9.1.1
+fastapi==0.143.1
+uvicorn==0.54.0
+httpx2==2.13.1
+shapely==2.1.2
+pyproj==3.7.1

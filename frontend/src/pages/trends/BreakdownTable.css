@@ -1,0 +1,142 @@
+/* The window menu, and the hour picker next to it */
+.bd-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+/* Scrolls sideways on a narrow screen. Fades while a new window loads. */
+.bd-scroll {
+  overflow-x: auto;
+  transition: opacity 0.2s;
+}
+
+.bd-scroll.is-loading {
+  opacity: 0.5;
+}
+
+.bd-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums; /* numbers line up in columns */
+}
+
+/* Read by screen readers, hidden on screen (the card title says it) */
+.bd-caption,
+.bd-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.bd-table th,
+.bd-table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+/* Column headings */
+.bd-table thead th {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  border-bottom-color: var(--color-border-strong);
+}
+
+.bd-unit {
+  font-weight: 400;
+}
+
+.bd-name-col {
+  min-width: 150px;
+}
+
+/* Approach rows: bold, on a light band */
+.bd-approach th,
+.bd-approach td {
+  background: var(--color-bg);
+  font-weight: 600;
+}
+
+/* Movement rows: indented under their approach */
+.bd-movement th {
+  padding-left: 38px;
+  font-weight: 400;
+}
+
+/* The intersection row at the bottom, under a heavier line */
+.bd-total th,
+.bd-total td {
+  font-weight: 700;
+  border-top: 2px solid var(--color-text);
+  border-bottom: none;
+}
+
+/* The approach name is a button that folds its movements */
+.bd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  font-weight: 600;
+}
+
+.bd-chevron {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.bd-toggle[aria-expanded='true'] .bd-chevron {
+  transform: rotate(45deg);
+}
+
+/* Above a standard limit (ratio above 1.0) */
+.bd-over {
+  color: var(--color-danger-text);
+  font-weight: 700;
+}
+
+/* No value: the word, smaller and grey */
+.bd-missing {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bd-suffix {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* "Shared lane" tag next to a value */
+.bd-shared {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: help;
+}
+
+.bd-footnote {
+  margin-top: var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
