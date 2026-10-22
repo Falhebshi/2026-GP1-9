@@ -728,6 +728,30 @@ def compare_hcm_level_of_service(
     if spec.method != KpiMethod.HCM or spec.kpi != KpiName.LEVEL_OF_SERVICE:
         raise ValueError("compare_hcm_level_of_service is for HCM level of service")
 
+    for side, result, scenario_id in (
+        ("baseline", baseline, spec.baseline_scenario_id),
+        ("intervention", intervention, spec.intervention_scenario_id),
+    ):
+        mismatches = [
+            f"{name}: expected {expected}, got {actual}"
+            for name, expected, actual in (
+                ("scenario_id", scenario_id, result.scenario_id),
+                ("kpi", spec.kpi, result.kpi),
+                ("method", spec.method, result.method),
+                ("level", spec.level, result.level),
+                ("element_id", spec.element_id, getattr(result, f"{spec.level.value}_id")),
+                ("interval_start", spec.interval.start, result.interval_start),
+                ("interval_end", spec.interval.end, result.interval_end),
+                ("unit", spec.unit, result.unit),
+            )
+            if expected != actual
+        ]
+        if mismatches:
+            raise ValueError(
+                f"{side} HCM level-of-service result does not match the "
+                f"comparison: {', '.join(mismatches)}"
+            )
+
     statuses = (baseline.status, intervention.status)
 
     if KpiStatus.UNAVAILABLE in statuses:

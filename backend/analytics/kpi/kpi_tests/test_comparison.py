@@ -756,10 +756,10 @@ def test_level_of_service_needs_the_matching_delay_comparison():
         compare_level_of_service(los_spec_for_comparison(), other_element)
 
 
-def hcm_los(scenario_id, grade):
+def hcm_los(scenario, grade, **overrides):
     """An HCM level-of-service result for East through (no runs)."""
 
-    return KpiResult(
+    values = dict(
         kpi="level_of_service",
         level="movement",
         movement_id="MOV_E_T",
@@ -770,8 +770,12 @@ def hcm_los(scenario_id, grade):
         status="ok",
         method="hcm",
         input_origins=["modelled_assumption"],
-        scenario_id=scenario_id,
+        scenario_id=scenario,
     )
+    values.update(overrides)
+    if values["status"] != OK:
+        values["input_origins"] = []
+    return KpiResult(**values)
 
 
 def test_hcm_level_of_service_keeps_both_grades():
@@ -792,6 +796,70 @@ def test_hcm_level_of_service_keeps_both_grades():
     assert result.used_pairs == []
     assert result.pair_count is None
     assert result.is_partial_sample is False
+
+
+def hcm_los_comparison_spec():
+    return comparison_spec(
+        kpi=KpiName.LEVEL_OF_SERVICE,
+        unit=KpiUnit.GRADE,
+        method=KpiMethod.HCM,
+        replication_set_id=None,
+        input_origins=[InputOrigin.MODELLED_ASSUMPTION],
+    )
+
+
+@pytest.mark.parametrize(
+    "side, overrides, field",
+    [
+        ("baseline", {"scenario_id": "SCN_OTHER"}, "scenario_id"),
+        ("intervention", {"scenario_id": "SCN_OTHER"}, "scenario_id"),
+        ("baseline", {"movement_id": "MOV_W_T"}, "element_id"),
+        ("intervention", {"kpi": "control_delay", "unit": "s/veh", "los_grade": None, "value": 30}, "kpi"),
+        ("baseline", {"method": "simulation", "run_ids": ["RUN_BASE"], "input_origins": SIM_ORIGINS}, "method"),
+        ("intervention", {"level": "approach", "movement_id": None, "approach_id": "APP_E"}, "level"),
+        ("baseline", {"interval_start": INTERVAL.start - timedelta(minutes=15)}, "interval_start"),
+        ("intervention", {"interval_end": INTERVAL.end + timedelta(minutes=15)}, "interval_end"),
+    ],
+)
+def test_hcm_los_rejects_mismatched_results(side, overrides, field):
+    baseline = hcm_los("SCN_BASE", "E", **(overrides if side == "baseline" else {}))
+    intervention = hcm_los("SCN_INT", "C", **(overrides if side == "intervention" else {}))
+
+    with pytest.raises(ValueError, match=f"{side} HCM.*{field}"):
+        compare_hcm_level_of_service(hcm_los_comparison_spec(), baseline, intervention)
+
+
+@pytest.mark.parametrize("unavailable_side", ["baseline", "intervention", "both"])
+def test_hcm_los_rejects_mismatched_unavailable_results(unavailable_side):
+    baseline_unavailable = unavailable_side in {"baseline", "both"}
+    intervention_unavailable = unavailable_side in {"intervention", "both"}
+    baseline = hcm_los(
+        "SCN_OTHER" if baseline_unavailable else "SCN_BASE",
+        None if baseline_unavailable else "E",
+        **({"status": UNAVAILABLE, "reason": "missing delay"} if baseline_unavailable else {}),
+    )
+    intervention = hcm_los(
+        "SCN_INT",
+        None if intervention_unavailable else "C",
+        **(
+            {"status": UNAVAILABLE, "reason": "missing delay", "movement_id": "MOV_W_T"}
+            if intervention_unavailable else {}
+        ),
+    )
+
+    with pytest.raises(ValueError, match="HCM level-of-service result does not match"):
+        compare_hcm_level_of_service(hcm_los_comparison_spec(), baseline, intervention)
+
+
+def test_hcm_los_with_matching_unavailable_result_remains_unavailable():
+    result = compare_hcm_level_of_service(
+        hcm_los_comparison_spec(),
+        hcm_los("SCN_BASE", None, status=UNAVAILABLE, reason="missing delay"),
+        hcm_los("SCN_INT", "C"),
+    )
+
+    assert result.status == UNAVAILABLE
+    assert result.reason == comparison.PART_UNAVAILABLE_REASON
 
 
 # ============================================================
