@@ -1,0 +1,398 @@
+{
+ "type": "FeatureCollection",
+ "note": "Landmark footprints digitised by the Jaadah team from Esri World Imagery (Esri, Maxar). Heights estimated from imagery.",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "CST headquarters \u2013 tower",
+    "height_m": 60,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6333543,
+       24.7367275
+      ],
+      [
+       46.6336561,
+       24.7370153
+      ],
+      [
+       46.6340139,
+       24.7369661
+      ],
+      [
+       46.634042,
+       24.7364258
+      ],
+      [
+       46.6336841,
+       24.7363346
+      ],
+      [
+       46.6333543,
+       24.7367275
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "CST headquarters \u2013 podium",
+    "height_m": 16,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6330427,
+       24.737397
+      ],
+      [
+       46.6333564,
+       24.7376356
+      ],
+      [
+       46.6337739,
+       24.7375907
+      ],
+      [
+       46.6339971,
+       24.7372181
+      ],
+      [
+       46.634042,
+       24.7363675
+      ],
+      [
+       46.6338034,
+       24.7357268
+      ],
+      [
+       46.6334455,
+       24.7362188
+      ],
+      [
+       46.6330427,
+       24.737397
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Cenomi U Walk \u2013 retail block",
+    "height_m": 14,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6312911,
+       24.7357451
+      ],
+      [
+       46.6319789,
+       24.7360398
+      ],
+      [
+       46.6322596,
+       24.7355626
+      ],
+      [
+       46.6315718,
+       24.7352539
+      ],
+      [
+       46.6312911,
+       24.7357451
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Cenomi U Walk \u2013 long building",
+    "height_m": 18,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.630828,
+       24.7362363
+      ],
+      [
+       46.6310104,
+       24.7362363
+      ],
+      [
+       46.6314736,
+       24.7351696
+      ],
+      [
+       46.6311368,
+       24.7350293
+      ],
+      [
+       46.630828,
+       24.7353661
+      ],
+      [
+       46.630828,
+       24.7362363
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Cenomi U Walk \u2013 round pavilion",
+    "height_m": 10,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6313214,
+       24.7365759
+      ],
+      [
+       46.631292,
+       24.7366333
+      ],
+      [
+       46.6312414,
+       24.7366796
+      ],
+      [
+       46.6311758,
+       24.7367098
+      ],
+      [
+       46.6311009,
+       24.7367208
+      ],
+      [
+       46.6310234,
+       24.7367124
+      ],
+      [
+       46.6309517,
+       24.7366846
+      ],
+      [
+       46.6308928,
+       24.73664
+      ],
+      [
+       46.6308524,
+       24.7365836
+      ],
+      [
+       46.6308339,
+       24.7365212
+      ],
+      [
+       46.6308398,
+       24.7364581
+      ],
+      [
+       46.6308693,
+       24.7364008
+      ],
+      [
+       46.6309198,
+       24.7363545
+      ],
+      [
+       46.6309854,
+       24.7363242
+      ],
+      [
+       46.6310604,
+       24.7363132
+      ],
+      [
+       46.6311378,
+       24.7363216
+      ],
+      [
+       46.6312095,
+       24.7363495
+      ],
+      [
+       46.6312684,
+       24.7363941
+      ],
+      [
+       46.6313088,
+       24.7364505
+      ],
+      [
+       46.6313273,
+       24.7365128
+      ],
+      [
+       46.6313214,
+       24.7365759
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Saudi Standards (SASO) \u2013 main building",
+    "height_m": 16,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6351634,
+       24.7351282
+      ],
+      [
+       46.6355739,
+       24.7353809
+      ],
+      [
+       46.6360946,
+       24.7354125
+      ],
+      [
+       46.636221,
+       24.7351661
+      ],
+      [
+       46.6355424,
+       24.7344461
+      ],
+      [
+       46.635195,
+       24.7347079
+      ],
+      [
+       46.6351634,
+       24.7351282
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Saudi Standards (SASO) \u2013 curved wing",
+    "height_m": 10,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6349262,
+       24.7351977
+      ],
+      [
+       46.6349894,
+       24.7355135
+      ],
+      [
+       46.635242,
+       24.7356258
+      ],
+      [
+       46.6354631,
+       24.7355921
+      ],
+      [
+       46.6354631,
+       24.7355135
+      ],
+      [
+       46.6352736,
+       24.7354819
+      ],
+      [
+       46.6350841,
+       24.7354026
+      ],
+      [
+       46.635021,
+       24.7351977
+      ],
+      [
+       46.6349262,
+       24.7351977
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "CST headquarters \u2013 diamond-roof hall",
+    "height_m": 22,
+    "height_source": "estimated",
+    "source": "traced"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       46.6330427,
+       24.737397
+      ],
+      [
+       46.6325059,
+       24.7368447
+      ],
+      [
+       46.6334455,
+       24.7362188
+      ],
+      [
+       46.6330427,
+       24.737397
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}
