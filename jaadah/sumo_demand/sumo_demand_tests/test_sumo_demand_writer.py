@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
@@ -265,3 +266,77 @@ def test_failure_while_writing_keeps_the_previous_files(tmp_path, monkeypatch):
     assert "could not write" in problems_of(exc)
     assert first.route_file.read_bytes() == before
     assert not list(first.route_file.parent.glob("*.tmp"))
+
+
+def fail_on_replacement(monkeypatch, failing_number):
+    """Make the n-th rename of a new ".tmp" file into place fail."""
+
+    real_replace = os.replace
+    count = {"new": 0}
+
+    def replace(source, target):
+        if str(source).endswith(".tmp"):
+            count["new"] += 1
+            if count["new"] == failing_number:
+                raise PermissionError(13, "Permission denied", str(target))
+        real_replace(source, target)
+
+    monkeypatch.setattr("jaadah.sumo_demand.writer.os.replace", replace)
+
+
+@pytest.mark.parametrize("failing_number", [2, 3])
+def test_failure_after_a_file_was_replaced_restores_the_previous_set(
+    tmp_path, monkeypatch, failing_number
+):
+    first = write(tmp_path)
+    folder = first.route_file.parent
+    before = {path.name: path.read_bytes() for path in folder.iterdir()}
+
+    fail_on_replacement(monkeypatch, failing_number)
+    changed = DemandPlan(departures=PLAN.departures[:1])
+
+    with pytest.raises(DemandWritingError) as exc:
+        write(tmp_path, plan=changed)
+
+    assert "could not write" in problems_of(exc)
+    assert {path.name: path.read_bytes() for path in folder.iterdir()} == before
+
+
+def test_failure_in_a_first_generation_leaves_no_files(tmp_path, monkeypatch):
+    fail_on_replacement(monkeypatch, 2)
+
+    with pytest.raises(DemandWritingError):
+        write(tmp_path)
+
+    assert list((tmp_path / "baseline").iterdir()) == []
+
+
+# ============================================================
+# UNIQUE IDENTITIES
+# ============================================================
+
+def test_duplicate_vehicle_id_is_rejected_and_nothing_is_written(tmp_path):
+    first, second, third = PLAN.departures
+    plan = DemandPlan(departures=[
+        first,
+        second,
+        car(first.vehicle_id, third.demand_id, third.depart_s),
+    ])
+
+    with pytest.raises(DemandWritingError) as exc:
+        write(tmp_path, plan=plan)
+
+    assert problems_of(exc) == "MOV_S_E_BYPASS__20261020T0815__001: duplicate vehicle_id"
+    assert not (tmp_path / "baseline").exists()
+
+
+def test_two_records_for_one_movement_and_interval_are_rejected(tmp_path):
+    copy = demand("DEM_WE_COPY", "MOV_W_E", 1)
+
+    with pytest.raises(DemandWritingError) as exc:
+        write(tmp_path, demands=DEMANDS + [copy])
+
+    assert problems_of(exc) == (
+        "MOV_W_E 2026-10-20T08:00:00+03:00: two demand records for one movement and interval"
+    )
+    assert not (tmp_path / "baseline").exists()

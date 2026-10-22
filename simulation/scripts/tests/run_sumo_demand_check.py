@@ -10,8 +10,9 @@ The run ends at the end of the clearance. It passes when:
 
 1. SUMO reports no errors;
 2. every planned vehicle has been inserted and none is still waiting;
-3. every vehicle due at the stop line before the end of the analysis
-   period has left the network;
+3. every vehicle planned to reach the stop line before the end of the
+   analysis period has left the network (an approximation of KPI
+   eligibility, see evaluate);
 4. there are no teleports and no collisions;
 5. at least 95 % of the slip-road vehicles due before the end of the
    analysis period cross the stop line inside their own interval.
@@ -155,6 +156,11 @@ def evaluate(plan, demands, window, free_flow, stop_edges, slip_movements, retur
     }
 
     trips = {item.get("id"): item.attrib for item in ET.parse(paths["tripinfo"]).getroot().iter("tripinfo")}
+    # Smoke-test proxy: "due" uses the planned stop-line time (departure +
+    # free-flow time), not the actual measurement-zone entry that decides KPI
+    # eligibility. A pass does not show that every KPI-eligible vehicle
+    # completed its passage; that needs zone-entry times from the measurement
+    # outputs.
     due = [
         item for item in plan.departures
         if item.depart_s + free_flow[record_of[item.demand_id].movement_id] < analysis_end_s
@@ -258,7 +264,9 @@ def main() -> int:
             seed=args.seed,
         )
         generated = write_sumo_demand(plan, demands, mapping, args.out)
-        summary = check_generated_demand(args.out, mapping, args.net)
+        summary = check_generated_demand(
+            args.out, mapping, args.net, window=window, seed=args.seed
+        )
     except (DemandPlanningError, DemandWritingError, DemandCheckError, ValueError, OSError) as exc:
         print(f"Cannot run the check:\n{exc}", file=sys.stderr)
         return 2

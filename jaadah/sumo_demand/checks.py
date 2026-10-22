@@ -4,8 +4,15 @@ Check a folder of generated SUMO demand before it is simulated.
 The check reads the three files written by write_sumo_demand back from
 the folder, so it verifies exactly what SUMO and Jaadah components will
 read, and it can be repeated on a folder at any time without planning
-again. It confirms that:
+again. It is given the run window and seed, and confirms that:
 
+- the manifest is exactly the plan the planner produces for this run
+  from the stored demand records, which also requires every demand
+  movement to have exactly one record for every interval of the run
+  window, so files from another day, another window or another seed,
+  or with incomplete demand, cannot pass;
+- every demand ID, movement–interval pair and vehicle ID is unique,
+  checked before any lookup by ID so duplicates cannot be merged;
 - every demand record has exactly its vehicle_count vehicles;
 - the manifest and the route file list the same vehicles, in the same
   order, with the same departure times;
@@ -13,7 +20,10 @@ again. It confirms that:
   the mapped route of its movement;
 - the mapped routes are valid in the SUMO network, using the mapping
   validator;
-- the vehicle type and insertion settings are the agreed ones.
+- the vehicle type and insertion settings are the agreed ones;
+- the route file contains nothing else: only the elements and
+  attributes the writer produces are accepted, so no other way of
+  creating vehicles (such as flow or trip elements) can pass.
 
 All problems are reported together.
 """
@@ -27,7 +37,15 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from ..mapping.validator import validate_network_mappings
 from ..models.mappings import NetworkMappingConfig
 from ..models.traffic import SimulationDemand
-from .planner import DemandPlan
+from .planner import (
+    DemandPlan,
+    DemandPlanningError,
+    RunWindow,
+    compute_free_flow_times,
+    demand_movement_ids,
+    movement_routes,
+    plan_departures,
+)
 from .writer import DEPART_LANE, DEPART_SPEED, VEHICLE_TYPE
 
 
@@ -91,6 +109,50 @@ def _read_files(folder: Path, problems: list[str]):
 # ============================================================
 # CHECKS
 # ============================================================
+
+ALLOWED_ATTRIBUTES = {
+    "route": {"id", "edges"},
+    "vehicle": {"id", "type", "route", "depart", "departLane", "departSpeed"},
+}
+
+
+def _check_structure(root, problems):
+    """Accept only the elements and attributes the writer produces."""
+
+    for element in root:
+        tag = element.tag
+        name = element.get("id", tag)
+        if tag not in ("vType", "route", "vehicle"):
+            problems.append(f"unsupported element <{tag}> in route file")
+            continue
+        for child in element:
+            problems.append(f"{name}: unexpected element <{child.tag}>")
+        if tag in ALLOWED_ATTRIBUTES:
+            label = name if tag == "vehicle" else f"route {name}"
+            for attribute in sorted(set(element.attrib) - ALLOWED_ATTRIBUTES[tag]):
+                problems.append(f"{label}: unexpected attribute {attribute}")
+
+
+def _check_uniqueness(root, plan, demands, problems):
+    """Report repeated identities before any lookup by ID could merge them."""
+
+    for demand_id, count in sorted(Counter(item.demand_id for item in demands).items()):
+        if count > 1:
+            problems.append(f"{demand_id}: demand_id appears {count} times in the demand file")
+    records = Counter((item.movement_id, item.interval_start) for item in demands)
+    for (movement_id, start), count in sorted(records.items()):
+        if count > 1:
+            problems.append(
+                f"{movement_id} {start.isoformat()}: {count} demand records "
+                "for one movement and interval"
+            )
+    for vehicle_id, count in sorted(Counter(item.vehicle_id for item in plan.departures).items()):
+        if count > 1:
+            problems.append(f"{vehicle_id}: vehicle_id appears {count} times in the manifest")
+    for vehicle_id, count in sorted(Counter(item.get("id") for item in root.findall("vehicle")).items()):
+        if count > 1:
+            problems.append(f"{vehicle_id}: vehicle id appears {count} times in the route file")
+
 
 def _check_counts(plan, demands, problems):
     counts = Counter(item.demand_id for item in plan.departures)
@@ -184,12 +246,65 @@ def _check_vehicle_type(root, problems):
         problems.append(f"vType: unexpected attribute {attribute}")
 
 
+MAX_PLAN_DIFFERENCES = 20
+
+
+def _check_against_run(plan, demands, mapping, network_path, window, seed, problems):
+    """Re-plan this run from the stored records and require the manifest to equal it."""
+
+    try:
+        expected = plan_departures(
+            demands,
+            window=window,
+            routes=movement_routes(mapping),
+            expected_movements=demand_movement_ids(mapping),
+            free_flow_s=compute_free_flow_times(mapping, network_path),
+            seed=seed,
+        )
+    except DemandPlanningError as exc:
+        problems.extend(f"run window: {problem}" for problem in exc.problems)
+        return
+
+    planned = {item.vehicle_id: item for item in expected.departures}
+    stored = {item.vehicle_id: item for item in plan.departures}
+    differences = []
+    for vehicle_id in sorted(set(stored) - set(planned)):
+        differences.append(f"{vehicle_id}: in the manifest but not planned for this run")
+    for vehicle_id in sorted(set(planned) - set(stored)):
+        differences.append(f"{vehicle_id}: planned for this run but missing from the manifest")
+    for vehicle_id in sorted(set(stored) & set(planned)):
+        found, wanted = stored[vehicle_id], planned[vehicle_id]
+        if found.demand_id != wanted.demand_id:
+            differences.append(
+                f"{vehicle_id}: demand_id {found.demand_id} in the manifest, "
+                f"{wanted.demand_id} planned for this run"
+            )
+        if found.depart_s != wanted.depart_s:
+            differences.append(
+                f"{vehicle_id}: depart {found.depart_s:.2f} in the manifest, "
+                f"{wanted.depart_s:.2f} planned for this run"
+            )
+
+    problems.extend(differences[:MAX_PLAN_DIFFERENCES])
+    if len(differences) > MAX_PLAN_DIFFERENCES:
+        problems.append(
+            f"... and {len(differences) - MAX_PLAN_DIFFERENCES} more differences "
+            "from the plan for this run"
+        )
+
+
 def check_generated_demand(
     output_dir: str | Path,
     mapping: NetworkMappingConfig,
     network_path: str | Path,
+    *,
+    window: RunWindow,
+    seed: int,
 ) -> DemandCheckSummary:
-    """Check the files of one generated folder; raise DemandCheckError listing every problem."""
+    """
+    Check the files of one generated folder against the run they are for;
+    raise DemandCheckError listing every problem.
+    """
 
     folder = Path(output_dir).resolve()
     problems: list[str] = []
@@ -200,6 +315,13 @@ def check_generated_demand(
     if root is None or plan is None or demands is None:
         raise DemandCheckError(problems)
 
+    _check_structure(root, problems)
+    before = len(problems)
+    _check_uniqueness(root, plan, demands, problems)
+    if len(problems) > before:
+        # Counting by ID would merge the duplicates and hide them.
+        raise DemandCheckError(problems)
+    _check_against_run(plan, demands, mapping, network_path, window, seed, problems)
     _check_counts(plan, demands, problems)
     _check_vehicles(root, plan, demands, problems)
     _check_routes(root, mapping, problems)

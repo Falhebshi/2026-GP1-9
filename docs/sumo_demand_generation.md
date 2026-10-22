@@ -326,7 +326,8 @@ Part of the route file for the study area:
 
 Nothing is written until every input has been checked. The writer raises a `DemandWritingError` listing every problem found when:
 
-- two demand records have the same `demand_id`;
+- two demand records have the same `demand_id`, or the same movement and interval;
+- two planned vehicles have the same `vehicle_id`;
 - a demand record's movement is not in the mapping;
 - a planned vehicle's `demand_id` is not among the demand records;
 - the planned vehicles are not in departure order, which SUMO requires.
@@ -345,7 +346,14 @@ The files are written as bytes with `\n` line endings. Writing them as text on W
 
 ### No partial output
 
-Each file is first written under a temporary name ending in `.tmp`. The three files are renamed to their final names only once all three have been written. If writing fails, for example because a file is open in another program, the temporary files are removed, a `DemandWritingError` reports which file could not be written, and the previous files remain unchanged.
+The three files are replaced together, so the folder always holds either the complete previous set or the complete new set:
+
+1. the new files are written under temporary names ending in `.tmp`;
+2. the existing files are renamed to backups ending in `.bak`;
+3. the `.tmp` files are renamed to their final names;
+4. once all three are in place, the backups are deleted.
+
+If any step fails, for example because a file is open in another program, the backups are moved back, new files that have no backup are removed, the temporary files are deleted, and a `DemandWritingError` reports which file could not be written. If a backup itself cannot be restored, the error names that file as well.
 
 ---
 
@@ -366,7 +374,7 @@ The result is not stored by itself. The simulation run passes `route_file` to SU
 
 ### File checks
 
-`check_generated_demand(output_dir, mapping, network_path)` reads the three files of a generated folder and confirms that every record has exactly its `vehicle_count` vehicles, that the manifest and route file list the same vehicles, order and departure times, that every vehicle uses its movement's route with the agreed vehicle type and insertion settings, and that every route equals the mapping. It first runs the mapping validator (`validate_network_mappings`) against the network, so every route SUMO receives is legal in the network. All problems are reported together in a `DemandCheckError`.
+`check_generated_demand(output_dir, mapping, network_path, window=..., seed=...)` reads the three files of a generated folder and checks them against the run they are for. It plans the departures again from the stored demand records with the given run window and seed, and requires the manifest to equal that plan exactly; this also requires every demand movement to have exactly one record for every interval of the window, so files from another day, window or seed, or with incomplete demand, cannot pass. It also confirms that every demand ID, movement–interval pair and vehicle ID is unique (checked before any lookup by ID, so duplicates cannot be merged), that every record has exactly its `vehicle_count` vehicles, that the manifest and route file list the same vehicles, order and departure times, that every vehicle uses its movement's route with the agreed vehicle type and insertion settings, that every route equals the mapping, and that the route file contains no other elements or attributes, so no other way of creating vehicles (such as `flow` or `trip` elements) can pass. It first runs the mapping validator (`validate_network_mappings`) against the network, so every route SUMO receives is legal in the network. All problems are reported together in a `DemandCheckError`.
 
 ### SUMO test run
 
@@ -383,6 +391,8 @@ The script generates hand-made demand (20 vehicles per demand movement and inter
 | Every vehicle due before the end of the analysis period has left the network | Trip output |
 | No teleports and no collisions | Statistics output |
 | At least 95 % of slip-road vehicles cross the stop line in their own interval | Route output with edge exit times |
+
+The third rule selects vehicles by their planned stop-line time (departure plus free-flow time). KPI eligibility depends on a vehicle's actual entry into the measurement zone during the analysis period, so a pass does not show that every KPI-eligible vehicle completed its passage; that check needs zone-entry times from the measurement outputs.
 
 Insertion delay is reported but not judged. Slip roads are used for the timing rule because they have no signal, so a vehicle's crossing time depends only on its departure and speed; preferred speeds vary by about ±10 %, which is why the rule requires 95 % rather than all vehicles. Results are saved in `simulation/outputs/tests/sumo_demand_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
 
@@ -425,7 +435,9 @@ result = write_sumo_demand(
     mapping,
     output_dir="simulation/outputs/baseline",
 )
-check_generated_demand("simulation/outputs/baseline", mapping, network)
+check_generated_demand(
+    "simulation/outputs/baseline", mapping, network, window=window, seed=run.random_seed
+)
 ```
 
 `demands` are the `SimulationDemand` records for the whole run window, warm-up and clearance included.
@@ -437,8 +449,8 @@ check_generated_demand("simulation/outputs/baseline", mapping, network)
 | Test file | Tests | Covers |
 |---|---:|---|
 | `test_sumo_demand_planner.py` | 38 | Run window, exact counts, timing and shift, reproducibility, vehicle IDs, stored fields, invalid records, stop-line edges and free-flow times on a small network and on the study-area network |
-| `test_sumo_demand_writer.py` | 19 | Route file content, manifest and demand file round trips, fingerprints, file names, line endings, temporary files, invalid input and write failures |
-| `test_sumo_demand_checks.py` | 13 | A correct folder, and each check failing on a deliberately broken file: missing files, counts, departures, routes, demand IDs, vehicle type, insertion settings, order and network validity |
+| `test_sumo_demand_writer.py` | 24 | Route file content, manifest and demand file round trips, fingerprints, file names, line endings, temporary files, invalid input, duplicate identities and write failures at every replacement step |
+| `test_sumo_demand_checks.py` | 26 | A correct folder, and each check failing on a deliberately broken file: missing files, counts, departures, routes, demand IDs, vehicle type, insertion settings, order, network validity, other vehicle-creating elements, duplicate identities, and files that do not belong to the run window or seed |
 
 The study-area tests read `data/processed/road_network/network_mappings.json` and `jaadah_study_area.net.xml`, and are skipped when those files are not present.
 

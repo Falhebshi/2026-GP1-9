@@ -24,9 +24,12 @@ Rules applied, and why:
   line endings, so their SHA-256 fingerprints do not depend on the
   operating system.
 - No partial output: every input is checked before anything is
-  written, and all problems are reported together. The files are first
-  written under temporary names and renamed only once all three exist,
-  so a failure while writing leaves the previous files in place.
+  written, and all problems are reported together. The new files are
+  first written under temporary names. The previous files are then
+  moved aside as backups, the new files are renamed into place, and the
+  backups are deleted only once all three have been replaced. If any
+  step fails, the backups are restored, so the folder holds either the
+  complete previous set or the complete new set.
 """
 
 import hashlib
@@ -94,17 +97,29 @@ def _check_inputs(
     problems = []
 
     seen_ids = set()
+    seen_records = set()
     for demand in demands:
         if demand.demand_id in seen_ids:
             problems.append(f"{demand.demand_id}: duplicate demand_id")
         seen_ids.add(demand.demand_id)
+        record = (demand.movement_id, demand.interval_start)
+        if record in seen_records:
+            problems.append(
+                f"{demand.movement_id} {demand.interval_start.isoformat()}: "
+                "two demand records for one movement and interval"
+            )
+        seen_records.add(record)
         if demand.movement_id not in routes:
             problems.append(
                 f"{demand.demand_id} ({demand.movement_id}): movement is not in the mapping"
             )
 
+    seen_vehicles = set()
     previous = 0.0
     for departure in plan.departures:
+        if departure.vehicle_id in seen_vehicles:
+            problems.append(f"{departure.vehicle_id}: duplicate vehicle_id")
+        seen_vehicles.add(departure.vehicle_id)
         if departure.demand_id not in seen_ids:
             problems.append(
                 f"{departure.vehicle_id}: demand_id {departure.demand_id} "
@@ -175,18 +190,51 @@ def _demand_bytes(demands: list[SimulationDemand]) -> bytes:
 # ============================================================
 
 def _write_all(contents: dict[Path, bytes]) -> None:
-    """Write every file under a temporary name, then rename them all."""
+    """
+    Replace all files together: the folder ends with either the complete
+    previous set or the complete new set.
+
+    New files are written as ".tmp", existing files are moved to ".bak",
+    and the ".tmp" files are renamed into place. On any failure the
+    ".bak" files are moved back and new files without a backup are
+    removed; the backups are deleted only after every file is replaced.
+    """
 
     temporary = {path: path.with_name(path.name + ".tmp") for path in contents}
+    backup = {path: path.with_name(path.name + ".bak") for path in contents}
+    backed_up = []
+    replaced = []
     try:
         for path, data in contents.items():
             temporary[path].write_bytes(data)
         for path in contents:
+            if path.exists():
+                os.replace(path, backup[path])
+                backed_up.append(path)
+        for path in contents:
             os.replace(temporary[path], path)
+            replaced.append(path)
     except OSError as exc:
+        problems = [f"could not write {exc.filename}: {exc.strerror}"]
+        for path in replaced:
+            if path not in backed_up:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as cleanup:
+                    problems.append(f"could not remove new file {path}: {cleanup.strerror}")
+        for path in backed_up:
+            try:
+                os.replace(backup[path], path)
+            except OSError as restore:
+                problems.append(
+                    f"could not restore {path} from {backup[path].name}: {restore.strerror}"
+                )
         for temp_path in temporary.values():
             temp_path.unlink(missing_ok=True)
-        raise DemandWritingError([f"could not write {exc.filename}: {exc.strerror}"]) from exc
+        raise DemandWritingError(problems) from exc
+
+    for path in backed_up:
+        backup[path].unlink(missing_ok=True)
 
 
 def write_sumo_demand(
