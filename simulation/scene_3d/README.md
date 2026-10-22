@@ -1,7 +1,7 @@
 # Frontend data for the 3D intersection view
 
 These scripts build the files the 3D intersection view reads from
-`frontend/public/data/turki_imamsaud/`. Everything is generated from data already in the
+`frontend/public/data/INT_001/`. Everything is generated from data already in the
 repository, so the view can be rebuilt whenever the network or the demand changes.
 
 ## Run
@@ -29,7 +29,7 @@ or `pip install eclipse-sumo`). A full run takes about 20 seconds.
 
 ## Outputs
 
-`frontend/public/data/turki_imamsaud/network/`
+`frontend/public/data/INT_001/network/`
 
 | File | Built by | Contents |
 |---|---|---|
@@ -43,7 +43,7 @@ or `pip install eclipse-sumo`). A full run takes about 20 seconds.
 | `buildings.geojson` | `extract_buildings.py`, `merge_buildings.py` | Building footprints with heights |
 | `surface_detail.geojson` | `build_surface_detail.py` | Lane centre lines and paved aprons around buildings |
 
-`frontend/public/data/turki_imamsaud/baseline/` (with `--with-sim`)
+`frontend/public/data/INT_001/baseline/` (with `--with-sim`)
 
 | File | Built by | Contents |
 |---|---|---|
