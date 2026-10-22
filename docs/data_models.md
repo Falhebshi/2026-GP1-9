@@ -274,9 +274,11 @@ Fields: `scenario_id`, `intersection_id`, `time_context`, `control_mode`, `start
 
 One concrete execution of a scenario.
 
-Fields: `run_id`, `scenario_id`, `random_seed`, `network_version`, `sumo_version`, `step_length_s`, optional `started_at`, `status` (`pending`, `running`, `completed`, `failed`).
+Fields: `run_id`, `scenario_id`, `random_seed`, `network_version`, `sumo_version`, `step_length_s`, `mapping_version`, `demand_sha256`, `route_file_sha256`, optional `started_at`, `status` (`pending`, `running`, `completed`, `failed`).
 
 Lifecycle rules: `pending` and `failed` runs may have no `started_at`; `running` and `completed` runs require it; a failed run may also have one if execution began before the failure.
+
+**Recorded inputs.** A run records the inputs it used, so that compared runs can be shown to differ only in the intervention: `mapping_version` (the `mapping_version` of `network_mappings.json`), `demand_sha256` (the fingerprint of the `SimulationDemand` file written by the SUMO demand writer) and `route_file_sha256` (the fingerprint of the SUMO route file, which holds every planned departure). The fingerprints are 64 hexadecimal characters. Like `started_at`, the three may be missing while a run is `pending` or `failed` and are required once it is `running` or `completed`. Departures are planned from the run's seed and its demand, so two runs with the same seed and demand have the same route file.
 
 A scenario may have several runs, each with its own seed:
 
@@ -311,7 +313,7 @@ A replicated experiment comparing an intervention scenario with its baseline usi
 - `ReplicationPair`: `baseline_run_id`, `intervention_run_id` (must differ). It does **not** store the seed; `SimulationRun` owns it.
 - `ReplicationSet`: `replication_set_id`, `baseline_scenario_id`, `intervention_scenario_id` (must differ), `pairs` (at least 2, because a standard deviation needs two values; no run may appear twice). Properties `replication_count`, `baseline_run_ids`, `intervention_run_ids` (in pair order).
 
-Before comparing, the KPI engine (`kpi_engine.md` section 12.6) checks with the `SimulationRun` and `Scenario` objects that both runs of each pair used the same seed, that each pair used a different seed, that each run is completed and belongs to the stated scenario, that the intervention references the baseline, and that all runs share the network version, SUMO version and step length. The replication runner may repeat these checks when it starts the runs. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
+Before comparing, the KPI engine (`kpi_engine.md` section 12.6) checks with the `SimulationRun` and `Scenario` objects that both runs of each pair used the same seed, that each pair used a different seed, that each run is completed and belongs to the stated scenario, that the intervention references the baseline, that the two scenarios cover the same time window (`start_time`, `end_time`, `time_context`), that both runs of each pair used the same route file, and that all runs share the network version, SUMO version, step length, mapping version and demand. Baseline and intervention therefore use the same demand file, generated once. The replication runner may repeat these checks when it starts the runs. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
 
 ## 3.5 Scenario Validation
 
@@ -320,7 +322,7 @@ The scenario models enforce structural relationships such as:
 - historical and forecast scenarios require an `end_time`;
 - intervention scenarios require a `reference_scenario_id`; baseline scenarios cannot reference another scenario; a scenario cannot reference itself;
 - scenario data-time timestamps must use Riyadh time;
-- `running` and `completed` runs require `started_at`, which must include timezone information;
+- `running` and `completed` runs require `started_at`, which must include timezone information, and their recorded inputs (`mapping_version`, `demand_sha256`, `route_file_sha256`);
 - warm-up + clearance must be shorter than a known total duration.
 
 These are structural integrity rules rather than traffic-simulation business logic.
@@ -767,3 +769,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 20 Oct 2026 (demand allocation) | Added `SimulationDemand.allocated_observation_ids` (a subset of `source_observation_ids`) and the computed `is_allocated`, marking demand that includes part of a split shared-lane detector count |
 | 20 Oct 2026 (demand imputation) | Added `ImputationMethod`, `ImputedDetector`, `SimulationDemand.imputed_detectors` and the computed `is_imputed`, marking demand that includes an estimated count for a detector that did not report. RCRC and synthetic demand may consist of imputed detectors only |
 | 22 Oct 2026 (KPI comparison review) | Added `KpiComparison.pair_count` and the computed `is_partial_sample`, marking comparisons based on fewer pairs than the replication set holds |
+| 23 Oct 2026 (run inputs) | Added `SimulationRun.mapping_version`, `demand_sha256` and `route_file_sha256`, required for running and completed runs, so that compared runs can be checked for identical inputs |

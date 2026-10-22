@@ -35,7 +35,7 @@ from jaadah.models.kpis import (
     UncontrolledMovements,
 )
 from jaadah.models.network import ApproachLane, Movement
-from jaadah.models.scenario import ReplicationSet, Scenario, SimulationRun
+from jaadah.models.scenario import ReplicationSet, Scenario, SimulationRun, TimeContext
 from jaadah.models.signals import SignalProgram
 from jaadah.models.traffic import SimulationDemand
 
@@ -438,6 +438,9 @@ def run(run_id, scenario_id, seed, **overrides):
         network_version="net-1",
         sumo_version="1.27",
         step_length_s=0.2,
+        mapping_version="2.2-movement-attributes",
+        demand_sha256="d" * 64,
+        route_file_sha256=f"{seed:064x}",
         started_at=datetime(2026, 10, 14, 7, 0, tzinfo=RIYADH),
         status="completed",
     )
@@ -503,6 +506,45 @@ def test_missing_run_rejected():
 
     with pytest.raises(ValueError, match="run I3 is missing"):
         check_replication_set(SET, values, SCENARIOS)
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"I2": run("I2", "SCN_INT", 73, mapping_version="2.1-lanes")}, "mapping_version"),
+        ({"I2": run("I2", "SCN_INT", 73, demand_sha256="e" * 64)}, "demand_sha256"),
+        ({"I2": run("I2", "SCN_INT", 73, route_file_sha256="f" * 64)}, "pair 2 used different route files"),
+    ],
+)
+def test_runs_must_use_the_same_inputs(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        check_replication_set(SET, runs(**overrides), SCENARIOS)
+
+
+def test_route_files_differ_between_pairs():
+    """Different seeds plan different departures: only pairs must match."""
+
+    values = runs()
+
+    assert values["B1"].route_file_sha256 != values["B2"].route_file_sha256
+    check_replication_set(SET, values, SCENARIOS)
+
+
+@pytest.mark.parametrize(
+    "update, field",
+    [
+        ({"start_time": datetime(2026, 10, 14, 17, 0, tzinfo=RIYADH)}, "start_time"),
+        ({"end_time": datetime(2026, 10, 14, 9, 0, tzinfo=RIYADH)}, "end_time"),
+        ({"time_context": TimeContext.FORECAST}, "time_context"),
+    ],
+)
+def test_scenarios_must_cover_the_same_time_window(update, field):
+    """A 08:00 baseline cannot be compared with a 17:00 intervention."""
+
+    scenarios = {**SCENARIOS, "SCN_INT": SCENARIOS["SCN_INT"].model_copy(update=update)}
+
+    with pytest.raises(ValueError, match=f"the scenarios differ in {field}"):
+        check_replication_set(SET, runs(), scenarios)
 
 
 def test_intervention_must_reference_the_baseline():

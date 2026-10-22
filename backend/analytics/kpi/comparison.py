@@ -457,11 +457,15 @@ def check_replication_set(
 ) -> None:
     """
     Raise ValueError unless each pair differs only in the
-    intervention: same seed within a pair, a different seed in each
-    pair, every run completed and in its scenario, the intervention
-    referencing the baseline, and the same network version, SUMO
-    version and step length for every run. (Demand and mapping
-    versions are not recorded on SimulationRun yet.)
+    intervention:
+    - the two scenarios cover the same time window (start_time,
+      end_time, time_context) and the intervention references the
+      baseline;
+    - every run is completed and in its scenario;
+    - same seed and same route file within a pair (the same planned
+      departures), a different seed in each pair;
+    - the same network version, SUMO version, step length, mapping
+      version and demand for every run.
     """
 
     baseline_id = replication_set.baseline_scenario_id
@@ -476,6 +480,16 @@ def check_replication_set(
             f"intervention scenario {intervention_id} does not reference "
             f"baseline scenario {baseline_id}"
         )
+
+    for field in ("start_time", "end_time", "time_context"):
+        baseline_value = getattr(scenarios[baseline_id], field)
+        intervention_value = getattr(scenarios[intervention_id], field)
+
+        if baseline_value != intervention_value:
+            raise ValueError(
+                f"the scenarios differ in {field}: baseline "
+                f"{baseline_value}, intervention {intervention_value}"
+            )
 
     seeds = []
 
@@ -507,6 +521,12 @@ def check_replication_set(
                 f"{intervention.random_seed}"
             )
 
+        if baseline.route_file_sha256 != intervention.route_file_sha256:
+            raise ValueError(
+                f"pair {number} used different route files, so its "
+                "departures were not planned the same way"
+            )
+
         seeds.append(baseline.random_seed)
 
     if len(seeds) != len(set(seeds)):
@@ -518,7 +538,13 @@ def check_replication_set(
         for run_id in (pair.baseline_run_id, pair.intervention_run_id)
     ]
 
-    for field in ("network_version", "sumo_version", "step_length_s"):
+    for field in (
+        "network_version",
+        "sumo_version",
+        "step_length_s",
+        "mapping_version",
+        "demand_sha256",
+    ):
         if len({getattr(run, field) for run in all_runs}) != 1:
             raise ValueError(f"the runs do not all have the same {field}")
 

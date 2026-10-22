@@ -567,10 +567,12 @@ Before comparing, the engine checks the `ReplicationSet` against its `Simulation
 - the two runs of a pair used different seeds, or two pairs used the same seed;
 - a run is not `completed`, or belongs to the wrong scenario;
 - the intervention scenario does not reference the baseline (`reference_scenario_id`);
-- the runs differ in network version, SUMO version or step length;
+- the runs differ in network version, SUMO version, step length, mapping version (`mapping_version`) or demand (`demand_sha256`);
+- the two runs of a pair used different route files (`route_file_sha256`): with the same seed and demand, both scenarios of a pair plan exactly the same departures; route files differ only between pairs, which use different seeds;
+- the two scenarios cover different time windows (`start_time`, `end_time`, `time_context`);
 - the comparison's labels (baseline scenario, intervention scenario, replication set) differ from those of the `ReplicationSet` it is calculated from, or, for a level-of-service comparison, from those of its delay comparison.
 
-A wrong pairing would produce a convincing but false comparison. Demand and mapping versions are not recorded on `SimulationRun` yet, so they cannot be checked.
+A wrong pairing would produce a convincing but false comparison.
 
 ---
 
@@ -602,8 +604,11 @@ The HCM delay chain starts at the start of the warm-up with no initial queue and
 
 A comparison is valid only when baseline and intervention differ in the intervention alone. Besides the checks of section 12.6:
 
-- the two scenarios must cover the same time window (`start_time`, `end_time`, `time_context`);
-- each run records the mapping version and the demand it used, and both must be the same in every pair of a replication set.
+- the two scenarios cover the same time window (`start_time`, `end_time`, `time_context`);
+- every run records the mapping version, the demand fingerprint and the route-file fingerprint it used (`SimulationRun`); mapping and demand are the same for every run of a replication set, and the route file is the same within each pair;
+- baseline and intervention therefore use **one demand file, generated once and reused**: a demand file regenerated for each scenario with different demand IDs has a different fingerprint, even when the counts are identical.
+
+These are checked by `check_replication_set` (section 12.6).
 
 ## 13.6 Vehicles, demand and signal timing
 
