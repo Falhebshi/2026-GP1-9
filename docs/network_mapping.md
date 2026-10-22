@@ -31,11 +31,7 @@ related records agree, such as a lane and its served movements belonging to
 the same approach. Creating canonical objects from these declarations does
 not independently verify their geographic correctness.
 
-## Schema and approach sides
-
-`schema_version` identifies the JSON structure and must be `"2.0"`.
-`mapping_version` is a nonempty data revision label; the current value is
-`"2.1-lanes"`. It does not have to match the schema version.
+## Mapping configuration structure
 
 | Field | Purpose |
 | --- | --- |
@@ -44,6 +40,8 @@ not independently verify their geographic correctness.
 | `approach_lanes` | Canonical `ApproachLane` definitions. |
 | `lane_mappings` | Canonical lane IDs and their SUMO lane segments. |
 | `detector_mappings` | Source detector identities, optional approach/lane references, candidate movements, and mapping status. |
+
+## Approach sides
 
 `approach_side` describes where the approach is located. Detector descriptions
 use travel directions such as EB or WB, which have a different meaning:
@@ -331,6 +329,35 @@ checksum = hashlib.sha256(network_bytes.replace(b"\r\n", b"\n")).hexdigest()
 
 A line-ending mismatch does not require editing the SUMO network or replacing
 its recorded checksum.
+
+## Mapping versioning
+
+### Version identifiers
+
+`schema_version` identifies the mapping configuration's structure and validation
+contract. The repository currently accepts only `"2.0"`. `mapping_version` is a
+nonempty label identifying a specific revision of the study-area mapping data;
+the current value is `"2.1-lanes"`. The version labels do not need to match.
+
+### Maintaining versions
+
+These guidelines establish a new team convention, rather than describe
+historical requirements. No formal semantic-versioning policy currently exists.
+
+- Update `mapping_version` when mapping data, associations, classifications, or
+  populated collections change.
+- Review compatibility for optional schema additions; a `schema_version`
+  increment is not automatically required.
+- For breaking schema changes, coordinate a `schema_version` update with the
+  affected models, loaders, validators, tests, and consumers.
+- Documentation-only changes require no version update.
+
+For each change, review its effect on the schema contract and mapping data
+separately. Update the relevant version values in `network_mappings.json`,
+adjust affected code and tests (including assertions of specific version labels),
+and update this documentation to reflect the accepted schema and current data
+revision. Run the relevant validation and tests together before accepting the
+change.
 
 ## Tests
 
