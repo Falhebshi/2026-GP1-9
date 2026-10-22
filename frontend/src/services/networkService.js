@@ -8,7 +8,7 @@
 //   getNetworkTimeline(t)  { isSample, bars: [{ time, value, level }] }, 24 hours ending at t
 //   getSegments(time)      GeoJSON road segments, or null while not connected (see below)
 
-import { sampleTimelineBars } from './currentTrafficService'
+import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 
 // Road segment congestion is NOT connected yet: the source (RCRC, TomTom or another feed) is
 // decided next sprint, so getSegments returns null for now and the map shows the plain basemap.
@@ -30,18 +30,11 @@ const NETWORK_BOUNDS = [
   [46.73, 24.8],
 ]
 
-// Intersections in the "Intersections by area" list. Positions are where the two roads cross in
-// OpenStreetMap. The district of our study intersection is confirmed (Google Maps); the others are
-// the nearest district on the map, so check them before relying on them. Only the study
-// intersection has a simulation (simulation: '/current'); the others are listed but not active yet.
-const NETWORK_INTERSECTIONS = [
-  {
-    id: 'turki_imamsaud',
-    name: 'Prince Turki Al-Awwal Rd × Imam Saud Rd',
-    area: 'An Nakheel',
-    center: [46.633621, 24.735289],
-    simulation: '/current',
-  },
+// The other intersections in the "Intersections by area" list. Positions are where the two roads
+// cross in OpenStreetMap, and the district is the nearest one on the map, so check them before
+// relying on them. They are listed but not active yet: only the study intersection, which comes
+// from its record (getIntersection), has a simulation.
+const OTHER_INTERSECTIONS = [
   {
     id: 'imamsaud_takhassusi',
     name: 'Imam Saud Rd × Takhassusi Rd',
@@ -71,7 +64,18 @@ export async function getNetwork() {
   if (demo === 'error') throw new Error('The network service is not responding.')
   if (demo === 'empty') return { isSample: true, bounds: NETWORK_BOUNDS, intersections: [] }
 
-  return { isSample: true, bounds: NETWORK_BOUNDS, intersections: NETWORK_INTERSECTIONS }
+  const study = await getIntersection()
+  const intersections = [
+    {
+      id: study.id,
+      name: study.name,
+      area: study.area,
+      center: study.center,
+      simulation: '/current',
+    },
+    ...OTHER_INTERSECTIONS,
+  ]
+  return { isSample: true, bounds: NETWORK_BOUNDS, intersections }
 }
 
 // 24 hours of 15-minute congestion bars ending at `end` (a time in ms; now if left out)
