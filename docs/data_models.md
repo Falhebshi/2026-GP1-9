@@ -180,6 +180,8 @@ center_latitude  = 24.72
 
 Providing only one coordinate is rejected.
 
+The study intersection is stored in `data/processed/intersections.json` and loaded with `load_intersections()` in `backend/outputs/intersections.py`, which rejects duplicate IDs. Its `intersection_id` must equal the `intersection_id` of the network mappings (`INT_001`); a test checks this.
+
 ## 2.2 `Approach`
 
 A stable identity for an incoming intersection approach.
