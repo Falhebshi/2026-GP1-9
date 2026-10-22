@@ -12,7 +12,9 @@ Combining runs and comparing scenarios (docs/kpi_engine.md section 12).
   seeds): the mean of the per-pair differences, with their standard
   deviation, as a KpiComparison.
 - Before comparing, the runs of the ReplicationSet are checked.
-- input_origins are read from the demand and signal-program sources.
+- input_origins are read from the demand records (their source and
+  whether they are allocated or imputed) and the signal-program
+  source.
 """
 
 import statistics
@@ -46,7 +48,7 @@ from jaadah.models.scenario import (
     SimulationRunStatus,
 )
 from jaadah.models.signals import SignalProgram
-from jaadah.models.traffic import SimulationDemandSource
+from jaadah.models.traffic import SimulationDemand, SimulationDemandSource
 
 
 NO_RUN_VALUE_REASON = "no run has a value for this element"
@@ -110,27 +112,42 @@ class ComparisonSpec(NamedTuple):
 
 def input_origins(
     method: KpiMethod,
-    demand_sources: set[SimulationDemandSource],
+    demands: list[SimulationDemand],
     program: SignalProgram,
+    movements: dict[str, Movement],
+    interval: AnalysisInterval,
+    approach_id: str | None = None,
 ) -> list[InputOrigin]:
     """
-    Where a result's inputs come from (section 12.5):
-    - demand: RCRC counts are observed, synthetic and forecast demand
-      are modelled assumptions;
-    - signal timing: from SignalProgram.source;
-    - lane geometry: a modelled assumption (GEOMETRY_INPUT_ORIGIN);
-    - simulation results add simulated; HCM results add the HCM default
-      factors, a modelled assumption.
+    Where a result's inputs come from (section 12.5).
+
+    The demand records used are those of the result's approach
+    (approach_id; None for the intersection, which uses every
+    approach) whose interval overlaps the result's interval:
+    - RCRC demand is observed; synthetic and forecast demand are
+      modelled assumptions;
+    - demand that is allocated (split from a shared-lane detector) or
+      imputed (estimated for a detector that did not report) is also a
+      modelled assumption, whatever its source.
+    Signal timing comes from SignalProgram.source and lane geometry is
+    a modelled assumption (GEOMETRY_INPUT_ORIGIN). Simulation results
+    add simulated; HCM results add the HCM default factors, a modelled
+    assumption.
+
+    Raises ValueError for a demand record whose movement is unknown.
     """
 
     origins = {GEOMETRY_INPUT_ORIGIN, signal_timing_origin(program)}
 
-    for source in demand_sources:
+    for demand in _demands_for(demands, movements, interval, approach_id):
         origins.add(
             InputOrigin.OBSERVED
-            if source == SimulationDemandSource.RCRC
+            if demand.source == SimulationDemandSource.RCRC
             else InputOrigin.MODELLED_ASSUMPTION
         )
+
+        if demand.is_allocated or demand.is_imputed:
+            origins.add(InputOrigin.MODELLED_ASSUMPTION)
 
     if method == KpiMethod.SIMULATION:
         origins.add(InputOrigin.SIMULATED)
@@ -138,6 +155,38 @@ def input_origins(
         origins.add(HCM_DEFAULTS_INPUT_ORIGIN)
 
     return _ordered(origins)
+
+
+def _demands_for(
+    demands: list[SimulationDemand],
+    movements: dict[str, Movement],
+    interval: AnalysisInterval,
+    approach_id: str | None,
+) -> list[SimulationDemand]:
+    """The demand records of one approach (or all) overlapping an interval."""
+
+    selected = []
+
+    for demand in demands:
+        if demand.movement_id not in movements:
+            raise ValueError(
+                f"demand {demand.demand_id} uses unknown movement "
+                f"{demand.movement_id}"
+            )
+
+        overlaps = (
+            demand.interval_start < interval.end
+            and interval.start < demand.interval_end
+        )
+        on_approach = (
+            approach_id is None
+            or movements[demand.movement_id].approach_id == approach_id
+        )
+
+        if overlaps and on_approach:
+            selected.append(demand)
+
+    return selected
 
 
 def _ordered(origins) -> list[InputOrigin]:

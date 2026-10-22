@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from backend.analytics.kpi import comparison
 from backend.analytics.kpi.comparison import (
     NO_PAIR_VALUE_REASON,
     ComparisonSpec,
@@ -34,7 +35,7 @@ from jaadah.models.kpis import (
 from jaadah.models.network import ApproachLane, Movement
 from jaadah.models.scenario import ReplicationSet, Scenario, SimulationRun
 from jaadah.models.signals import SignalProgram
-from jaadah.models.traffic import SimulationDemandSource
+from jaadah.models.traffic import SimulationDemand
 
 
 RIYADH = timezone(timedelta(hours=3))
@@ -280,33 +281,140 @@ def test_slip_approaches_are_tagged():
 
 
 # ============================================================
-# INPUT ORIGINS (question 8)
+# INPUT ORIGINS (question 8; demand markers)
 # ============================================================
 
-def test_synthetic_demand_simulation_origins():
-    origins = input_origins(KpiMethod.SIMULATION, {SimulationDemandSource.SYNTHETIC}, program())
+NEXT_INTERVAL = AnalysisInterval(INTERVAL.end, INTERVAL.end + timedelta(minutes=15))
 
-    assert origins == [InputOrigin.MODELLED_ASSUMPTION, InputOrigin.SIMULATED]
+
+def demand(movement_id, source="rcrc", interval=INTERVAL, allocated=False, imputed=False):
+    """One demand record; optionally split from a shared lane or estimated."""
+
+    values = dict(
+        demand_id=f"DEM_{movement_id}_{interval.start:%H%M}",
+        interval_start=interval.start,
+        interval_end=interval.end,
+        movement_id=movement_id,
+        vehicle_count=100,
+        source=source,
+        source_observation_ids=["OBS_1", "OBS_2"],
+    )
+    if allocated:
+        values["allocated_observation_ids"] = ["OBS_2"]
+    if imputed:
+        values["imputed_detectors"] = [
+            {"site_id": "9", "detector_id": "6", "method": "neighbour_regression"}
+        ]
+    return SimulationDemand(**values)
+
+
+def origins(demands, approach_id=None, method=KpiMethod.SIMULATION, interval=INTERVAL, **program_args):
+    return input_origins(
+        method, demands, program(**program_args), MOVEMENT_MODELS, interval, approach_id
+    )
+
+
+@pytest.fixture
+def surveyed_geometry(monkeypatch):
+    """
+    Lane geometry is a modelled assumption today, which already puts
+    modelled_assumption on every result. Treating it as observed shows
+    what the demand markers add on their own.
+    """
+
+    monkeypatch.setattr(comparison, "GEOMETRY_INPUT_ORIGIN", InputOrigin.OBSERVED)
+
+
+def test_synthetic_demand_simulation_origins():
+    result = origins([demand("MOV_E_T", source="synthetic")], "APP_E")
+
+    assert result == [InputOrigin.MODELLED_ASSUMPTION, InputOrigin.SIMULATED]
 
 
 def test_rcrc_demand_with_observed_signal():
-    origins = input_origins(
-        KpiMethod.SIMULATION, {SimulationDemandSource.RCRC}, program(source="observed")
-    )
+    result = origins([demand("MOV_E_T")], "APP_E", source="observed")
 
     # geometry stays a modelled assumption
-    assert origins == [
+    assert result == [
         InputOrigin.OBSERVED,
         InputOrigin.MODELLED_ASSUMPTION,
         InputOrigin.SIMULATED,
     ]
 
 
-def test_hcm_origins_never_include_simulated():
-    origins = input_origins(KpiMethod.HCM, {SimulationDemandSource.RCRC}, program())
+def test_measured_rcrc_demand_is_observed(surveyed_geometry):
+    result = origins([demand("MOV_E_T")], "APP_E", source="observed")
 
-    assert InputOrigin.SIMULATED not in origins
-    assert InputOrigin.MODELLED_ASSUMPTION in origins
+    assert result == [InputOrigin.OBSERVED, InputOrigin.SIMULATED]
+
+
+@pytest.mark.parametrize("marker", ["allocated", "imputed"])
+def test_allocated_or_imputed_demand_is_a_modelled_assumption(surveyed_geometry, marker):
+    """Whatever the source: part of the count is not measured."""
+
+    result = origins([demand("MOV_E_L", **{marker: True})], "APP_E", source="observed")
+
+    assert InputOrigin.MODELLED_ASSUMPTION in result
+    assert InputOrigin.OBSERVED in result
+
+
+def test_marker_stays_on_its_own_approach(surveyed_geometry):
+    """East was split; North was measured in full."""
+
+    demands = [demand("MOV_E_L", allocated=True), demand("MOV_E_T"), demand("MOV_N_L")]
+
+    east = origins(demands, "APP_E", source="observed")
+    north = origins(demands, "APP_N", source="observed")
+
+    assert InputOrigin.MODELLED_ASSUMPTION in east
+    assert north == [InputOrigin.OBSERVED, InputOrigin.SIMULATED]
+
+
+def test_intersection_uses_every_approach(surveyed_geometry):
+    demands = [demand("MOV_E_L", allocated=True), demand("MOV_N_L")]
+
+    result = origins(demands, None, source="observed")
+
+    assert InputOrigin.MODELLED_ASSUMPTION in result
+
+
+def test_marker_stays_in_its_own_interval(surveyed_geometry):
+    """A split at 08:15 does not change the 08:00 result."""
+
+    demands = [demand("MOV_E_T"), demand("MOV_E_L", interval=NEXT_INTERVAL, allocated=True)]
+
+    result = origins(demands, "APP_E", source="observed")
+
+    assert result == [InputOrigin.OBSERVED, InputOrigin.SIMULATED]
+
+
+def test_longer_result_uses_every_overlapping_interval(surveyed_geometry):
+    """A whole-period result (08:00-08:30) sees the 08:15 split."""
+
+    demands = [demand("MOV_E_T"), demand("MOV_E_L", interval=NEXT_INTERVAL, allocated=True)]
+    period = AnalysisInterval(INTERVAL.start, NEXT_INTERVAL.end)
+
+    result = origins(demands, "APP_E", interval=period, source="observed")
+
+    assert InputOrigin.MODELLED_ASSUMPTION in result
+
+
+def test_approach_without_demand_records_adds_no_demand_origin(surveyed_geometry):
+    result = origins([demand("MOV_N_L")], "APP_E", source="observed")
+
+    assert result == [InputOrigin.OBSERVED, InputOrigin.SIMULATED]
+
+
+def test_unknown_movement_rejected():
+    with pytest.raises(ValueError, match="unknown movement MOV_X"):
+        origins([demand("MOV_X")], "APP_E")
+
+
+def test_hcm_origins_never_include_simulated():
+    result = origins([demand("MOV_E_T")], "APP_E", method=KpiMethod.HCM)
+
+    assert InputOrigin.SIMULATED not in result
+    assert InputOrigin.MODELLED_ASSUMPTION in result
 
 
 def test_comparison_origins_combine_both_sides():

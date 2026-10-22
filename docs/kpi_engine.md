@@ -539,11 +539,15 @@ Example (East delay): baseline 40, 50, 60 s; intervention 35, 44, 56 s; differen
 
 | Input | Origin |
 | --- | --- |
-| Demand | `SimulationDemand.source`: `rcrc` → observed; `synthetic`, `forecast` → modelled assumption |
+| Demand | `SimulationDemand.source`: `rcrc` → observed; `synthetic`, `forecast` → modelled assumption. Demand that is **allocated** (`is_allocated`: part of a shared-lane detector count, split between movements) or **imputed** (`is_imputed`: an estimated count for a detector that did not report) also adds modelled assumption, whatever its source |
 | Signal timing | `SignalProgram.source`: `observed` → observed; otherwise modelled assumption (section 9.8) |
 | Lane geometry | modelled assumption (`GEOMETRY_INPUT_ORIGIN`): widths and storage lengths are SUMO defaults or modelled values |
 
-Simulation results add *simulated*; HCM results add *modelled assumption* for the HCM default factors (`HCM_DEFAULTS_INPUT_ORIGIN`). A comparison carries the origins of both scenarios. Demand split from a shared-lane detector count rests on an assumed split method; it will add *modelled assumption* once `SimulationDemand` marks such demand.
+Simulation results add *simulated*; HCM results add *modelled assumption* for the HCM default factors (`HCM_DEFAULTS_INPUT_ORIGIN`). A comparison carries the origins of both scenarios.
+
+**Which demand records a result uses:** those of its own approach whose interval overlaps the result's interval. A lane, lane-group, movement or approach result uses its approach's records; an intersection result uses every approach's. Example: in 08:00–08:15 the East shared-lane count was split and North was measured in full, so East's results carry modelled assumption from the demand and North's do not. The approach is the unit because a split changes how traffic spreads over all the lanes of that approach. A whole-period result uses every interval it covers. An approach without demand records in an interval adds no demand origin. A demand record whose movement is unknown is rejected.
+
+While lane geometry is a modelled assumption, every result already carries modelled assumption, so the demand markers change the label only once surveyed geometry is used.
 
 ## 12.6 Checking the runs of a comparison
 
