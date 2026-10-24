@@ -15,110 +15,75 @@ const ARM_Z = 7.6,
 const HEAD_Z = ARM_Z - 0.2 - 0.6 * K // the head hangs just under the arm
 const POLE_HEAD_Z = 3.8
 const LENS_DZ = 0.3 * K // spacing between the 300 mm lenses
-const COMPASS = ['N', 'E', 'S', 'W']
 const LAMPS = ['r', 'y', 'g']
+const LAMP_OF = { green: 'g', yellow: 'y', red: 'r' }
+// The approach names laneIndex.js uses, from the approach side in the network mapping
+const SIDE = { north: 'N', east: 'E', south: 'S', west: 'W' }
 
-/** Signal state string at time t. states is a sorted list of [time, string] pairs. */
-export function stateAt(states, t) {
-  let s = states[0]?.[1] ?? ''
-  for (const [tt, st] of states) {
-    if (tt <= t) s = st
+/** The indication of every movement at time t: the last change at or before t. */
+export function indicationsAt(changes, t) {
+  let movements = changes[0]?.movements ?? {}
+  for (const change of changes) {
+    if (change.t <= t) movements = change.movements
     else break
   }
-  return s
-}
-/** Turns one SUMO state character into 'r', 'y', 'g' or 'o' (off). */
-export const cls = (ch) =>
-  ch === 'G' || ch === 'g'
-    ? 'g'
-    : ch === 'y' || ch === 'Y' || ch === 'u'
-      ? 'y'
-      : ch === 'o' || ch === 'O'
-        ? 'o'
-        : 'r'
-
-/** Colour of a whole approach. Green if any of its links is green, then yellow, otherwise red. */
-export const approachClass = (state, links) => {
-  const c = links.map((i) => cls(state[i]))
-  return c.includes('g') ? 'g' : c.includes('y') ? 'y' : 'r'
+  return movements
 }
 
-/** Works out the pole, arm and head positions for every approach. Only runs once. */
-export function prepareSignals(signalsJson, surface, center) {
-  const laneWidth = {}
-  for (const f of surface.features)
-    if (f.properties.kind === 'lane') laneWidth[f.properties.id] = f.properties.width
+// One lamp for a whole approach: all its movements change together (build_playback.py checks this).
+// Red when there is no run yet.
+const approachLamp = (movements, a) => LAMP_OF[movements[a.movementIds[0]]] ?? 'r'
 
-  const controllers = signalsJson.traffic_lights.map((tl) => {
-    const byEdge = {}
-    for (const h of tl.heads) (byEdge[h.in_lane.replace(/_\d+$/, '')] ||= []).push(h)
+/** Works out the pole, arm and head positions of every approach from signal_heads.json. Runs once. */
+export function prepareSignals(signalHeads, signals) {
+  const approaches = signalHeads.approaches.map((approach) => {
+    const lanes = approach.lanes // rightmost lane first
+    const o = lanes[0].position
+    const [dx, dy] = toM(lanes[0].toward, o)
+    const L = Math.hypot(dx, dy) || 1
+    const f = [dx / L, dy / L],
+      r = [f[1], -f[0]] // f is the travel direction, r points to the right of it
+    const yaw = (Math.atan2(f[1], f[0]) * 180) / Math.PI
 
-    const approaches = Object.entries(byEdge).map(([edge, heads]) => {
-      const o = heads[0].position
-      const [dx, dy] = toM(heads[0].toward, o)
-      const L = Math.hypot(dx, dy) || 1
-      const f = [dx / L, dy / L],
-        r = [f[1], -f[0]] // f is the travel direction, r points to the right of it
-      const yaw = (Math.atan2(f[1], f[0]) * 180) / Math.PI
-      const byLane = {}
-      for (const h of heads) (byLane[h.in_lane] ||= []).push(h)
+    // The pole stands at the right kerb, 1.5 m behind the stop line of the rightmost lane.
+    const kerb = lanes[0].width_m / 2 + 1.2
+    const poleM = [-f[0] * SETBACK + r[0] * kerb, -f[1] * SETBACK + r[1] * kerb]
+    const poleLat = poleM[0] * r[0] + poleM[1] * r[1]
 
-      // The pole stands at the right kerb, 1.5 m behind the stop line of the rightmost lane.
-      const laneIdx = (id) => Number(id.match(/_(\d+)$/)[1])
-      const rightLane = Object.keys(byLane).sort((a, b) => laneIdx(a) - laneIdx(b))[0]
-      const [rx, ry] = toM(byLane[rightLane][0].position, o)
-      const kerb = (laneWidth[rightLane] ?? 3.2) / 2 + 1.2
-      const poleM = [rx - f[0] * SETBACK + r[0] * kerb, ry - f[1] * SETBACK + r[1] * kerb]
-      const poleLat = poleM[0] * r[0] + poleM[1] * r[1]
-
-      // One head per lane, centred over the lane on the arm. A lane with more than one movement still
-      // gets a single head, which is fine because all movements of an approach change together in this plan.
-      const placed = []
-      for (const [lane, hs] of Object.entries(byLane)) {
-        const [hx, hy] = toM(hs[0].position, o)
-        const lateral = hx * r[0] + hy * r[1]
-        const along = lateral - poleLat // negative means left of the pole
-        placed.push({
-          links: hs.map((h) => h.link_index),
-          lane,
-          lateral,
-          m: [poleM[0] + r[0] * along, poleM[1] + r[1] * along],
-        })
-      }
-      const far = Math.min(...placed.map((p) => p.lateral)) - 0.5
-      const armLen = Math.max(1, poleLat - far)
-      const armMid = [poleM[0] - (r[0] * armLen) / 2, poleM[1] - (r[1] * armLen) / 2]
-      // Name the approach by where its stop line is compared to the junction centre.
-      const [cx, cy] = toM(o, center)
-      const bearing = ((Math.atan2(cx, cy) * 180) / Math.PI + 360) % 360
-      const P = (m, dfwd = 0, drt = 0) =>
-        fromM([m[0] + f[0] * dfwd + r[0] * drt, m[1] + f[1] * dfwd + r[1] * drt], o)
-      return {
-        edge,
-        f,
-        r,
-        yaw,
-        P,
-        // The arms are diagonal, so we use the same names as the signal documentation:
-        // NE arm is East, SE is South, SW is West and NW is North.
-        name: COMPASS[(Math.floor(bearing / 90) + 1) % 4],
-        links: placed.flatMap((p) => p.links),
-        heads: placed,
-        poleM,
-        pole: fromM(poleM, o),
-        arm: { center: fromM(armMid, o), half: armLen / 2 },
-      }
+    // One head per lane, centred over the lane on the arm
+    const heads = lanes.map((lane) => {
+      const [hx, hy] = toM(lane.position, o)
+      const lateral = hx * r[0] + hy * r[1]
+      const along = lateral - poleLat // negative means left of the pole
+      return { lane: lane.lane_id, lateral, m: [poleM[0] + r[0] * along, poleM[1] + r[1] * along] }
     })
-    return { id: tl.tls_id, cycle: tl.cycle_s ?? 120, states: tl.states, approaches }
+    const far = Math.min(...heads.map((h) => h.lateral)) - 0.5
+    const armLen = Math.max(1, poleLat - far)
+    const armMid = [poleM[0] - (r[0] * armLen) / 2, poleM[1] - (r[1] * armLen) / 2]
+    const P = (m, dfwd = 0, drt = 0) =>
+      fromM([m[0] + f[0] * dfwd + r[0] * drt, m[1] + f[1] * dfwd + r[1] * drt], o)
+    return {
+      edge: lanes[0].lane_id.replace(/_\d+$/, ''), // the drawn road, for the approach highlight
+      name: SIDE[approach.side],
+      movementIds: approach.movement_ids,
+      f,
+      r,
+      yaw,
+      P,
+      heads,
+      poleM,
+      pole: fromM(poleM, o),
+      arm: { center: fromM(armMid, o), half: armLen / 2 },
+    }
   })
 
-  return { controllers, tEnd: signalsJson.t_end ?? 120, hardware: buildHardware(controllers) }
+  return { approaches, changes: signals?.changes ?? [], hardware: buildHardware(approaches) }
 }
 
 const poleHeadAt = (a) => a.poleM.map((v, i) => v - a.f[i] * (0.2 + 0.24 * K)) // the head on the pole, on the side facing traffic
 
 /** The parts of the signals that never change: foundations, poles, arms and the head housings. */
-function buildHardware(controllers) {
+function buildHardware(approaches) {
   const boxes = []
   const poles = []
   const { housing, pole: poleC, border, plate } = PALETTE.signal
@@ -146,17 +111,15 @@ function buildHardware(controllers) {
     })
   }
 
-  for (const c of controllers) {
-    for (const a of c.approaches) {
-      poles.push({ position: a.pole })
-      box([...a.arm.center, ARM_Z], a.yaw - 90, [a.arm.half, 0.14, 0.14], poleC) // mast arm
-      for (const h of a.heads) {
-        const top = HEAD_Z + 0.48 * K
-        box([...a.P(h.m), (ARM_Z + top) / 2], a.yaw, [0.05, 0.05, (ARM_Z - top) / 2 + 0.05], poleC) // hanger
-        head(a, h.m, HEAD_Z)
-      }
-      head(a, poleHeadAt(a), POLE_HEAD_Z)
+  for (const a of approaches) {
+    poles.push({ position: a.pole })
+    box([...a.arm.center, ARM_Z], a.yaw - 90, [a.arm.half, 0.14, 0.14], poleC) // mast arm
+    for (const h of a.heads) {
+      const top = HEAD_Z + 0.48 * K
+      box([...a.P(h.m), (ARM_Z + top) / 2], a.yaw, [0.05, 0.05, (ARM_Z - top) / 2 + 0.05], poleC) // hanger
+      head(a, h.m, HEAD_Z)
     }
+    head(a, poleHeadAt(a), POLE_HEAD_Z)
   }
   return [
     new ColumnLayer({
@@ -192,48 +155,45 @@ function buildHardware(controllers) {
 }
 
 /** Lens positions and colors for the current signal states. */
-function lensData(sig, states) {
+function lensData(sig, movements) {
   const lit = [],
     dim = [],
     dots = []
-  sig.controllers.forEach((c, ci) => {
-    const state = states[ci]
-    for (const a of c.approaches) {
-      const add = (m, z, k) => {
-        const front = a.P(m, -0.125 * K)
-        const g1 = a.P(m, -0.152 * K),
-          g2 = a.P(m, -0.32 * K),
-          g3 = a.P(m, -0.33 * K) // the glow sits in front of the visor
-        LAMPS.forEach((lamp, i) => {
-          const lz = z + LENS_DZ - i * LENS_DZ
-          ;(k === lamp ? lit : dim).push({
-            position: [...front, lz],
-            glow1: [...g1, lz],
-            glow2: [...g2, lz],
-            glow3: [...g3, lz],
-            yaw: a.yaw,
-            lamp,
-          })
-        })
-      }
-      for (const h of a.heads) add(h.m, HEAD_Z, approachClass(state, h.links))
-      const k = approachClass(state, a.links)
-      add(poleHeadAt(a), POLE_HEAD_Z, k)
-      // Symbol for the top view. It lies along the arm with red on the driver's left.
-      const icon = {
-        k,
-        yaw: a.yaw - 90,
-        center: a.P(a.poleM, 0, -a.arm.half),
-        half: a.arm.half,
-        lamps: LAMPS.map((lamp, i) => ({
+  for (const a of sig.approaches) {
+    const add = (m, z, k) => {
+      const front = a.P(m, -0.125 * K)
+      const g1 = a.P(m, -0.152 * K),
+        g2 = a.P(m, -0.32 * K),
+        g3 = a.P(m, -0.33 * K) // the glow sits in front of the visor
+      LAMPS.forEach((lamp, i) => {
+        const lz = z + LENS_DZ - i * LENS_DZ
+        ;(k === lamp ? lit : dim).push({
+          position: [...front, lz],
+          glow1: [...g1, lz],
+          glow2: [...g2, lz],
+          glow3: [...g3, lz],
+          yaw: a.yaw,
           lamp,
-          on: lamp === k,
-          position: [...a.P(a.poleM, 0, -a.arm.half + (i - 1) * 1.3 * T), ARM_Z + 1.0],
-        })),
-      }
-      dots.push(icon)
+        })
+      })
     }
-  })
+    const k = approachLamp(movements, a)
+    for (const h of a.heads) add(h.m, HEAD_Z, k)
+    add(poleHeadAt(a), POLE_HEAD_Z, k)
+    // Symbol for the top view. It lies along the arm with red on the driver's left.
+    const icon = {
+      k,
+      yaw: a.yaw - 90,
+      center: a.P(a.poleM, 0, -a.arm.half),
+      half: a.arm.half,
+      lamps: LAMPS.map((lamp, i) => ({
+        lamp,
+        on: lamp === k,
+        position: [...a.P(a.poleM, 0, -a.arm.half + (i - 1) * 1.3 * T), ARM_Z + 1.0],
+      })),
+    }
+    dots.push(icon)
+  }
   return { lit, dim, dots }
 }
 
@@ -317,11 +277,12 @@ function topLayers(icons, top) {
 let cache = { key: null, sig: null, layers: [] }
 
 export function signalLayers(sig, t, { top = false } = {}) {
-  const states = sig.controllers.map((c) => stateAt(c.states, t))
-  const key = states.join('|') + (top ? 'T' : 'P') + ENV.ambient.toFixed(2) // also rebuild when day/night changes
+  const movements = indicationsAt(sig.changes, t)
+  const lamps = sig.approaches.map((a) => approachLamp(movements, a))
+  const key = lamps.join('|') + (top ? 'T' : 'P') + ENV.ambient.toFixed(2) // also rebuild when day/night changes
   if (key === cache.key && cache.sig === sig) return cache.layers
 
-  const { lit, dim, dots } = lensData(sig, states)
+  const { lit, dim, dots } = lensData(sig, movements)
   const { lit: litC, dim: dimC } = PALETTE.signal
   const layers = [
     ...sig.hardware,

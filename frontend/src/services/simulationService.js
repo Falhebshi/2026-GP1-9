@@ -1,10 +1,12 @@
 // Where TrafficScene3D gets the data for one intersection.
 // The files live in public/data/<intersection>/ and come from our SUMO run (scripts in simulation/).
 // Once the backend API is ready, only this file has to change, as long as it returns the same object.
-//   network/                  roads, markings, arrows, underpass, buildings, background
-//   network/planting.geojson   plants placed by hand (optional)
-//   <scenario>/signals.json   signal states over time
-//   <scenario>/sim.json       vehicle trajectories (optional)
+//   network/                     roads, markings, arrows, underpass, buildings, background
+//   network/signal_heads.json    where each approach's signal heads stand, and its movements
+//   network/planting.geojson     plants placed by hand (optional)
+//   <scenario>/run.json          the run: start time, length and its 15-minute vehicle files (optional)
+//   <scenario>/signals.json      the movements' signal indications over time
+//   <scenario>/vehicles_*.json   the vehicles of one 15-minute interval, see getVehicleInterval
 
 const BASE = '/data'
 
@@ -16,7 +18,7 @@ async function getJson(url) {
 
 export async function getIntersectionScene(intersectionId, scenario = 'baseline') {
   const net = `${BASE}/${intersectionId}/network`
-  const run = `${BASE}/${intersectionId}/${scenario}`
+  const runDir = `${BASE}/${intersectionId}/${scenario}`
   const optional = (promise) => promise.catch(() => null)
 
   const [
@@ -29,8 +31,8 @@ export async function getIntersectionScene(intersectionId, scenario = 'baseline'
     streetscape,
     detail,
     planting,
-    signals,
-    sim,
+    signalHeads,
+    run,
   ] = await Promise.all([
     getJson(`${net}/road_surface.geojson`),
     getJson(`${net}/road_markings.geojson`),
@@ -41,9 +43,11 @@ export async function getIntersectionScene(intersectionId, scenario = 'baseline'
     getJson(`${net}/streetscape.geojson`),
     optional(getJson(`${net}/surface_detail.geojson`)),
     optional(getJson(`${net}/planting.geojson`)),
-    getJson(`${run}/signals.json`),
-    optional(getJson(`${run}/sim.json`)),
+    getJson(`${net}/signal_heads.json`),
+    optional(getJson(`${runDir}/run.json`)),
   ])
+  const signals = run ? await getJson(`${runDir}/${run.signals_file}`) : null
+
   return {
     surface,
     markings,
@@ -54,7 +58,14 @@ export async function getIntersectionScene(intersectionId, scenario = 'baseline'
     streetscape,
     detail,
     planting,
+    signalHeads,
+    run,
     signals,
-    sim,
   }
+}
+
+// The vehicles of one 15-minute interval of a run: file is one of the names listed in run.json.
+// The scene loads an interval when the playback reaches it.
+export function getVehicleInterval(intersectionId, scenario, file) {
+  return getJson(`${BASE}/${intersectionId}/${scenario}/${file}`)
 }

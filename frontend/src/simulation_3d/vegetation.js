@@ -100,9 +100,10 @@ function centreLine(ring) {
 
 export function prepareVegetation({ streetscape, context, signals, center, roofs, planting }) {
   const random = seeded(7)
-  const signalPoints = (signals?.controllers ?? []).flatMap((c) =>
-    c.approaches.flatMap((a) => [a.pole, ...a.heads.map((h) => a.P(h.m))]),
-  )
+  const signalPoints = (signals?.approaches ?? []).flatMap((a) => [
+    a.pole,
+    ...a.heads.map((h) => a.P(h.m)),
+  ])
   const signalM = signalPoints.map((p) => toM(p, center))
   const roofRings = (roofs ?? []).map((f) => f.geometry.coordinates[0].map((c) => toM(c, center)))
   const clear = (p) =>
