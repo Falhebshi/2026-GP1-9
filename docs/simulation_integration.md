@@ -99,36 +99,57 @@ termination are used.
 An interruption during the post-terminate wait is recorded and still triggers
 the final kill/reap attempt. Errors from that last attempt are reported too.
 
-## SUMO Demand Generation Integration
+## Scenario Execution with Generated Demand
 
 The `jaadah/sumo_demand/` package owns `build_run_window`, departure
 planning, route writing, manifests/fingerprints and
-`check_generated_demand(..., window=..., seed=...)`. Those utilities are not
-imported or duplicated by the Core Simulation Runner. Direct integration is
-planned through a separate run adapter.
+`check_generated_demand(..., window=..., seed=...)`. The Core Simulation Runner
+does not duplicate them. `simulation/scripts/run_scenario.py` connects a
+canonical scenario and pending run to demand files already produced by
+`write_sumo_demand()`:
 
-The adapter must validate generated demand files before starting SUMO, provide
-the exact generated routes and authoritative network, and pass
-`SimulationRun.random_seed` and `step_length_s`. It must prevent extra input files or conflicting settings
-from an unrelated config. Manifest vehicle ID -> demand ID -> movement is the
-identity lookup; generated vehicle IDs must not be parsed for movement identity.
+```python
+from simulation.scripts.run_scenario import execute_scenario
+
+result = execute_scenario(
+    scenario, simulation_config, pending_run, generated_demand,
+    mapping_path="data/processed/road_network/network_mappings.json",
+    network_path="data/processed/road_network/jaadah_study_area.net.xml",
+    run_dir="simulation/outputs/baseline_run",
+)
+```
+
+`generated_demand` is the `GeneratedDemand` returned by the writer. The adapter
+accepts baseline scenarios only; intervention scenarios require a future
+signal-control configuration and are rejected before execution. It loads and
+validates the mapping/network, derives the window, validates the
+generated folder for that window and run seed, and verifies its files still match
+the writer's fingerprints. Full network and route paths containing `${...}` or
+commas are rejected because SUMO could interpret them as different inputs. It
+then creates a fresh run directory containing a
+minimal `scenario.sumocfg` with only that network and route file. It calls
+`run_simulation()` once with `RunWindow.duration_s`, `SimulationRun.random_seed`,
+and `SimulationRun.step_length_s`. Validation errors raise before SUMO starts;
+runtime failures remain in the runner's execution summary. The adapter does not
+reuse an existing run directory or edit generated demand files. The manifest's
+vehicle ID to demand ID link supplies movement identity; vehicle IDs are not
+parsed to infer movements.
 
 The agreed window is warm-up + scenario analysis + clearance. Second zero is
 analysis start minus warm-up. With 900 s warm-up, 3600 s analysis and 900 s
-clearance, the adapter passes 5400 s. These durations belong to the existing
-configuration/window utilities, not hardcoded runner logic. Scenario timestamps
-derive from the window epoch, separately from wall-clock execution timestamps.
-The generic runner does not yet load scenarios, update run models, validate
-mapping/network provenance or persist fingerprints.
+clearance, the adapter passes 5400 s. These durations come from the scenario and
+configuration. The result includes `window_epoch`, analysis boundaries, the
+configuration and route paths, the execution summary, and provenance. Scenario
+timestamps derive from the window epoch, separately from wall-clock execution
+timestamps. Neither the adapter nor the runner persists a `SimulationRun`.
 
-The planned run adapter must also carry `mapping_version` from the mapping
-configuration and `demand_sha256`/`route_file_sha256` from the
-`write_sumo_demand()` result. The provenance contract requires these on running
-and completed `SimulationRun` records. A baseline and
-intervention comparison must reuse the same generated demand and route files;
-the KPI Engine is expected to verify their matching fingerprints. Persisting
-these fields and enforcing the comparison checks remain planned model and
-orchestration work; the runner does not implement them.
+The result carries `mapping_version` from the mapping configuration and
+`demand_sha256`/`route_file_sha256` from `GeneratedDemand`. Canonical running and
+completed `SimulationRun` records must carry these fields when the provenance
+model is integrated; this adapter does not create those records. Future baseline
+and intervention comparisons must reuse the same generated demand and route
+files. Intervention execution, comparison orchestration, and canonical run-state
+persistence remain future work.
 
 Use the authoritative study-area network and its existing 120 s baseline signal
 cycle. The runner adds no lane-change tuning. Avoid using the visualization
@@ -174,6 +195,9 @@ the authoritative network and existing smoke/stress inputs, explicit seed/step/e
 and the intended installed TraCI package. Check the reported server/API version
 and imported `traci.__file__`; `SUMO_HOME`/`PYTHONPATH` can select a different
 client than the project's pinned package.
+
+Run `python -m pytest tests/test_scenario_execution.py` for the adapter's
+scenario, window, artifact, provenance, and no-launch-on-invalid-input checks.
 
 Live acceptance should cover execution through empty periods to the deadline,
 stopping with vehicles still expected, repeatability with a fixed seed, and
