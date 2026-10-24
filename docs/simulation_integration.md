@@ -124,16 +124,29 @@ accepts baseline scenarios only; intervention scenarios require a future
 signal-control configuration and are rejected before execution. It loads and
 validates the mapping/network, derives the window, validates the
 generated folder for that window and run seed, and verifies its files still match
-the writer's fingerprints. Full network and route paths containing `${...}` or
-commas are rejected because SUMO could interpret them as different inputs. It
-then creates a fresh run directory containing a
-minimal `scenario.sumocfg` with only that network and route file. It calls
+the writer's fingerprints. Full network, route, and run-configuration paths
+containing `${...}` or commas are rejected because SUMO could interpret them as
+different inputs. It then creates a fresh run directory containing a minimal
+`scenario.sumocfg` with only that network and route file. It calls
 `run_simulation()` once with `RunWindow.duration_s`, `SimulationRun.random_seed`,
 and `SimulationRun.step_length_s`. Validation errors raise before SUMO starts;
 runtime failures remain in the runner's execution summary. The adapter does not
 reuse an existing run directory or edit generated demand files. The manifest's
 vehicle ID to demand ID link supplies movement identity; vehicle IDs are not
 parsed to infer movements.
+
+To start from canonical `SimulationDemand` records, call
+`generate_and_execute_scenario(scenario, simulation_config, pending_run, demands,
+mapping_path=..., network_path=..., demand_dir=..., run_dir=...)`. Supply one
+record per demand movement and 15-minute interval across the entire run window.
+It plans departures, writes the three demand files into a new directory, and
+passes the returned `GeneratedDemand` to `execute_scenario()`. The result has
+`generated_demand` and `scenario_execution` entries. Keep the demand directory
+and its returned artifact reference for another permitted run; call
+`execute_scenario()` with that reference to reuse the same files without
+regenerating them. Demand and run directories must be fresh and separate.
+Generated files remain available if SUMO execution fails. Intervention execution
+is still unsupported.
 
 The agreed window is warm-up + scenario analysis + clearance. Second zero is
 analysis start minus warm-up. With 900 s warm-up, 3600 s analysis and 900 s
@@ -144,9 +157,9 @@ timestamps derive from the window epoch, separately from wall-clock execution
 timestamps. Neither the adapter nor the runner persists a `SimulationRun`.
 
 The result carries `mapping_version` from the mapping configuration and
-`demand_sha256`/`route_file_sha256` from `GeneratedDemand`. Canonical running and
-completed `SimulationRun` records must carry these fields when the provenance
-model is integrated; this adapter does not create those records. Future baseline
+`demand_sha256`/`route_file_sha256` from `GeneratedDemand`. The canonical
+`SimulationRun` model requires these fields for running and completed records;
+the adapter does not create or persist those records. Future baseline
 and intervention comparisons must reuse the same generated demand and route
 files. Intervention execution, comparison orchestration, and canonical run-state
 persistence remain future work.

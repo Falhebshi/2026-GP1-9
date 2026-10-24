@@ -6,8 +6,11 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.scenario import ControlMode, Scenario, SimulationConfig, SimulationRun
+from jaadah.models.traffic import SimulationDemand
 from jaadah.sumo_demand.checks import DemandCheckError
+from jaadah.sumo_demand.planner import DemandPlanningError, build_run_window, demand_movement_ids
 from jaadah.sumo_demand.writer import GeneratedDemand
 from simulation.scripts import run_scenario
 
@@ -185,6 +188,13 @@ def test_sumo_network_filename_interpretation_is_rejected(case, directory_name):
     assert not case.run_dir.exists()
 
 
+def test_sumo_config_filename_interpretation_is_rejected(case):
+    case.run_dir = case.run_dir.parent / "run_${JAADAH_TEST_PATH}"
+    with pytest.raises(ValueError, match="filename substitution or comma"):
+        execute(case)
+    assert not case.run_dir.exists() and not case.executions
+
+
 def test_generated_demand_failure_prevents_config_and_launch(case, monkeypatch):
     def fail(*args, **kwargs):
         raise DemandCheckError(["stale window or seed"])
@@ -230,3 +240,272 @@ def test_runner_failure_summary_is_returned(case):
     case.summary["status"] = "failed"
     case.summary["error"] = "TraCI connection failed"
     assert execute(case)["execution"] is case.summary
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("mapping_version", "OTHER", "mapping version"),
+    ("demand_sha256", "0" * 64, "demand fingerprint"),
+    ("route_file_sha256", "0" * 64, "route fingerprint"),
+])
+def test_existing_adapter_rejects_conflicting_run_provenance(case, field, value, message):
+    case.run = SimulationRun.model_validate({**case.run.model_dump(), field: value})
+    with pytest.raises(ValueError, match=message):
+        execute(case)
+    assert not case.executions and not case.run_dir.exists()
+
+
+@pytest.mark.parametrize("field", ["demand_sha256", "route_file_sha256"])
+@pytest.mark.parametrize("case_style", ["upper", "mixed"])
+def test_existing_adapter_accepts_matching_hex_fingerprint_case(case, field, case_style):
+    digest = getattr(case.generated, field)
+    value = digest.upper() if case_style == "upper" else digest[:32].upper() + digest[32:]
+    assert value.lower() == digest
+    if case_style == "mixed":
+        assert any(char.isupper() for char in value)
+        assert any(char.islower() for char in value)
+    case.run = SimulationRun.model_validate({**case.run.model_dump(), field: value})
+    assert execute(case)["execution"] is case.summary
+
+
+@pytest.fixture
+def generation_case(tmp_path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    mapping_path = root / "data/processed/road_network/network_mappings.json"
+    network = root / "data/processed/road_network/jaadah_study_area.net.xml"
+    mapping = load_network_mappings(mapping_path, network_path=network)
+    scenario = Scenario(
+        scenario_id="SCN_GENERATED", intersection_id=mapping.intersection_mapping.intersection_id,
+        time_context="historical", control_mode="baseline",
+        start_time=datetime(2026, 10, 20, 8, tzinfo=RIYADH),
+        end_time=datetime(2026, 10, 20, 9, tzinfo=RIYADH),
+    )
+    config = SimulationConfig(warmup_duration_s=900, clearance_duration_s=900)
+    run = SimulationRun(
+        run_id="RUN_GENERATED", scenario_id=scenario.scenario_id, random_seed=42,
+        network_version=mapping.network.version, sumo_version="SUMO 1.27.1",
+        step_length_s=0.4, mapping_version=mapping.mapping_version, status="pending",
+    )
+    window = build_run_window(scenario, config)
+    movements = sorted(demand_movement_ids(mapping))
+    demands = []
+    for start in window.interval_starts():
+        for movement in movements:
+            index = len(demands)
+            demands.append(SimulationDemand(
+                demand_id=f"DEM_{index:03d}", interval_start=start,
+                interval_end=start + timedelta(minutes=15), movement_id=movement,
+                vehicle_count=int(start == window.epoch and movement == movements[0]),
+                source="synthetic", source_observation_ids=[f"OBS_{index:03d}"],
+            ))
+    executions = []
+    summary = {"status": "completed", "steps": 13500, "final_time_s": 5400.0}
+
+    def run_once(*args, **kwargs):
+        executions.append((args, kwargs))
+        return summary
+
+    monkeypatch.setattr(run_scenario, "run_simulation", run_once)
+    return SimpleNamespace(
+        scenario=scenario, config=config, run=run, demands=demands,
+        mapping=mapping, mapping_path=mapping_path, network=network,
+        demand_dir=tmp_path / "generated", run_dir=tmp_path / "run",
+        executions=executions, summary=summary, window=window, movements=movements,
+    )
+
+
+def generate(case):
+    return run_scenario.generate_and_execute_scenario(
+        case.scenario, case.config, case.run, iter(case.demands),
+        mapping_path=case.mapping_path, network_path=case.network,
+        demand_dir=case.demand_dir, run_dir=case.run_dir,
+    )
+
+
+def test_generation_covers_full_window_and_returns_reusable_provenance(generation_case):
+    case = generation_case
+    result = generate(case)
+    generated = result["generated_demand"]
+    execution = result["scenario_execution"]
+    assert len(case.demands) == len(case.movements) * 6
+    assert case.window.duration_s == 5400
+    assert generated.route_file.parent == case.demand_dir
+    assert all(path.is_file() for path in (
+        generated.route_file, generated.manifest_file, generated.demand_file
+    ))
+    assert hashlib.sha256(generated.route_file.read_bytes()).hexdigest() == generated.route_file_sha256
+    assert hashlib.sha256(generated.demand_file.read_bytes()).hexdigest() == generated.demand_sha256
+    assert execution["execution"] is case.summary
+    assert execution["provenance"] == {
+        "mapping_version": case.mapping.mapping_version,
+        "demand_sha256": generated.demand_sha256,
+        "route_file_sha256": generated.route_file_sha256,
+    }
+    assert len(case.executions) == 1
+    assert case.executions[0][1] == {
+        "sumo_bin": "sumo", "end_time_s": 5400, "seed": 42,
+        "step_length_s": 0.4,
+    }
+
+
+def test_generated_demand_can_be_reused_without_rewriting(generation_case, monkeypatch):
+    case = generation_case
+    generated = generate(case)["generated_demand"]
+    original = {path: path.read_bytes() for path in (
+        generated.route_file, generated.manifest_file, generated.demand_file
+    )}
+    monkeypatch.setattr(run_scenario, "write_sumo_demand", lambda *a, **k: pytest.fail("demand rewritten"))
+    other_run = case.run.model_copy(update={
+        "run_id": "RUN_AGAIN",
+        "demand_sha256": generated.demand_sha256,
+        "route_file_sha256": generated.route_file_sha256,
+    })
+    reused = run_scenario.execute_scenario(
+        case.scenario, case.config, other_run, generated,
+        mapping_path=case.mapping_path, network_path=case.network,
+        run_dir=case.run_dir.parent / "another_run",
+    )
+    assert reused["provenance"] == {
+        "mapping_version": case.mapping.mapping_version,
+        "demand_sha256": generated.demand_sha256,
+        "route_file_sha256": generated.route_file_sha256,
+    }
+    assert len(case.executions) == 2
+    assert all(path.read_bytes() == data for path, data in original.items())
+
+
+def test_generation_uses_run_seed_for_planning_and_execution(generation_case):
+    case = generation_case
+    case.run = case.run.model_copy(update={"random_seed": 73})
+    result = generate(case)
+    assert result["scenario_execution"]["execution"] is case.summary
+    assert case.executions[0][1]["seed"] == 73
+
+
+@pytest.mark.parametrize("existing", ["demand", "run"])
+def test_generation_refuses_existing_directories(generation_case, existing):
+    case = generation_case
+    folder = case.demand_dir if existing == "demand" else case.run_dir
+    folder.mkdir()
+    sentinel = folder / "keep.txt"
+    sentinel.write_text("preserve")
+    with pytest.raises(FileExistsError):
+        generate(case)
+    assert sentinel.read_text() == "preserve"
+    assert not case.executions
+
+
+@pytest.mark.parametrize("relationship", ["same", "run_inside_demand", "demand_inside_run"])
+def test_generation_refuses_overlapping_directories(generation_case, relationship):
+    case = generation_case
+    if relationship == "same":
+        case.run_dir = case.demand_dir
+    elif relationship == "run_inside_demand":
+        case.run_dir = case.demand_dir / "run"
+    else:
+        case.demand_dir = case.run_dir / "generated"
+    with pytest.raises(ValueError, match="non-overlapping"):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.run_dir.exists()
+    assert not case.executions
+
+
+@pytest.mark.parametrize("unsafe", ["generated_${JAADAH_TEST_PATH}", "generated,extra"])
+def test_generation_rejects_unsafe_route_paths_before_writing(generation_case, unsafe):
+    case = generation_case
+    case.demand_dir = case.demand_dir.parent / unsafe
+    with pytest.raises(ValueError, match="filename substitution or comma"):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.executions
+
+
+@pytest.mark.parametrize("unsafe", ["net_${JAADAH_TEST_PATH}", "net,extra"])
+def test_generation_rejects_unsafe_network_paths_before_writing(generation_case, unsafe):
+    case = generation_case
+    case.network = case.demand_dir.parent / unsafe / "network.net.xml"
+    with pytest.raises(ValueError, match="filename substitution or comma"):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.executions
+
+
+def test_generation_rejects_unsafe_config_path_before_writing(generation_case):
+    case = generation_case
+    case.run_dir = case.run_dir.parent / "run_${JAADAH_TEST_PATH}"
+    with pytest.raises(ValueError, match="filename substitution or comma"):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.executions
+
+
+@pytest.mark.parametrize("invalid", ["missing", "duplicate", "unknown"])
+def test_generation_rejects_incomplete_or_invalid_demand(generation_case, invalid):
+    case = generation_case
+    if invalid == "missing":
+        case.demands.pop()
+    elif invalid == "duplicate":
+        case.demands.append(case.demands[0])
+    else:
+        case.demands[0] = case.demands[0].model_copy(update={"movement_id": "UNKNOWN"})
+    with pytest.raises(DemandPlanningError):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.run_dir.exists()
+    assert not case.executions
+
+
+def test_generation_rejects_intervention_before_files(generation_case):
+    case = generation_case
+    case.scenario = Scenario(**{
+        **case.scenario.model_dump(), "control_mode": ControlMode.INTERVENTION,
+        "reference_scenario_id": "SCN_BASELINE",
+    })
+    with pytest.raises(ValueError, match="Intervention scenario execution requires"):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.run_dir.exists()
+    assert not case.executions
+
+
+@pytest.mark.parametrize("change, message", [
+    ({"scenario_id": "OTHER"}, "different scenario"),
+    ({"status": "completed", "started_at": datetime(2026, 10, 20, tzinfo=RIYADH)}, "pending"),
+    ({"network_version": "OTHER"}, "network version"),
+    ({"mapping_version": "OTHER"}, "mapping version"),
+])
+def test_generation_rejects_invalid_run_before_files(generation_case, change, message):
+    case = generation_case
+    case.run = case.run.model_copy(update=change)
+    with pytest.raises(ValueError, match=message):
+        generate(case)
+    assert not case.demand_dir.exists() and not case.run_dir.exists()
+    assert not case.executions
+
+
+@pytest.mark.parametrize("field", ["demand_sha256", "route_file_sha256"])
+def test_generation_rejects_conflicting_pending_fingerprint(generation_case, field):
+    case = generation_case
+    case.run = case.run.model_copy(update={field: "0" * 64})
+    with pytest.raises(ValueError, match="fingerprint"):
+        generate(case)
+    assert case.demand_dir.is_dir() and not case.run_dir.exists()
+    assert not case.executions
+
+
+def test_generation_keeps_artifacts_after_execution_failure(generation_case):
+    case = generation_case
+    case.summary.update(status="failed", error="TraCI connection failed")
+    result = generate(case)
+    generated = result["generated_demand"]
+    assert result["scenario_execution"]["execution"] is case.summary
+    assert generated.route_file.is_file()
+    assert generated.manifest_file.is_file()
+    assert generated.demand_file.is_file()
+
+
+def test_generation_keeps_artifacts_when_adapter_raises(generation_case, monkeypatch):
+    case = generation_case
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("execution interrupted")
+
+    monkeypatch.setattr(run_scenario, "execute_scenario", fail)
+    with pytest.raises(RuntimeError, match="execution interrupted"):
+        generate(case)
+    assert len(list(case.demand_dir.iterdir())) == 3
+    assert not case.run_dir.exists() and not case.executions
