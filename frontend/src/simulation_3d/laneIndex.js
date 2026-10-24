@@ -15,16 +15,13 @@ function roadName(axis) {
 }
 
 // Lane info that doesn't change over time, so we work it out once.
-export function prepareLaneIndex({ surface, detail, arrows, signals, center }) {
+export function prepareLaneIndex({ surface, detail, arrows, center }) {
   const centre = {},
     dirs = {},
-    sig = {},
     perEdge = {}
   for (const f of detail?.features ?? [])
     if (f.properties.kind === 'lane_centre') centre[f.properties.lane] = f.geometry.coordinates
   for (const f of arrows?.features ?? []) dirs[f.properties.lane] = f.properties.dirs
-  for (const c of signals?.controllers ?? [])
-    for (const a of c.approaches) for (const h of a.heads) sig[h.lane] = { c, links: h.links }
   for (const f of surface.features)
     if (f.properties.kind === 'lane')
       perEdge[f.properties.edge] = (perEdge[f.properties.edge] ?? 0) + 1
@@ -66,7 +63,6 @@ export function prepareLaneIndex({ surface, detail, arrows, signals, center }) {
       idx,
       count: perEdge[p.edge] ?? 1,
       moves: dirs[p.id] ? [...new Set([...dirs[p.id]].map((d) => MOVE[d]).filter(Boolean))] : null,
-      signal: sig[p.id] ?? null,
     }
   }
   return { lanes, center }
@@ -92,32 +88,31 @@ export function approachLanes(index, signals, maxDistance = 200) {
     if (t > STRAIGHT) turning.add(junctionOf(l.id)) // positive = turning left (counter-clockwise)
   }
   const result = {}
-  for (const c of signals?.controllers ?? [])
-    for (const a of c.approaches) {
-      const arm = ARM[a.name]
-      const found = (result[arm] ??= new Set())
-      const queue = lanes.filter((l) => l.id.startsWith(`${a.edge}_`) && !l.internal)
-      queue.forEach((l) => found.add(l.id))
-      while (queue.length) {
-        const lane = queue.shift()
-        const start = lane.path[0]
-        if (Math.hypot(...start) > maxDistance) continue
-        const startDir = dir(lane.path[0], lane.path[1])
-        for (const k of lanes) {
-          if (found.has(k.id)) continue
-          const end = k.path.at(-1)
-          if (Math.hypot(end[0] - start[0], end[1] - start[1]) > 1.0) continue
-          if (turn(dir(k.path.at(-2), end), startDir) > STRAIGHT) continue
-          // a short connector that starts at an angle comes from a side street
-          if (k.internal && turn(dir(k.path[0], k.path[1]), startDir) > STRAIGHT) continue
-          if (k.internal && turning.has(junctionOf(k.id)) && !k.id.includes('cluster')) continue
-          // a long road piece that starts far away belongs to the road further back, not to the
-          // approach: it is left out so only the part near the signal is highlighted
-          if (Math.hypot(...k.path[0]) > maxDistance) continue
-          found.add(k.id)
-          queue.push(k)
-        }
+  for (const a of signals?.approaches ?? []) {
+    const arm = ARM[a.name]
+    const found = (result[arm] ??= new Set())
+    const queue = lanes.filter((l) => l.id.startsWith(`${a.edge}_`) && !l.internal)
+    queue.forEach((l) => found.add(l.id))
+    while (queue.length) {
+      const lane = queue.shift()
+      const start = lane.path[0]
+      if (Math.hypot(...start) > maxDistance) continue
+      const startDir = dir(lane.path[0], lane.path[1])
+      for (const k of lanes) {
+        if (found.has(k.id)) continue
+        const end = k.path.at(-1)
+        if (Math.hypot(end[0] - start[0], end[1] - start[1]) > 1.0) continue
+        if (turn(dir(k.path.at(-2), end), startDir) > STRAIGHT) continue
+        // a short connector that starts at an angle comes from a side street
+        if (k.internal && turn(dir(k.path[0], k.path[1]), startDir) > STRAIGHT) continue
+        if (k.internal && turning.has(junctionOf(k.id)) && !k.id.includes('cluster')) continue
+        // a long road piece that starts far away belongs to the road further back, not to the
+        // approach: it is left out so only the part near the signal is highlighted
+        if (Math.hypot(...k.path[0]) > maxDistance) continue
+        found.add(k.id)
+        queue.push(k)
       }
     }
+  }
   return result
 }

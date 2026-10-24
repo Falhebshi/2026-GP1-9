@@ -1,19 +1,14 @@
 """
-Build the data the 3D intersection view reads (frontend/public/data/<intersection>/) from the
-SUMO network, the OpenStreetMap extract and the building sources.
+Build the static layers the 3D intersection view reads (frontend/public/data/<intersection>/network/)
+from the SUMO network, the network mappings, the OpenStreetMap extract and the building sources:
+roads, markings, underpass, sidewalks, background, buildings and signal heads.
 
 Usage (from the repository root):
     python simulation/scene_3d/build_all.py
-    python simulation/scene_3d/build_all.py --with-sim
 
-The first form rebuilds the static layers (roads, markings, underpass, sidewalks, background,
-buildings). --with-sim also runs SUMO with the test demand and rebuilds the vehicles and signal
-states (needs the sumo command, from an installed SUMO or the eclipse-sumo package).
+The vehicles and signal indications come from a simulation run: see build_playback.py.
 """
 
-import argparse
-import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,14 +22,7 @@ NET = REPO / "data/processed/road_network/jaadah_study_area.net.xml"
 OSM = REPO / "data/raw/road_network/jaadah_study_area.osm"
 OVERTURE = REPO / "data/raw/buildings/overture_buildings.geojson"
 LANDMARKS = REPO / "data/raw/buildings/landmarks_traced.geojson"
-ROUTES = REPO / "simulation/scenarios/tests/stress_test_v2.rou.xml"
-OUT = REPO / "frontend/public/data/turki_imamsaud"
-
-# vehicles and signal states are kept for this part of the run, in seconds
-SIM_BEGIN = 0
-SIM_END = 600
-RECORD_FROM = 60
-RECORD_TO = 420
+OUT = REPO / "frontend/public/data/INT_001"
 
 
 def run(script: str, *args) -> None:
@@ -71,6 +59,7 @@ def build_static_layers(network_dir: Path) -> None:
     run("build_network_layers.py", NET, OSM, network_dir, underpass)
 
     run("build_streetscape.py", NET, surface, underpass, streetscape)
+    run("build_signal_heads.py", network_dir / "signal_heads.json")
     run("build_context.py", OSM, NET, surface, network_dir / "context.geojson")
     run(
         "build_surface_detail.py",
@@ -83,77 +72,8 @@ def build_static_layers(network_dir: Path) -> None:
     )
 
 
-def find_sumo() -> str:
-    """Return the sumo command from SUMO_HOME, the PATH or the eclipse-sumo package."""
-
-    if os.environ.get("SUMO_HOME"):
-        return str(Path(os.environ["SUMO_HOME"]) / "bin" / "sumo")
-    if shutil.which("sumo"):
-        return "sumo"
-    try:
-        import sumo
-
-        return str(Path(sumo.SUMO_HOME) / "bin" / "sumo")
-    except ImportError:
-        sys.exit("sumo was not found: install SUMO or run pip install eclipse-sumo")
-
-
-def build_simulation(scenario_dir: Path) -> None:
-    """Run SUMO with the test demand and convert its output for the 3D view."""
-
-    scenario_dir.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        shutil.copy(SCRIPTS / "tls_record.add.xml", tmp)
-        print("> sumo")
-        subprocess.run(
-            [
-                find_sumo(),
-                "-n", str(NET),
-                "-r", str(ROUTES),
-                "-a", "tls_record.add.xml",
-                "-b", str(SIM_BEGIN),
-                "-e", str(SIM_END),
-                "--step-length", "0.2",
-                "--lanechange.duration", "2",
-                "--seed", "42",
-                "--fcd-output", "fcd.xml",
-                "--fcd-output.geo",
-                "--fcd-output.signals",
-                "--device.fcd.begin", str(RECORD_FROM),
-                "--device.fcd.period", "0.4",
-                "--no-step-log",
-            ],
-            cwd=tmp,
-            check=True,
-        )
-        run(
-            "convert_sim.py",
-            NET,
-            OSM,
-            tmp / "fcd.xml",
-            tmp / "tls_states.xml",
-            scenario_dir,
-            RECORD_FROM,
-            RECORD_TO,
-            "SUMO run on the study-area network with the Stress Test v2 test demand",
-        )
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    parser.add_argument(
-        "--with-sim",
-        action="store_true",
-        help="also run SUMO and rebuild the vehicles and signal states",
-    )
-    args = parser.parse_args()
-
     build_static_layers(OUT / "network")
-    if args.with_sim:
-        build_simulation(OUT / "baseline")
-
     print(f"Done: {OUT.relative_to(REPO)}")
 
 
