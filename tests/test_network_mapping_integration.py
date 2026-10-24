@@ -103,7 +103,7 @@ def test_review_changes_preserve_all_original_movement_records():
 
 def test_approved_lane_catalog_and_deferred_collections(config):
     assert config.schema_version == '2.0'
-    assert config.mapping_version == '2.1-lanes'
+    assert config.mapping_version == '2.2-movement-attributes'
     expected_ids = {item[0] for item in APPROVED_LANES}
     assert len(config.approach_lanes) == len(config.lane_mappings) == 16
     assert {lane.lane_id for lane in config.approach_lanes} == expected_ids
@@ -181,3 +181,30 @@ def test_approach_side_describes_location_not_travel_direction(config):
     assert {item.approach_id: item.approach_side.value for item in config.approach_mappings} == {
         'APP_E': 'east', 'APP_W': 'west', 'APP_N': 'north', 'APP_S': 'south',
     }
+
+
+APPROVED_MOVEMENT_ATTRIBUTES = {
+    'MOV_E_W': ('through', 'signalized'),
+    'MOV_E_S': ('left', 'signalized'),
+    # Protected left from APP_S: SUMO labels it dir="s", which is not the HCM classification.
+    'MOV_S_W': ('left', 'signalized'),
+    'MOV_W_E': ('through', 'signalized'),
+    'MOV_W_N': ('left', 'signalized'),
+    'MOV_N_E': ('left', 'signalized'),
+    'MOV_S_E_BYPASS': ('right', 'uncontrolled'),
+    'MOV_W_S_SLIP': ('right', 'uncontrolled'),
+    'MOV_N_W_SLIP': ('right', 'uncontrolled'),
+}
+
+
+def test_approved_movement_attributes(config):
+    """
+    The analysed movements are exactly those served by the approach lanes.
+    Ramps, U-turns and tunnel paths are outside the KPI analysis and have none.
+    """
+    assert {
+        item.movement_id: (item.movement_type.value, item.control.value)
+        for item in config.movement_attributes
+    } == APPROVED_MOVEMENT_ATTRIBUTES
+    served = {m for lane in config.approach_lanes for m in lane.served_movement_ids}
+    assert served == set(APPROVED_MOVEMENT_ATTRIBUTES)

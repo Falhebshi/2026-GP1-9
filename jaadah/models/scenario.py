@@ -186,6 +186,15 @@ class SimulationRun(BaseModel):
 
     Multiple runs may belong to the same Scenario so stochastic
     replications remain distinguishable.
+
+    The run records the inputs it used, so that compared runs can be
+    shown to differ only in the intervention: mapping_version (the
+    mapping_version of network_mappings.json), demand_sha256 (the
+    fingerprint of the SimulationDemand file written by the SUMO demand
+    writer) and route_file_sha256 (the fingerprint of the SUMO route
+    file, which holds every planned departure). They may be missing
+    while a run is pending and are required once it is running or
+    completed, like started_at.
     """
 
     model_config = ConfigDict(
@@ -203,6 +212,13 @@ class SimulationRun(BaseModel):
 
     step_length_s: float = Field(gt=0)
 
+    mapping_version: str | None = None
+    demand_sha256: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{64}$")
+    route_file_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-fA-F0-9]{64}$",
+    )
+
     started_at: datetime | None = None
 
     status: SimulationRunStatus
@@ -216,6 +232,21 @@ class SimulationRun(BaseModel):
     @classmethod
     def validate_required_strings(cls, value: str) -> str:
         """Reject empty or whitespace-only required strings."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError("value must not be empty")
+
+        return value
+
+    @field_validator("mapping_version")
+    @classmethod
+    def validate_mapping_version(cls, value: str | None) -> str | None:
+        """Reject an empty or whitespace-only mapping version."""
+
+        if value is None:
+            return None
 
         value = value.strip()
 
@@ -283,6 +314,28 @@ class SimulationRun(BaseModel):
             if self.started_at is None:
                 raise ValueError(
                     "started_at is required for running and completed runs"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_recorded_inputs(self) -> "SimulationRun":
+        """A run that has started must record the inputs it used."""
+
+        if self.status in {
+            SimulationRunStatus.RUNNING,
+            SimulationRunStatus.COMPLETED,
+        }:
+            missing = [
+                name
+                for name in ("mapping_version", "demand_sha256", "route_file_sha256")
+                if getattr(self, name) is None
+            ]
+
+            if missing:
+                raise ValueError(
+                    ", ".join(missing)
+                    + " required for running and completed runs"
                 )
 
         return self

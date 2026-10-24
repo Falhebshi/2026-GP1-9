@@ -319,6 +319,13 @@ def test_scenario_extra_field_is_rejected():
 # SIMULATION RUN TESTS
 # ============================================================
 
+# Inputs a running or completed run must record.
+RECORDED_INPUTS = {
+    "mapping_version": "2.2-movement-attributes",
+    "demand_sha256": "a" * 64,
+    "route_file_sha256": "b" * 64,
+}
+
 def test_valid_simulation_run():
     run = SimulationRun(
         run_id="RUN_001",
@@ -336,6 +343,7 @@ def test_valid_simulation_run():
             tzinfo=RIYADH,
         ),
         status=SimulationRunStatus.RUNNING,
+        **RECORDED_INPUTS,
     )
 
     assert run.run_id == "RUN_001"
@@ -369,6 +377,7 @@ def test_blank_simulation_run_strings_are_rejected(field):
             tzinfo=RIYADH,
         ),
         "status": SimulationRunStatus.RUNNING,
+        **RECORDED_INPUTS,
     }
 
     data[field] = "   "
@@ -425,6 +434,7 @@ def test_running_run_requires_started_at():
             step_length_s=0.5,
             started_at=None,
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -442,6 +452,7 @@ def test_completed_run_requires_started_at():
             step_length_s=0.5,
             started_at=None,
             status=SimulationRunStatus.COMPLETED,
+            **RECORDED_INPUTS,
         )
 
 
@@ -464,6 +475,7 @@ def test_completed_run_with_started_at_is_valid():
         step_length_s=0.5,
         started_at=started_at,
         status=SimulationRunStatus.COMPLETED,
+        **RECORDED_INPUTS,
     )
 
     assert run.started_at == started_at
@@ -497,6 +509,86 @@ def test_failed_run_can_have_started_at():
 
 
 
+def run_data(status, **overrides):
+    """A run of the given status that records all its inputs."""
+
+    data = {
+        "run_id": "RUN_001",
+        "scenario_id": "SCN_001",
+        "random_seed": 42,
+        "network_version": "network-v1",
+        "sumo_version": "1.27.1",
+        "step_length_s": 0.5,
+        "started_at": datetime(2026, 10, 10, 12, 0, tzinfo=RIYADH),
+        "status": status,
+        **RECORDED_INPUTS,
+    }
+    data.update(overrides)
+    return data
+
+
+def test_run_records_its_inputs():
+    run = SimulationRun(**run_data(SimulationRunStatus.COMPLETED))
+
+    assert run.mapping_version == "2.2-movement-attributes"
+    assert run.demand_sha256 == "a" * 64
+    assert run.route_file_sha256 == "b" * 64
+
+
+@pytest.mark.parametrize(
+    "status",
+    [SimulationRunStatus.RUNNING, SimulationRunStatus.COMPLETED],
+)
+@pytest.mark.parametrize(
+    "field",
+    ["mapping_version", "demand_sha256", "route_file_sha256"],
+)
+def test_started_run_requires_its_inputs(status, field):
+    with pytest.raises(
+        ValidationError,
+        match=f"{field} required for running and completed runs",
+    ):
+        SimulationRun(**run_data(status, **{field: None}))
+
+
+@pytest.mark.parametrize(
+    "status",
+    [SimulationRunStatus.PENDING, SimulationRunStatus.FAILED],
+)
+def test_pending_or_failed_run_may_lack_its_inputs(status):
+    run = SimulationRun(
+        **run_data(
+            status,
+            started_at=None,
+            mapping_version=None,
+            demand_sha256=None,
+            route_file_sha256=None,
+        )
+    )
+
+    assert run.demand_sha256 is None
+
+
+@pytest.mark.parametrize("field", ["demand_sha256", "route_file_sha256"])
+@pytest.mark.parametrize("bad_value", ["abc", "g" * 64, "a" * 63, "a" * 65])
+def test_invalid_fingerprint_rejected(field, bad_value):
+    with pytest.raises(ValidationError):
+        SimulationRun(**run_data(SimulationRunStatus.COMPLETED, **{field: bad_value}))
+
+
+def test_blank_mapping_version_rejected():
+    with pytest.raises(ValidationError, match="value must not be empty"):
+        SimulationRun(**run_data(SimulationRunStatus.COMPLETED, mapping_version="  "))
+
+
+def test_mapping_version_is_trimmed():
+    run = SimulationRun(
+        **run_data(SimulationRunStatus.COMPLETED, mapping_version=" 2.2-movement-attributes ")
+    )
+
+    assert run.mapping_version == "2.2-movement-attributes"
+
+
 def test_simulation_run_strings_are_trimmed():
     run = SimulationRun(
         run_id="  RUN_001  ",
@@ -514,6 +606,7 @@ def test_simulation_run_strings_are_trimmed():
             tzinfo=RIYADH,
         ),
         status=SimulationRunStatus.RUNNING,
+        **RECORDED_INPUTS,
     )
 
     assert run.run_id == "RUN_001"
@@ -540,6 +633,7 @@ def test_negative_random_seed_is_rejected():
                 tzinfo=RIYADH,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -564,6 +658,7 @@ def test_boolean_random_seed_is_rejected():
                 tzinfo=RIYADH,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -595,6 +690,7 @@ def test_invalid_step_length_is_rejected(step_length):
                 tzinfo=RIYADH,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -619,6 +715,7 @@ def test_boolean_step_length_is_rejected():
                 tzinfo=RIYADH,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -642,6 +739,7 @@ def test_naive_started_at_is_rejected():
                 0,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
         )
 
 
@@ -662,6 +760,7 @@ def test_started_at_can_use_utc():
             tzinfo=timezone.utc,
         ),
         status=SimulationRunStatus.RUNNING,
+        **RECORDED_INPUTS,
     )
 
     assert run.started_at.utcoffset() == timedelta(0)
@@ -706,6 +805,7 @@ def test_simulation_run_extra_field_is_rejected():
                 tzinfo=RIYADH,
             ),
             status=SimulationRunStatus.RUNNING,
+            **RECORDED_INPUTS,
             vehicle_count=100,
         )
 
