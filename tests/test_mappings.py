@@ -608,3 +608,104 @@ def test_approach_detector_cannot_assert_approachless_movement():
     data["movement_mappings"][0]["approach_id"] = None
     with pytest.raises(ValidationError, match="detector/movement approach mismatch"):
         NetworkMappingConfig.model_validate(data)
+
+
+# ============================================================
+# MOVEMENT ATTRIBUTES
+# ============================================================
+
+
+def attributes_config():
+    """Artificial unit-test data: one signalized and one uncontrolled movement on separate lanes."""
+    data = lane_config()
+    data["movement_mappings"][0].update(
+        signal_controlled=True, sumo_tls_id="tls",
+        signal_crossings=[{"crossing_order": 0, "sumo_tls_id": "tls", "controlled_link_indices": [0]}],
+    )
+    data["movement_mappings"].append({
+        "movement_id": "MOV_E_S", "intersection_id": "INT_001", "approach_id": "APP_E",
+        "sumo_route_edge_ids": ["entry", "south_exit"], "signal_controlled": False,
+    })
+    data["approach_lanes"].append({
+        "lane_id": "TEST_SLIP", "approach_id": "APP_E", "lane_index": 2,
+        "served_movement_ids": ["MOV_E_S"], "lane_width_m": 3.5,
+    })
+    data["lane_mappings"].append({"lane_id": "TEST_SLIP", "sumo_lane_ids": ["entry_1"]})
+    data["movement_attributes"] = [
+        {"movement_id": "MOV_E_W", "movement_type": "through", "control": "signalized"},
+        {"movement_id": "MOV_E_S", "movement_type": "right", "control": "uncontrolled"},
+    ]
+    return data
+
+
+def test_movement_attributes_are_accepted():
+    obj = NetworkMappingConfig.model_validate(attributes_config())
+    assert [(a.movement_id, a.movement_type.value, a.control.value) for a in obj.movement_attributes] == [
+        ("MOV_E_W", "through", "signalized"), ("MOV_E_S", "right", "uncontrolled"),
+    ]
+    assert NetworkMappingConfig.model_validate_json(obj.model_dump_json()) == obj
+
+
+def test_movement_attributes_default_to_independent_empty_lists():
+    """A file written before movement attributes existed still loads."""
+    first = NetworkMappingConfig.model_validate(valid_config())
+    second = NetworkMappingConfig.model_validate(valid_config())
+    assert first.movement_attributes == []
+    first.movement_attributes.append("sentinel")
+    assert second.movement_attributes == []
+
+
+def test_draft_with_some_movement_attributes_is_allowed():
+    """Completeness is checked by the integration tests, not by the model."""
+    data = attributes_config()
+    data["movement_attributes"] = data["movement_attributes"][:1]
+    assert len(NetworkMappingConfig.model_validate(data).movement_attributes) == 1
+
+
+def test_movement_attributes_for_unmapped_movement_rejected():
+    data = attributes_config()
+    data["movement_attributes"][0]["movement_id"] = "MOV_X"
+    with pytest.raises(ValidationError, match="unmapped movement: MOV_X"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_duplicate_movement_attributes_rejected():
+    data = attributes_config()
+    data["movement_attributes"].append(dict(data["movement_attributes"][0]))
+    with pytest.raises(ValidationError, match="duplicate movement attributes"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_movement_attributes_require_an_approach():
+    data = valid_config()
+    data["movement_mappings"][0]["approach_id"] = None
+    data["movement_attributes"] = [
+        {"movement_id": "MOV_E_W", "movement_type": "through", "control": "uncontrolled"},
+    ]
+    with pytest.raises(ValidationError, match="has no approach_id: MOV_E_W"):
+        NetworkMappingConfig.model_validate(data)
+
+
+@pytest.mark.parametrize("index, control", [(0, "uncontrolled"), (1, "signalized")])
+def test_control_must_agree_with_signal_controlled(index, control):
+    data = attributes_config()
+    data["movement_attributes"][index]["control"] = control
+    with pytest.raises(ValidationError, match="disagrees with signal_controlled"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_lane_cannot_serve_signalized_and_uncontrolled_movements():
+    data = attributes_config()
+    data["approach_lanes"][0]["served_movement_ids"] = ["MOV_E_W", "MOV_E_S"]
+    data["detector_mappings"] = []
+    with pytest.raises(ValidationError, match="serves both signalized and uncontrolled"):
+        NetworkMappingConfig.model_validate(data)
+
+
+def test_lane_mixing_is_not_checked_without_attributes():
+    """A draft lane with a movement that has no attributes yet is allowed."""
+    data = attributes_config()
+    data["approach_lanes"][0]["served_movement_ids"] = ["MOV_E_W", "MOV_E_S"]
+    data["detector_mappings"] = []
+    data["movement_attributes"] = data["movement_attributes"][:1]
+    NetworkMappingConfig.model_validate(data)

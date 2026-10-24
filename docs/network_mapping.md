@@ -5,8 +5,8 @@ configuration for the study area. It defines the intersection, approaches,
 movements, and their links to source detectors and SUMO.
 
 The file contains four approaches, 18 movement mappings, 16 canonical approach
-lanes, 16 ordered SUMO lane mappings, and 16 synthetic detector mappings at
-site `"9"`. Queue-detection lane lists remain empty pending their separate
+lanes, 16 ordered SUMO lane mappings, 16 synthetic detector mappings at
+site `"9"`, and movement attributes for the nine analysed movements. Queue-detection lane lists remain empty pending their separate
 implementation decision.
 
 ## Canonical models
@@ -31,11 +31,7 @@ related records agree, such as a lane and its served movements belonging to
 the same approach. Creating canonical objects from these declarations does
 not independently verify their geographic correctness.
 
-## Schema and approach sides
-
-`schema_version` identifies the JSON structure and must be `"2.0"`.
-`mapping_version` is a nonempty data revision label; the current value is
-`"2.1-lanes"`. It does not have to match the schema version.
+## Mapping configuration structure
 
 | Field | Purpose |
 | --- | --- |
@@ -44,6 +40,9 @@ not independently verify their geographic correctness.
 | `approach_lanes` | Canonical `ApproachLane` definitions. |
 | `lane_mappings` | Canonical lane IDs and their SUMO lane segments. |
 | `detector_mappings` | Source detector identities, optional approach/lane references, candidate movements, and mapping status. |
+| `movement_attributes` | HCM classification (`movement_type`) and control of each movement in the KPI analysis. |
+
+## Approach sides
 
 `approach_side` describes where the approach is located. Detector descriptions
 use travel directions such as EB or WB, which have a different meaning:
@@ -266,6 +265,57 @@ lane completeness checks remain deferred. The required detector `site_id`
 contract is finalized, and the 16 synthetic detector records are populated.
 No model or validator redesign was needed for this population.
 
+## Movement attributes
+
+`movement_attributes` holds one `MovementAttributes` record (from
+`jaadah/models/network.py`) for each movement in the KPI analysis. It is the
+single authoritative source of movement type and control for the KPI engine,
+which groups lanes and applies the HCM by these values.
+
+### Scope
+
+Only the nine movements served by the canonical approach lanes have
+attributes. Ramps, U-turn paths, and tunnel paths stay plain movements with no
+attributes and no KPIs.
+
+| Movement | `movement_type` | `control` |
+| --- | --- | --- |
+| `MOV_E_W` | through | signalized |
+| `MOV_E_S` | left | signalized |
+| `MOV_S_W` | left | signalized |
+| `MOV_W_E` | through | signalized |
+| `MOV_W_N` | left | signalized |
+| `MOV_N_E` | left | signalized |
+| `MOV_S_E_BYPASS` | right | uncontrolled |
+| `MOV_W_S_SLIP` | right | uncontrolled |
+| `MOV_N_W_SLIP` | right | uncontrolled |
+
+### Classification of `MOV_S_W`
+
+`MOV_S_W` enters from the south and leaves to the west, a turn to the
+driver's left, served by its own protected signal phase. It is therefore a
+protected left turn. SUMO labels the connection `dir="s"`; that label
+describes the network geometry, not the HCM classification, and the network
+is not changed. The other movements have no such difference.
+
+### Drafts and checks
+
+The collection is optional and defaults to empty, so a file without it still
+loads. A draft may give attributes to only some movements. For the attributes
+present, structural validation checks that:
+
+- no movement has attributes twice;
+- each refers to a mapped movement that has an `approach_id`;
+- `control` agrees with the movement's `signal_controlled` flag
+  (`signalized` with `true`, `uncontrolled` with `false`);
+- no approach lane serves both a signalized and an uncontrolled movement.
+  Movements without attributes are left out of this check.
+
+Completeness and the exact approved values are checked by the integration
+tests, not at load time. The SUMO network validator does not compare
+`movement_type` with SUMO connection directions, since these differ by design
+for `MOV_S_W`; the integration tests pin the approved values instead.
+
 ## Loading and validation
 
 From the repository root:
@@ -332,6 +382,35 @@ checksum = hashlib.sha256(network_bytes.replace(b"\r\n", b"\n")).hexdigest()
 A line-ending mismatch does not require editing the SUMO network or replacing
 its recorded checksum.
 
+## Mapping versioning
+
+### Version identifiers
+
+`schema_version` identifies the mapping configuration's structure and validation
+contract. The repository currently accepts only `"2.0"`. `mapping_version` is a
+nonempty label identifying a specific revision of the study-area mapping data;
+the current value is `"2.2-movement-attributes"`. The version labels do not need to match.
+
+### Maintaining versions
+
+These guidelines establish a new team convention, rather than describe
+historical requirements. No formal semantic-versioning policy currently exists.
+
+- Update `mapping_version` when mapping data, associations, classifications, or
+  populated collections change.
+- Review compatibility for optional schema additions; a `schema_version`
+  increment is not automatically required.
+- For breaking schema changes, coordinate a `schema_version` update with the
+  affected models, loaders, validators, tests, and consumers.
+- Documentation-only changes require no version update.
+
+For each change, review its effect on the schema contract and mapping data
+separately. Update the relevant version values in `network_mappings.json`,
+adjust affected code and tests (including assertions of specific version labels),
+and update this documentation to reflect the accepted schema and current data
+revision. Run the relevant validation and tests together before accepting the
+change.
+
 ## Tests
 
 Run commands from the repository root with the project environment active.
@@ -355,11 +434,11 @@ python -m pytest tests/test_mapping_validator.py
 
 | Test file | Coverage |
 | --- | --- |
-| `tests/test_mappings.py` | Schema fields, canonical views, lane ownership, detector candidates/status, and pending SUMO mappings. |
+| `tests/test_mappings.py` | Schema fields, canonical views, lane ownership, detector candidates/status, pending SUMO mappings, and movement attribute checks, including drafts. |
 | `tests/test_mapping_loader.py` | Loading, optional network checks, missing files, and invalid references. |
 | `tests/test_mapping_validator.py` | Lane connections and ordering, route loops, required-mapping lookup, and checksum portability. |
 | `tests/test_movement_smoke.py` | Runner preparation, mocked TraCI behavior, and direct CLI invocation. |
-| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings. |
+| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings; the exact approved movement attributes for the nine lane-served movements. |
 
 The Python suite includes static network checks and mocked runner tests.
 Live SUMO movement tests run separately; see

@@ -30,7 +30,7 @@ jaadah/
     ├── scenario.py    scenarios, runs, configuration, replication
     ├── outputs.py     standardized simulation outputs
     ├── signals.py     signal programs and signal state
-    └── kpis.py        KPI results
+    └── kpis.py        KPI results and comparisons
 ```
 
 Their tests are located under:
@@ -48,19 +48,20 @@ tests/
 ├── test_cycle_queue_record.py
 ├── test_incomplete_passage.py
 ├── test_signal_models.py
-└── test_kpi_models.py
+├── test_kpi_models.py
+└── test_kpi_comparison.py
 ```
 
-The current implementation contains **23 canonical models**:
+The current implementation contains **25 canonical models**:
 
 | File | Models |
 | --- | --- |
-| `traffic.py` | `TrafficObservation`, `SimulationDemand` |
+| `traffic.py` | `TrafficObservation`, `ImputedDetector`,`SimulationDemand` |
 | `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
 | `outputs.py` | `VehicleState`, `EdgeTrafficState`, `ApproachTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord` |
 | `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
-| `kpis.py` | `KpiResult` |
+| `kpis.py` | `KpiResult`, `KpiComparison` |
 
 ---
 
@@ -211,7 +212,9 @@ Fields: `movement_id`, `movement_type`, `control`.
 
 **Scope:** only movements included in the KPI analysis of the case-study intersection receive `MovementAttributes`. Other simulated movements (ramps, tunnel paths, slips and U-turns elsewhere in the network) remain plain `Movement`s and have no KPIs.
 
-A movement with `MovementAttributes` must have `Movement.approach_id` set, because its results roll up to an approach. That rule spans two models, so it is checked where both are combined, not inside either.
+A movement with `MovementAttributes` must have `Movement.approach_id` set, because its results roll up to an approach. That rule spans two models, so it is checked where both are combined, not inside either: `NetworkMappingConfig` checks it.
+
+**Source:** the approved values are stored in `NetworkMappingConfig.movement_attributes` in `network_mappings.json`, the single source for the KPI engine. `control` must agree with the movement mapping's `signal_controlled` flag, and no lane may serve both a signalized and an uncontrolled movement. See [movement attributes](network_mapping.md#movement-attributes).
 
 ## 2.5 `ApproachLane`
 
@@ -224,7 +227,7 @@ Fields: `lane_id`, `approach_id`, `lane_index`, `served_movement_ids`, `lane_wid
 - A lane shared by several movements lists all of them in `served_movement_ids`, e.g. `["MOV_E_L", "MOV_E_T"]`.
 - `storage_length_m` is optional: when it is unknown, the queue storage ratio is reported as unavailable.
 
-**Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID such as `east_L`, `east_LT`, `east_T` (team decision, 17 Oct 2026).
+**Lane groups are not a stored model.** HCM analyses lane groups (adjacent lanes serving the same movements; a shared lane forms its own group). The KPI engine derives them from `ApproachLane` records each time and gives each a stable ID: the approach ID plus the movement letters in L/T/R order, e.g. `APP_E_L`, `APP_E_LT`, `APP_E_T` (team decision, 17 Oct 2026).
 
 Signal-entry lane subset (12 lanes), from the median outward. The complete
 canonical inventory contains 16 lanes, including four slip/bypass lanes; see
@@ -235,11 +238,13 @@ the [canonical lane inventory](network_mapping.md#canonical-lane-inventory).
 | East (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through · 4 through |
 | West (Imam Saud Rd) | 1 left · 2 left + through (shared) · 3 through |
 | North | 3 lanes, all left |
-| South | 2 lanes serving `MOV_S_W` (analytical classification pending) |
+| South | 2 lanes, both left (`MOV_S_W`) |
 
-The analytical left/signalized classification of `MOV_S_W` remains pending
-KPI owner's confirmation. SUMO currently uses `dir="s"`; its established
-movement identity, physical routing, and signal behavior remain unchanged.
+`MOV_S_W` is classified as a protected left turn (`left`, `signalized`): it
+leaves the south approach to the driver's left on its own protected phase.
+SUMO labels the connection `dir="s"`; that label describes the network
+geometry, not the HCM classification, and the movement's identity, routing,
+and signal behaviour are unchanged.
 
 ## 2.6 Canonical Identity vs. SUMO Identity
 
@@ -275,9 +280,11 @@ Fields: `scenario_id`, `intersection_id`, `time_context`, `control_mode`, `start
 
 One concrete execution of a scenario.
 
-Fields: `run_id`, `scenario_id`, `random_seed`, `network_version`, `sumo_version`, `step_length_s`, optional `started_at`, `status` (`pending`, `running`, `completed`, `failed`).
+Fields: `run_id`, `scenario_id`, `random_seed`, `network_version`, `sumo_version`, `step_length_s`, `mapping_version`, `demand_sha256`, `route_file_sha256`, optional `started_at`, `status` (`pending`, `running`, `completed`, `failed`).
 
 Lifecycle rules: `pending` and `failed` runs may have no `started_at`; `running` and `completed` runs require it; a failed run may also have one if execution began before the failure.
+
+**Recorded inputs.** A run records the inputs it used, so that compared runs can be shown to differ only in the intervention: `mapping_version` (the `mapping_version` of `network_mappings.json`), `demand_sha256` (the fingerprint of the `SimulationDemand` file written by the SUMO demand writer) and `route_file_sha256` (the fingerprint of the SUMO route file, which holds every planned departure). The fingerprints are 64 hexadecimal characters. Like `started_at`, the three may be missing while a run is `pending` or `failed` and are required once it is `running` or `completed`. Departures are planned from the run's seed and its demand, so two runs with the same seed and demand have the same route file.
 
 A scenario may have several runs, each with its own seed:
 
@@ -312,7 +319,7 @@ A replicated experiment comparing an intervention scenario with its baseline usi
 - `ReplicationPair`: `baseline_run_id`, `intervention_run_id` (must differ). It does **not** store the seed; `SimulationRun` owns it.
 - `ReplicationSet`: `replication_set_id`, `baseline_scenario_id`, `intervention_scenario_id` (must differ), `pairs` (at least 2, because a standard deviation needs two values; no run may appear twice). Properties `replication_count`, `baseline_run_ids`, `intervention_run_ids` (in pair order).
 
-The replication runner, which has the `SimulationRun` and `Scenario` objects, confirms that both runs of each pair used the same seed, that each pair used a different seed, and that each run belongs to the stated scenario. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
+Before comparing, the KPI engine (`kpi_engine.md` section 12.6) checks with the `SimulationRun` and `Scenario` objects that both runs of each pair used the same seed, that each pair used a different seed, that each run is completed and belongs to the stated scenario, that the intervention references the baseline, that the two scenarios cover the same time window (`start_time`, `end_time`, `time_context`), that both runs of each pair used the same route file, and that all runs share the network version, SUMO version, step length, mapping version and demand. Baseline and intervention therefore use the same demand file, generated once. The replication runner may repeat these checks when it starts the runs. Replicating a single scenario without a comparison needs no `ReplicationSet`: a `KpiResult` with several `run_ids` already holds the mean and standard deviation.
 
 ## 3.5 Scenario Validation
 
@@ -321,7 +328,7 @@ The scenario models enforce structural relationships such as:
 - historical and forecast scenarios require an `end_time`;
 - intervention scenarios require a `reference_scenario_id`; baseline scenarios cannot reference another scenario; a scenario cannot reference itself;
 - scenario data-time timestamps must use Riyadh time;
-- `running` and `completed` runs require `started_at`, which must include timezone information;
+- `running` and `completed` runs require `started_at`, which must include timezone information, and their recorded inputs (`mapping_version`, `demand_sha256`, `route_file_sha256`);
 - warm-up + clearance must be shorter than a known total duration.
 
 These are structural integrity rules rather than traffic-simulation business logic.
@@ -443,7 +450,7 @@ The scenario is found through `run_id` and the intersection through `signal_prog
 
 Implemented in `jaadah/models/kpis.py`.
 
-`KpiResult` is one KPI value for one element, one interval, and one run or set of runs. The KPI engine produces these; they are stored and sent to the dashboard.
+`KpiResult` is one KPI value for one element, one interval, and one run or set of runs. `KpiComparison` (section 6.9) is the change in one KPI between a baseline and an intervention scenario. The KPI engine produces both; they are stored and sent to the dashboard.
 
 ## 6.1 Fields
 
@@ -456,6 +463,7 @@ Implemented in `jaadah/models/kpis.py`.
 | Provenance | `input_origins` |
 | Runs | `scenario_id`, `run_ids`, `standard_deviation` |
 | Shared lanes | `measured_on_lane_id` or `measured_on_lane_group_id` |
+| Slips | `uncontrolled_movements` (section 6.7) |
 
 ## 6.2 Enums
 
@@ -469,6 +477,7 @@ Implemented in `jaadah/models/kpis.py`.
 | `ValueComputation` | `direct_summary`, `derived` |
 | `InputOrigin` | `observed`, `modelled_assumption`, `simulated` |
 | `LevelOfServiceGrade` | `A` … `F` |
+| `UncontrolledMovements` | `included`, `excluded` |
 
 ## 6.3 Missing values are never zero
 
@@ -510,6 +519,8 @@ The four provenance labels overlap (an HCM result can be derived from observed d
 
 KPIs measured per lane (queue length, storage ratio) or per lane group (HCM capacity measures) cannot be split between the movements of a shared lane. They are reported on their lane or lane group. A movement that uses a shared lane also shows that value, and records where it was measured in `measured_on_lane_id` or `measured_on_lane_group_id` (movement level only, at most one, and only for KPIs reportable on that kind of element). The computed field `is_shared_value` drives the dashboard's "Shared lane" tag; the tooltip text ("Measured on lane 2, shared with East-left") is looked up from `ApproachLane`, not stored.
 
+**Uncontrolled right-turn slips.** An approach or intersection value whose element has slips records whether it covers them in `uncontrolled_movements`: simulation results include them (`included`), HCM results exclude them (`excluded`), because a slip has no lane group. Each method accepts only its own value; the field is allowed only on approach and intersection results with status `ok`, and is empty when the element has no slip. The dashboard shows it as a tag.
+
 ## 6.8 Computed fields and storage
 
 `value_computation`, `replication_count` and `is_shared_value` are Pydantic computed fields: they appear in `model_dump()` and JSON output but cannot be passed in. **For storage, dump without them**, otherwise reloading fails, because unknown fields are forbidden:
@@ -520,7 +531,30 @@ result.model_dump()
 
 # for storage
 result.model_dump(exclude={"value_computation", "replication_count", "is_shared_value"})
+comparison.model_dump(exclude={"percent_change", "is_partial_sample"})
 ```
+
+## 6.9 `KpiComparison`
+
+The change in one KPI for one element and one interval between a baseline and an intervention scenario. One record per KPI, element and interval.
+
+| Group | Fields |
+| --- | --- |
+| What, where, when | `kpi`, `method`, `unit`, `level` and one matching ID, `interval_start`, `interval_end` (same checks and tables as `KpiResult`) |
+| Scenarios | `baseline_scenario_id`, `intervention_scenario_id` (must differ), `replication_set_id` |
+| Pairs | `used_pairs`: the `ReplicationPair`s the change is based on; `pair_count`: the number of pairs in the `ReplicationSet`; computed `is_partial_sample` |
+| Change | `status`, `reason`, `mean_change`, `standard_deviation`, `baseline_mean`; computed `percent_change` |
+| Level of service | `baseline_los_grade`, `intervention_los_grade` |
+| Provenance and slips | `input_origins`, `uncontrolled_movements` |
+
+- **Simulation comparisons** use matched pairs from a `ReplicationSet`: `mean_change` is the mean of the per-pair differences (intervention − baseline) and `standard_deviation` their spread (required with two or more pairs, not allowed with one). `replication_set_id` and at least one used pair are required. A negative change in delay or queue is an improvement.
+- **HCM comparisons** have no runs: no `replication_set_id`, no pairs, and `mean_change` is the plain difference.
+- **`mean_change` may be negative**, unlike `KpiResult.value`; the intervention mean (`baseline_mean + mean_change`) may not.
+- **`baseline_mean`** is the baseline mean over the used pairs, which can differ from the baseline `KpiResult` when pairs were left out. `percent_change` = 100 × `mean_change` / `baseline_mean`; it is empty when the baseline mean is 0.
+- **Level of service** has no numeric change: an `ok` LOS comparison holds both grades and no numbers.
+- **`pair_count`** is required on simulation comparisons (at least 1, and not fewer than the used pairs) and not allowed on HCM comparisons. **`is_partial_sample`** (computed) is true when a comparison with a value used fewer pairs than `pair_count`: its baseline values can then differ from the baseline scenario's own results, which use all its runs. The dashboard shows it as a tag, e.g. "Based on 2 of 3 matched runs". `pair_count` repeats a fact of the `ReplicationSet` on purpose, so the tag needs no lookup; the KPI engine fills it from the set.
+- Missing values follow section 6.3: without status `ok` there is no change, no grade, no pair, no origin, and a `reason` is required.
+- **Both scenario IDs are stored** (the same exception as `KpiResult.scenario_id`): an HCM comparison has no `ReplicationSet` to look them up from. For simulation comparisons the KPI engine checks that they agree with the set.
 
 ---
 
@@ -556,8 +590,7 @@ Rules that need several objects at once cannot live inside one model, and are ch
 
 ## 7.7 Calculated values are properties, not inputs
 
-Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`, `value_computation`, `is_shared_value`.
-
+Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`,`value_computation`, `is_shared_value`, `percent_change`, `is_partial_sample`, `is_allocated`, `is_imputed`.
 ---
 
 # 8. Why Pydantic Is Used
@@ -612,7 +645,8 @@ canonical objects from those records through `canonical_intersection`,
 
 `approach_lanes` holds the canonical lane definitions, while `lane_mappings`
 connects them to SUMO lane segments. A known lane may still be waiting for its
-SUMO mapping. The checks catch inconsistent references and ownership; creating
+SUMO mapping. `movement_attributes` holds the movement type and control of the
+analysed movements. The checks catch inconsistent references and ownership; creating
 canonical objects from the same records does not independently confirm their
 geographic correctness. See [Network mapping](network_mapping.md) for the full
 rules, M7 usage, and test commands.
@@ -650,7 +684,7 @@ The simulation pipeline turns SUMO output files into canonical records: vehicle 
 
 ## 9.5 KPI calculation is separate
 
-The output records are simulation measurements. The KPI engine (`backend/services/kpi/`) turns them into `KpiResult`s: it derives lane groups, applies the HCM method, aggregates to 15-minute intervals and rolls movements up to approaches and the intersection. Anomaly detection, forecasting and recommendations are also separate application components.
+The output records are simulation measurements. The KPI engine (`backend/analytics/kpi/`, documented in `kpi_engine.md`) turns them into `KpiResult`s and `KpiComparison`s: it derives lane groups, applies the HCM method, aggregates to 15-minute intervals and rolls movements up to approaches and the intersection. Anomaly detection, forecasting and recommendations are also separate application components.
 
 ---
 
@@ -719,7 +753,7 @@ State         CycleQueueRecord        for live views)
 Visualization  KPI engine (+ ApproachLane, MovementAttributes,
                SignalProgram, SimulationDemand)
                  ↓
-             KpiResult
+     KpiResult, KpiComparison
                  ↓
         Storage, API, dashboard
 ```
@@ -738,5 +772,9 @@ Together, these structures form the common data language used across the Jaadah 
 | 18 Oct 2026 (network mapping) | Added `ApproachSide` and `LaneMapping` (`mappings.py`); `DetectorMapping.lane_id`; `NetworkMappingConfig.approach_lanes` and `lane_mappings`. Renamed `ApproachMapping.direction` to `approach_side` and removed `source_detectors`. Mapping schema set to `2.0`. `network_mappings.json` defines network identities and parent relationships; canonical `Intersection`, `Approach`, and `Movement` objects are built from these records. Added lane ownership and detector candidate checks. Canonical lane references allow pending SUMO mappings |
 | 19 Oct 2026 (detector mapping) | Added optional, paired `DetectorMapping.sumo_lane_id` and `sumo_position_m` for exact modeled detector locations. Positions are finite, nonnegative metres from the selected SUMO lane start; booleans are rejected. Network validation checks external lane existence, inclusive position bounds, and membership in an available canonical lane chain. Missing locations and pending lane mappings remain supported. Documented the synthetic 1 m-before-endpoint convention; detector records remain unpopulated |
 | 19 Oct 2026 (detector population) | Populated 16 synthetic detector mappings at site `"9"`, with approved canonical lanes, Option A local movement candidates, and explicit SUMO positions 1 m before selected lane endpoints. Detectors 2 and 10 require allocation; the other 14 are usable. Existing canonical lanes, lane chains, and movement routes are unchanged |
+| 20 Oct 2026 (KPI comparison) | Added `KpiComparison` (baseline vs intervention over matched pairs, computed `percent_change`) and `UncontrolledMovements` with `KpiResult.uncontrolled_movements`. Lane-group ID examples updated to the engine's format (`APP_E_LT`); KPI engine location updated to `backend/analytics/kpi/` |
 | 20 Oct 2026 (demand allocation) | Added `SimulationDemand.allocated_observation_ids` (a subset of `source_observation_ids`) and the computed `is_allocated`, marking demand that includes part of a split shared-lane detector count |
 | 20 Oct 2026 (demand imputation) | Added `ImputationMethod`, `ImputedDetector`, `SimulationDemand.imputed_detectors` and the computed `is_imputed`, marking demand that includes an estimated count for a detector that did not report. RCRC and synthetic demand may consist of imputed detectors only |
+| 22 Oct 2026 (KPI comparison review) | Added `KpiComparison.pair_count` and the computed `is_partial_sample`, marking comparisons based on fewer pairs than the replication set holds |
+| 23 Oct 2026 (run inputs) | Added `SimulationRun.mapping_version`, `demand_sha256` and `route_file_sha256`, required for running and completed runs, so that compared runs can be checked for identical inputs |
+| 23 Oct 2026 (movement attributes) | Added `NetworkMappingConfig.movement_attributes`, optional and empty by default, holding the approved `MovementAttributes` of the nine analysed movements. Checks: no duplicates, known movement with an approach, `control` agrees with `signal_controlled`, no lane mixing signalized and uncontrolled movements. `MOV_S_W` classified as a protected left. `mapping_version` set to `2.2-movement-attributes`; `schema_version` stays `2.0` |
