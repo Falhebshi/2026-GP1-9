@@ -23,6 +23,11 @@ def _sumo_input_filename(path: Path) -> str:
     return filename
 
 
+def _require_separate_directories(demand_dir: Path, run_dir: Path) -> None:
+    if demand_dir == run_dir or demand_dir in run_dir.parents or run_dir in demand_dir.parents:
+        raise ValueError("Demand and run directories must be separate and non-overlapping")
+
+
 def _validate_baseline_run(scenario: Scenario, run: SimulationRun) -> None:
     if run.scenario_id != scenario.scenario_id:
         raise ValueError("SimulationRun belongs to a different scenario")
@@ -86,13 +91,24 @@ def execute_scenario(
         raise ValueError("SimulationRun route fingerprint does not match generated demand")
 
     run_dir = Path(run_dir).expanduser().resolve()
+    _require_separate_directories(demand_dir, run_dir)
     _sumo_input_filename(run_dir / "scenario.sumocfg")
     run_dir.mkdir(parents=True, exist_ok=False)
     config_path = run_dir / "scenario.sumocfg"
+    raw_dir = run_dir / "raw"
+    raw_dir.mkdir()
+    fcd_path = raw_dir / "fcd.xml"
+    tripinfo_path = raw_dir / "tripinfo.xml"
     config = ET.Element("configuration")
     inputs = ET.SubElement(config, "input")
     ET.SubElement(inputs, "net-file", value=network_filename)
     ET.SubElement(inputs, "route-files", value=route_filename)
+    outputs = ET.SubElement(config, "output")
+    ET.SubElement(outputs, "fcd-output", value=str(fcd_path))
+    ET.SubElement(outputs, "fcd-output.attributes", value="id,x,y,angle,type,speed,lane,edge,pos")
+    ET.SubElement(outputs, "tripinfo-output", value=str(tripinfo_path))
+    ET.SubElement(outputs, "tripinfo-output.write-unfinished", value="true")
+    ET.SubElement(outputs, "tripinfo-output.write-undeparted", value="true")
     config_path.write_bytes(ET.tostring(config, encoding="utf-8", xml_declaration=True))
 
     execution = run_simulation(
@@ -110,6 +126,14 @@ def execute_scenario(
         "analysis_end": window.analysis_end.isoformat(),
         "config_path": str(config_path),
         "route_file": str(expected_files["route_file"]),
+        "raw_outputs": {
+            name: {
+                "path": str(path),
+                "exists": path.is_file(),
+                "potentially_partial": execution["status"] != "completed" and path.is_file(),
+            }
+            for name, path in (("fcd", fcd_path), ("tripinfo", tripinfo_path))
+        },
         "provenance": {
             "mapping_version": mapping.mapping_version,
             "demand_sha256": generated.demand_sha256,
@@ -137,8 +161,7 @@ def generate_and_execute_scenario(
     demand_dir = Path(demand_dir).expanduser().resolve()
     run_dir = Path(run_dir).expanduser().resolve()
 
-    if demand_dir == run_dir or demand_dir in run_dir.parents or run_dir in demand_dir.parents:
-        raise ValueError("Demand and run directories must be separate and non-overlapping")
+    _require_separate_directories(demand_dir, run_dir)
     if demand_dir.exists():
         raise FileExistsError(f"Demand directory already exists: {demand_dir}")
     if run_dir.exists():

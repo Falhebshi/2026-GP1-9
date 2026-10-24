@@ -126,8 +126,8 @@ validates the mapping/network, derives the window, validates the
 generated folder for that window and run seed, and verifies its files still match
 the writer's fingerprints. Full network, route, and run-configuration paths
 containing `${...}` or commas are rejected because SUMO could interpret them as
-different inputs. It then creates a fresh run directory containing a minimal
-`scenario.sumocfg` with only that network and route file. It calls
+different inputs. It then creates a fresh run directory containing a
+`scenario.sumocfg` with that network, route file and raw-output settings. It calls
 `run_simulation()` once with `RunWindow.duration_s`, `SimulationRun.random_seed`,
 and `SimulationRun.step_length_s`. Validation errors raise before SUMO starts;
 runtime failures remain in the runner's execution summary. The adapter does not
@@ -173,27 +173,39 @@ assets, not final generated demand.
 
 ## Simulation Output Processing Integration
 
-SUMO Simulation Execution will configure raw output files; Simulation Output
-Processing will parse/reduce them into canonical states and measurement records.
-Expected sources include FCD trajectories, E2
-queue output, and additional agreed outputs for insertion delay, arrivals and
-unfinished vehicles. Exact filenames, fields, sampling, detector geometry,
-failure handling and storage remain to be agreed between these components.
+Each fresh run directory contains `raw/fcd.xml` and `raw/tripinfo.xml` beside
+`scenario.sumocfg`. FCD records vehicle positions, speed, lane identity and
+lane position at every simulation step; there is no separate FCD sampling period.
+SUMO 1.27.1 microsimulation emits `lane` but no `edge` field in FCD even when
+requested. Output Processing must derive the edge from the lane and network.
+TripInfo records actual departures, arrivals and departure delays, including
+vehicles unfinished or waiting to depart at the deadline. The retained demand
+manifest supplies planned departures and vehicle identities for reconciliation.
+Whole-trip waiting time and time loss are not measurement-zone delay records.
 
-The Core Simulation Runner has no observers/callbacks, FCD/E2 parsers, final output
-configuration, zone geometry, canonical conversion or KPI calculations. Existing
-config output directives still apply subject to preflight. No permanent output
-layout is added.
+`execute_scenario()` returns a `raw_outputs` entry for each file with its
+configured absolute `path`, whether the file `exists`, and whether it is
+`potentially_partial` because execution failed. Files are retained after a
+failure. Even a present file from a completed execution has not yet been parsed
+or validated as a canonical measurement.
+
+Simulation Output Processing will parse/reduce these files into canonical states
+and measurement records. E2 queue detectors, their geometry and output files are
+deferred; their exact contract must be agreed with output processing.
+
+The Core Simulation Runner has no observers/callbacks, FCD/E2 parsers, zone
+geometry, canonical conversion or KPI calculations. Existing config output
+directives still apply subject to preflight.
 Preflight is a check, not an atomic reservation: do not run concurrent writers
 to the same destinations or change input/config files between inspection and
 execution. Device-generated filenames not explicitly declared in configuration
 or XML require further output-contract work before unattended execution.
 
 Real detector points, canonical lane chains, KPI zones and full network boundaries
-are distinct. Their distances/identities do not belong in this runner. Later
-0.4 s FCD sampling is separate from the simulation step: compatible examples are
-0.4 s steps or 0.2 s steps with output every second step. A 1 s step cannot supply
-genuine 0.4 s samples. Zone entry determines measurement eligibility; Simulation
+are distinct. Their distances/identities do not belong in this runner.
+With a 0.4 s simulation step, FCD is sampled every 0.4 s; other step lengths
+produce their own spacing. A 1 s step cannot supply genuine 0.4 s samples.
+Zone entry determines measurement eligibility; Simulation
 Output Processing must account explicitly for eligible vehicles unfinished at
 the clearance deadline.
 

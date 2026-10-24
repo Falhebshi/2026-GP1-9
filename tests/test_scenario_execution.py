@@ -108,7 +108,18 @@ def test_execution_uses_validated_artifacts_and_full_window(case):
     assert root.find("input/net-file").get("value") == str(case.network.resolve())
     assert root.find("input/route-files").get("value") == str(case.generated.route_file)
     assert [child.tag for child in root.find("input")] == ["net-file", "route-files"]
-    assert len(root) == 1
+    assert [child.tag for child in root] == ["input", "output"]
+    assert root.find("output/fcd-output").get("value") == str(case.run_dir / "raw/fcd.xml")
+    assert root.find("output/fcd-output.attributes").get("value") == "id,x,y,angle,type,speed,lane,edge,pos"
+    assert root.find("output/device.fcd.period") is None
+    assert root.find("output/tripinfo-output").get("value") == str(case.run_dir / "raw/tripinfo.xml")
+    assert root.find("output/tripinfo-output.write-unfinished").get("value") == "true"
+    assert root.find("output/tripinfo-output.write-undeparted").get("value") == "true"
+    assert result["raw_outputs"] == {
+        "fcd": {"path": str(case.run_dir / "raw/fcd.xml"), "exists": False, "potentially_partial": False},
+        "tripinfo": {"path": str(case.run_dir / "raw/tripinfo.xml"), "exists": False, "potentially_partial": False},
+    }
+    assert (case.run_dir / "raw").is_dir()
     assert {name: path.read_bytes() for name, path in case.files.items()} == before
 
 
@@ -229,17 +240,66 @@ def test_mismatched_artifact_reference_is_rejected(case):
 
 def test_existing_run_directory_is_not_reused(case):
     case.run_dir.mkdir()
+    (case.run_dir / "raw").mkdir()
+    (case.run_dir / "raw/fcd.xml").write_text("preserve output")
     (case.run_dir / "scenario.sumocfg").write_text("preserve")
     with pytest.raises(FileExistsError):
         execute(case)
     assert (case.run_dir / "scenario.sumocfg").read_text() == "preserve"
+    assert (case.run_dir / "raw/fcd.xml").read_text() == "preserve output"
     assert not case.executions
+
+
+def test_reused_demand_directory_cannot_contain_run_outputs(case):
+    case.run_dir = case.generated.route_file.parent / "run"
+    with pytest.raises(ValueError, match="non-overlapping"):
+        execute(case)
+    assert not case.run_dir.exists() and not case.executions
 
 
 def test_runner_failure_summary_is_returned(case):
     case.summary["status"] = "failed"
     case.summary["error"] = "TraCI connection failed"
-    assert execute(case)["execution"] is case.summary
+    result = execute(case)
+    assert result["execution"] is case.summary
+    assert all(not output["exists"] and not output["potentially_partial"]
+               for output in result["raw_outputs"].values())
+
+
+def test_runner_failure_keeps_partial_raw_outputs(case, monkeypatch):
+    case.summary.update(status="failed", error="simulation step failed")
+
+    def fail_after_writing(config_path, **kwargs):
+        root = ET.parse(config_path).getroot()
+        fcd = Path(root.find("output/fcd-output").get("value"))
+        tripinfo = Path(root.find("output/tripinfo-output").get("value"))
+        fcd.write_text("partial fcd")
+        tripinfo.write_text("partial tripinfo")
+        return case.summary
+
+    monkeypatch.setattr(run_scenario, "run_simulation", fail_after_writing)
+    result = execute(case)
+    for name, content in (("fcd", "partial fcd"), ("tripinfo", "partial tripinfo")):
+        output = result["raw_outputs"][name]
+        assert output == {
+            "path": str(case.run_dir / "raw" / f"{name}.xml"),
+            "exists": True,
+            "potentially_partial": True,
+        }
+        assert Path(output["path"]).read_text() == content
+
+
+def test_completed_run_reports_present_outputs_without_validating_contents(case, monkeypatch):
+    def write_outputs(config_path, **kwargs):
+        root = ET.parse(config_path).getroot()
+        for tag in ("fcd-output", "tripinfo-output"):
+            Path(root.find(f"output/{tag}").get("value")).write_text("unparsed XML")
+        return case.summary
+
+    monkeypatch.setattr(run_scenario, "run_simulation", write_outputs)
+    result = execute(case)
+    assert all(output["exists"] and not output["potentially_partial"]
+               for output in result["raw_outputs"].values())
 
 
 @pytest.mark.parametrize("field, value, message", [
@@ -349,7 +409,8 @@ def test_generation_covers_full_window_and_returns_reusable_provenance(generatio
 
 def test_generated_demand_can_be_reused_without_rewriting(generation_case, monkeypatch):
     case = generation_case
-    generated = generate(case)["generated_demand"]
+    first_run = generate(case)
+    generated = first_run["generated_demand"]
     original = {path: path.read_bytes() for path in (
         generated.route_file, generated.manifest_file, generated.demand_file
     )}
@@ -371,6 +432,7 @@ def test_generated_demand_can_be_reused_without_rewriting(generation_case, monke
     }
     assert len(case.executions) == 2
     assert all(path.read_bytes() == data for path, data in original.items())
+    assert reused["raw_outputs"]["fcd"]["path"] != first_run["scenario_execution"]["raw_outputs"]["fcd"]["path"]
 
 
 def test_generation_uses_run_seed_for_planning_and_execution(generation_case):
