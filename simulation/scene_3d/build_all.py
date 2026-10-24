@@ -28,7 +28,7 @@ OSM = REPO / "data/raw/road_network/jaadah_study_area.osm"
 OVERTURE = REPO / "data/raw/buildings/overture_buildings.geojson"
 LANDMARKS = REPO / "data/raw/buildings/landmarks_traced.geojson"
 ROUTES = REPO / "simulation/scenarios/tests/stress_test_v2.rou.xml"
-OUT = REPO / "frontend/public/data/turki_imamsaud"
+OUT = REPO / "frontend/public/data/INT_001"
 
 # vehicles and signal states are kept for this part of the run, in seconds
 SIM_BEGIN = 0

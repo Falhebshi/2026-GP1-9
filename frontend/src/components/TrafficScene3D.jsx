@@ -29,7 +29,7 @@ import './TrafficScene3D.css'
 // its lanes on the map) highlights its lanes and opens its KPIs and movements.
 // Goes inside <SimulationViewport> and keeps the top-left corner free for the viewport's card.
 //
-//   intersectionId   folder in public/data, e.g. "turki_imamsaud"
+//   intersectionId   folder in public/data, e.g. "INT_001"
 //   center           [longitude, latitude] the camera starts over
 //   scenario         "baseline" (default) or an intervention run
 //   time             simulation time in seconds (optional, without it the scene loops by itself)

@@ -60,7 +60,7 @@ for _, el in ET.iterparse(fcd_file, events=("end",)):
             d["signals"].append(int(v.get("signals", "0")))
     el.clear()
 trips = [d for d in veh.values() if len(d["path"]) >= 2]
-sim = {"intersection_id": "turki_imamsaud", "scenario": "baseline", "source": SOURCE,
+sim = {"intersection_id": "INT_001", "scenario": "baseline", "source": SOURCE,
        "t_start": 0, "t_end": T1 - T0, "time_unit": "seconds", "available": True,
        "angle_convention": "SUMO navigation degrees: 0 = north, clockwise", "speed_unit": "m/s",
        "z_unit": "m relative to street level (negative = underpass)",
