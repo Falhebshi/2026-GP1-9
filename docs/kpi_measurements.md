@@ -4,6 +4,17 @@ The KPI engine (`kpi_engine.md`) calculates its indicators from canonical measur
 
 The engine itself does not depend on these rules; it uses the finished records.
 
+The code is in the `jaadah/kpi_inputs/` package, with its tests in `jaadah/kpi_inputs/kpi_inputs_tests/`:
+
+```text
+jaadah/kpi_inputs/
+├── __init__.py
+├── signal_program.py   the run's SignalProgram from the network file
+└── kpi_inputs_tests/
+    ├── __init__.py
+    └── test_signal_program.py
+```
+
 ---
 
 # 1. Measurement Zones
@@ -91,3 +102,35 @@ After interpolation, rounding can still leave a vehicle that met no delay slight
 ## 2.5 Clearance
 
 A vehicle that arrived in the analysis period but has not left its zone when the run ends has no time loss, and the engine reports its interval as `unavailable` (KPI engine section 7.4). The clearance (`SimulationConfig.clearance_duration_s`) must be long enough for the last arrivals to leave their zones.
+
+---
+
+# 3. Signal Program
+
+Implemented in `jaadah/kpi_inputs/signal_program.py` (`build_signal_program`).
+
+The HCM saturation flow, capacity, v/c and delay use the run's `SignalProgram`. It is built from the traffic-light plan in the network file that SUMO runs, so the simulation and the HCM calculation use the same greens (KPI engine section 13.6).
+
+## 3.1 Rules
+
+- **Plan:** the plan of the intersection's signal (`IntersectionMapping.sumo_tls_id`); only fixed-time (`static`) plans are supported. When the signal has several plans, one is chosen with `program_id`.
+- **Steps:** consecutive steps with the same state count as one step, so a green written as two identical steps is one green.
+- **Phases:** each step with a green (`G`) starts a phase; the yellow steps after it are its yellow time and the all-red steps its all-red time. The plan must start with a green.
+- **A movement may have several greens per cycle:** it is then listed in each phase that serves it, and the engine keeps its capacity and reports its HCM delay as `unavailable` (KPI engine section 9.5).
+- **Overlaps are not supported:** a movement that stays green from one phase into the next (including from the last phase into the first) would look like two separate greens, with its lost time counted twice and its HCM delay `unavailable` for the wrong reason. `SignalProgram` represents sequential, non-overlapping phases only, so such a plan is rejected. The study-area plan serves one approach at a time and ends every green with yellow and all-red before the next begins, so it has no overlap.
+- **Served movements:** a movement is served by a phase when all of its signal links (`MovementMapping.signal_crossings`) are green in the phase's green step. Only the analysed movements, those with `MovementAttributes`, are listed. Ramps and U-turns share their phases with analysed movements, so leaving them out changes no phase timing.
+- **Source:** `baseline_model`, so the engine reports the signal timing as a *modelled assumption*.
+- **Network:** the network file must match the mapping's network checksum.
+
+A plan the engine cannot use correctly is rejected with every problem listed, rather than approximated: signal states other than `G`, `y` and `r` (such as a permitted green `g`), an overlap, a movement only partly green in a step, a green that serves no analysed movement, or an analysed signalised movement that is never green.
+
+## 3.2 Study-area plan
+
+| Phase | Movements | Green | Yellow | All-red |
+| --- | --- | --- | --- | --- |
+| `PHASE_1` | `MOV_E_W`, `MOV_E_S` | 40 s | 3 s | 2 s |
+| `PHASE_2` | `MOV_S_W` | 15 s | 3 s | 2 s |
+| `PHASE_3` | `MOV_W_E`, `MOV_W_N` | 30 s | 3 s | 2 s |
+| `PHASE_4` | `MOV_N_E` | 15 s | 3 s | 2 s |
+
+Cycle length: 120 s. The slips are unsignalised and appear in no phase.

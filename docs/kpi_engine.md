@@ -76,16 +76,14 @@ Right-turn slip roads are unsignalised. They receive simulation delay, queue len
 
 ## 1.3 Measurement zones
 
-Each approach has its own measurement zone: an upstream part measured back from the stop line, the path through the junction, and a downstream part measured from the junction exit:
+Each approach has its own measurement zone, measured from the stop line:
 
-| Approach | Upstream (before the stop line) | Downstream (after the junction exit) | Speed limit |
+| Approach | Upstream | Downstream | Speed limit |
 | --- | --- | --- | --- |
-| East | 388 m | 155 m | 90 km/h |
-| West | 450 m | 105 m | 70 km/h |
-| North | 500 m | 65 m | 50 km/h |
-| South | 500 m | 65 m | 50 km/h |
-
-How the zones and the measurement records are produced from a SUMO run is described in [KPI measurements](kpi_measurements.md).
+| East | 0–388 m | ≈155 m | 90 km/h |
+| West | 0–450 m | ≈105 m | 70 km/h |
+| North | 0–500 m | ≈65 m | 50 km/h |
+| South | 0–500 m | ≈65 m | 50 km/h |
 
 Delay is measured per vehicle over the whole zone. Per-lane queues are measured over each lane's own section (its lane chain), and the full queue of an approach over the whole upstream zone (section 13.1).
 
@@ -245,7 +243,7 @@ Implemented in `backend/analytics/kpi/delay.py`.
 
 ## 7.1 Source
 
-Each `VehicleDelayRecord` describes one vehicle's passage through the measurement zone of its approach (section 1.3). The simulation pipeline provides its zone times, its free-flow travel time and the time it stood still; the record calculates its **time loss** (time in the zone − free-flow travel time). How the zone and the free-flow travel time are defined is described in [KPI measurements](kpi_measurements.md); the engine uses the finished time loss and does not depend on that definition.
+Each `VehicleDelayRecord` describes one vehicle's passage through the measurement zone of its approach (section 1.3). The simulation pipeline provides its zone times, its free-flow travel time and the time it stood still; the record calculates its **time loss** (time in the zone − free-flow travel time). How the zone end and the free-flow speed are defined is decided in the simulation pipeline; the engine uses the finished time loss and does not depend on that definition.
 
 For each movement and interval:
 
@@ -640,7 +638,7 @@ Demand comes from stop-line counts, which count vehicles as they are served: in 
 - **Driving behaviour:** SUMO passenger-car defaults, not calibrated. The comparison of measured and HCM saturation flow is the planned check.
 - **Instantaneous lane changes:** no lane-change duration is set, so a vehicle never blocks two lanes while changing lanes.
 - **Passenger cars only:** no heavy vehicles or buses (section 9.9).
-- **Signal patterns:** one green per movement and cycle; permitted left turns, several greens per cycle and greens lasting the whole cycle have no HCM delay (sections 9.3, 9.5, 10.1).
+- **Signal patterns:** one green per movement and cycle; permitted left turns, several greens per cycle and greens lasting the whole cycle have no HCM delay (sections 9.3, 9.5, 10.1). Plans with overlapping phases, where a movement stays green from one phase into the next, are rejected when the signal program is built ([KPI measurements](kpi_measurements.md), section 3.1).
 - **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`.
 - **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
 
