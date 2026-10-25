@@ -538,11 +538,16 @@ class CycleQueueRecord(BaseModel):
     simulation run. (Queue duration is measured per vehicle in
     VehicleDelayRecord.halted_time_s, not here.)
 
-    Produced by the simulation pipeline from a lane-area detector
-    whose output period is one signal cycle, aligned with the cycle
-    start. The lane is identified by its Jaadah lane_id; its approach,
-    position and the movements it serves come from the matching
-    ApproachLane.
+    Produced by jaadah/kpi_inputs from SUMO vehicle position output,
+    over the lane's section and per signal cycle, aligned with the
+    cycle start (docs/kpi_measurements.md). The lane is identified by
+    its Jaadah lane_id; its approach, position and the movements it
+    serves come from the matching ApproachLane.
+
+    reaches_section_end is true when the queue reached the start of the
+    lane's section during the cycle, so it may continue upstream where
+    lanes merge; the queue length is then the section length, a
+    minimum value.
 
     Only the most specific identifiers are stored: the scenario is
     found through run_id (SimulationRun), and the approach and
@@ -564,6 +569,7 @@ class CycleQueueRecord(BaseModel):
 
     max_queue_length_m: float = Field(ge=0)
     max_queue_vehicles: int = Field(ge=0)
+    reaches_section_end: bool = False
 
     @field_validator(
         "run_id",
@@ -630,6 +636,11 @@ class CycleQueueRecord(BaseModel):
             raise ValueError(
                 "max_queue_length_m and max_queue_vehicles must both "
                 "be zero or both be greater than zero"
+            )
+
+        if self.reaches_section_end and not has_queue_m:
+            raise ValueError(
+                "a queue that reaches the section end must have a length"
             )
 
         return self

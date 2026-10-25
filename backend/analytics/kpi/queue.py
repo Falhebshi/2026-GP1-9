@@ -11,9 +11,9 @@ Two summaries are calculated for each lane:
 - over the whole analysis period: the 95th-percentile cycle queue,
   using the nearest-rank method.
 
-A lane with no cycle records has no queue value (None): an E2
-detector reports every cycle, even with no queue, so a missing record
-means missing data, not an empty lane.
+A lane with no cycle records has no queue value (None): a record is
+written for every lane and cycle, even with no queue, so a missing
+record means missing data, not an empty lane.
 
 Works on the records of one run.
 """
@@ -84,8 +84,8 @@ def period_percentile_queues(
     analysis period (all its intervals together).
 
     The value is None (unavailable, PERIOD_INCOMPLETE_REASON) when a
-    lane has no cycle record in any one of the intervals: a lane-area
-    detector writes a record every cycle, even with no queue, so a
+    lane has no cycle record in any one of the intervals: a record is
+    written for every lane and cycle, even with no queue, so a
     missing interval is missing data, and the percentile of the other
     intervals would not represent the whole period.
     """

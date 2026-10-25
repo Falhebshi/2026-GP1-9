@@ -390,9 +390,11 @@ Its delay is unknown, so it has no time loss. A vehicle that crossed the stop li
 
 ## 4.6 `CycleQueueRecord`
 
-Queue length for one lane over one signal cycle, from a lane-area (E2) detector whose output period is one cycle, aligned with the cycle start.
+Queue length for one lane over one signal cycle, aligned with the cycle start, measured from vehicle positions over the lane's section ([KPI measurements](kpi_measurements.md), section 5).
 
-Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`.
+Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_section_end` (default false).
+
+`reaches_section_end` is true when the queue reached the start of the lane's section during the cycle, so it may continue upstream where lanes merge; the queue length is then the section length, a minimum value. It requires a queue.
 
 The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
@@ -678,7 +680,7 @@ The models do not decide how observed detector counts become movement demand (e.
 
 ## 9.4 Output reduction is separate
 
-The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; lane-area detector output into `CycleQueueRecord`; the network's signal program into `SignalProgram`.
+The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; vehicle positions over each lane's section into `CycleQueueRecord`; the network's signal program into `SignalProgram`.
 
 ## 9.5 KPI calculation is separate
 
@@ -777,3 +779,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 23 Oct 2026 (run inputs) | Added `SimulationRun.mapping_version`, `demand_sha256` and `route_file_sha256`, required for running and completed runs, so that compared runs can be checked for identical inputs |
 | 23 Oct 2026 (movement attributes) | Added `NetworkMappingConfig.movement_attributes`, optional and empty by default, holding the approved `MovementAttributes` of the nine analysed movements. Checks: no duplicates, known movement with an approach, `control` agrees with `signal_controlled`, no lane mixing signalized and uncontrolled movements. `MOV_S_W` classified as a protected left. `mapping_version` set to `2.2-movement-attributes`; `schema_version` stays `2.0` |
 | 25 Oct 2026 (measurement zones) | Added optional `ApproachMapping.zone_upstream_m` and `zone_downstream_m` (given together, finite and positive), holding each approach's measurement zone; the network validator checks that each zone fits on the routes of its movements. `mapping_version` set to `2.3-measurement-zones`; `schema_version` stays `2.0` |
+| 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |

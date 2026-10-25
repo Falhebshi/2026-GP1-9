@@ -1,13 +1,14 @@
 """
-Run SUMO once with KPI measurement output and check the vehicle passages.
+Run SUMO once with KPI measurement output and check the measurement records.
 
 The demand is generated with jaadah/sumo_demand exactly as for a real run
 (hand-made by default: every demand movement gets the same number of
 vehicles in every interval; with --demand, SimulationDemand records are
 read from an exported JSON file). SUMO then runs once with FCD output
 (lane, pos, speed, odometer every 0.4 s) and tripinfo, and
-jaadah/kpi_inputs reduces them to VehicleDelayRecord and
-IncompletePassage records (docs/kpi_measurements.md).
+jaadah/kpi_inputs reduces them to VehicleDelayRecord,
+IncompletePassage and CycleQueueRecord records
+(docs/kpi_measurements.md).
 
 The run passes when:
 
@@ -18,7 +19,9 @@ The run passes when:
    unavailable);
 3. no vehicle's time loss in its zone exceeds its time loss over its
    whole trip, as SUMO reports it in tripinfo, by more than one FCD
-   period (the zone is part of the trip, so it cannot lose more).
+   period (the zone is part of the trip, so it cannot lose more);
+4. every canonical lane has a queue record for every whole signal cycle
+   of the run (a missing record would be reported as unavailable).
 
 The records are saved as JSON next to the SUMO files.
 """
@@ -40,6 +43,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from pydantic import TypeAdapter
 
+from jaadah.kpi_inputs.cycle_queues import CycleQueueError, collect_cycle_queues
+from jaadah.kpi_inputs.signal_program import SignalProgramError, build_signal_program
 from jaadah.kpi_inputs.vehicle_passages import VehiclePassageError, collect_vehicle_passages
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.scenario import Scenario, SimulationConfig
@@ -52,7 +57,7 @@ from jaadah.sumo_demand.planner import (
     movement_routes,
     plan_departures,
 )
-from jaadah.sumo_demand.writer import DemandWritingError, write_sumo_demand
+from jaadah.sumo_demand.writer import VEHICLE_TYPE, DemandWritingError, write_sumo_demand
 
 DEFAULT_MAPPING = PROJECT_ROOT / "data/processed/road_network/network_mappings.json"
 DEFAULT_NETWORK = PROJECT_ROOT / "data/processed/road_network/jaadah_study_area.net.xml"
@@ -123,7 +128,7 @@ def run_sumo(sumo_bin, network, route_file, folder, end_s, step_length, seed):
     return completed.returncode, paths
 
 
-def evaluate(passages, window, returncode, paths):
+def evaluate(passages, queues, expected_cycles, lane_ids, window, returncode, paths):
     trips = {item.get("id"): item.attrib for item in ET.parse(paths["tripinfo"]).getroot().iter("tripinfo")}
 
     unfinished = sorted(
@@ -134,12 +139,19 @@ def evaluate(passages, window, returncode, paths):
         item.vehicle_id for item in passages.records
         if item.time_loss_s > float(trips[item.vehicle_id]["timeLoss"]) + FCD_PERIOD_S
     )
+    cycles = {lane_id: 0 for lane_id in lane_ids}
+    for item in queues:
+        cycles[item.lane_id] = cycles.get(item.lane_id, 0) + 1
+    incomplete_lanes = sorted(lane for lane, count in cycles.items() if count != expected_cycles)
     return {
         "1. SUMO ends without an error": {"passed": returncode == 0, "exit_code": returncode},
         "2. Analysis-period arrivals have left their zone": {
             "passed": not unfinished, "unfinished": unfinished[:20], "count": len(unfinished)},
         "3. Zone time loss within trip time loss": {
             "passed": not exceeding, "exceeding": exceeding[:20], "count": len(exceeding)},
+        "4. A queue record for every lane and cycle": {
+            "passed": not incomplete_lanes, "lanes_with_missing_cycles": incomplete_lanes,
+            "lanes": len(lane_ids), "cycles_per_lane": expected_cycles, "records": len(queues)},
     }
 
 
@@ -156,6 +168,22 @@ def movement_summary(passages, window):
             "mean_halted_s": round(sum(i.halted_time_s for i in items) / len(items), 1),
         }
         for movement_id, items in sorted(rows.items())
+    }
+
+
+def lane_summary(queues, window):
+    rows = defaultdict(list)
+    for item in queues:
+        if window.analysis_start <= item.cycle_start < window.analysis_end:
+            rows[item.lane_id].append(item)
+    return {
+        lane_id: {
+            "cycles": len(items),
+            "max_queue_m": max(i.max_queue_length_m for i in items),
+            "max_queue_vehicles": max(i.max_queue_vehicles for i in items),
+            "cycles_reaching_section_end": sum(i.reaches_section_end for i in items),
+        }
+        for lane_id, items in sorted(rows.items())
     }
 
 
@@ -203,16 +231,19 @@ def main() -> int:
             seed=args.seed,
         )
         generated = write_sumo_demand(plan, demands, mapping, args.out)
-    except (DemandPlanningError, DemandWritingError, ValueError, OSError) as exc:
+        program = build_signal_program(
+            mapping, args.net, scenario_id="SCN_KPI_MEASUREMENT_CHECK", signal_program_id="SP_KPI_MEASUREMENT_CHECK",
+        )
+        folder = generated.route_file.parent
+    except (DemandPlanningError, DemandWritingError, SignalProgramError, ValueError, OSError) as exc:
         print(f"Cannot run the check:\n{exc}", file=sys.stderr)
         return 2
 
-    folder = generated.route_file.parent
     returncode, paths = run_sumo(
         args.sumo_bin, args.net, generated.route_file, folder,
         window.duration_s, args.step_length, args.seed,
     )
-    if not paths["fcd"].is_file() or not paths["tripinfo"].is_file():
+    if not all(paths[name].is_file() for name in ("fcd", "tripinfo")):
         print(f"SUMO did not produce its outputs (exit code {returncode}); see {paths['log']}", file=sys.stderr)
         return 1
 
@@ -223,13 +254,21 @@ def main() -> int:
             manifest_path=generated.manifest_file, demand_path=generated.demand_file,
             fcd_period_s=FCD_PERIOD_S,
         )
-    except VehiclePassageError as exc:
-        print(f"FAIL  Vehicle passages could not be measured:\n{exc}", file=sys.stderr)
+        queues = collect_cycle_queues(
+            mapping, args.net, program, paths["fcd"], run_id=RUN_ID, window=window,
+            vehicle_length_m=float(VEHICLE_TYPE["length"]),
+        )
+    except (VehiclePassageError, CycleQueueError) as exc:
+        print(f"FAIL  Measurements could not be taken:\n{exc}", file=sys.stderr)
         return 1
+
+    expected_cycles = int(window.duration_s // program.cycle_length_s)
+    lane_ids = [item.lane_id for item in mapping.lane_mappings]
 
     save(folder / "vehicle_delay_records.json", passages.records)
     save(folder / "incomplete_passages.json", passages.incomplete)
-    results = evaluate(passages, window, returncode, paths)
+    save(folder / "cycle_queue_records.json", queues)
+    results = evaluate(passages, queues, expected_cycles, lane_ids, window, returncode, paths)
     summary = {
         "settings": {
             "demand": str(args.demand) if args.demand else f"hand-made, {args.vehicles_per_record} per record",
@@ -238,12 +277,15 @@ def main() -> int:
         },
         "records": len(passages.records),
         "incomplete": len(passages.incomplete),
+        "cycle_queues": len(queues),
         "results": results,
         "analysis_period_by_movement": movement_summary(passages, window),
+        "analysis_period_by_lane": lane_summary(queues, window),
     }
     (folder / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
-    print(f"Measured: {len(passages.records)} complete passages, {len(passages.incomplete)} incomplete")
+    print(f"Measured: {len(passages.records)} complete passages, {len(passages.incomplete)} incomplete, "
+          f"{len(queues)} cycle queues")
     for name, result in results.items():
         details = ", ".join(f"{k}={v}" for k, v in result.items() if k != "passed" and not isinstance(v, list))
         print(f"{'PASS' if result['passed'] else 'FAIL'}  {name}: {details}")
@@ -252,6 +294,8 @@ def main() -> int:
                 print(f"      {key}: {', '.join(value)}")
     for movement_id, values in summary["analysis_period_by_movement"].items():
         print(f"INFO  {movement_id}: " + ", ".join(f"{k}={v}" for k, v in values.items()))
+    for lane_id, values in summary["analysis_period_by_lane"].items():
+        print(f"INFO  {lane_id}: " + ", ".join(f"{k}={v}" for k, v in values.items()))
 
     passed = all(result["passed"] for result in results.values())
     print(("All checks passed." if passed else "Some checks failed.") + f" Report: {folder / 'summary.json'}")

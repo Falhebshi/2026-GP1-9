@@ -199,7 +199,7 @@ Implemented in `backend/analytics/kpi/queue.py`.
 
 ## 6.1 Source
 
-Queue length is measured per lane by lane-area (E2) detectors whose output period is one signal cycle, aligned with the cycle start. Each `CycleQueueRecord` therefore gives the longest queue on one lane in one cycle, in metres and in vehicles. Queue length is reported **in both units**, as two results: metres are used for the storage ratio, and vehicles are easier to read on the dashboard.
+Queue length is measured per lane and signal cycle, aligned with the cycle start, from vehicle positions over the lane's section ([KPI measurements](kpi_measurements.md), section 5). Each `CycleQueueRecord` therefore gives the longest queue on one lane in one cycle, in metres and in vehicles. Queue length is reported **in both units**, as two results: metres are used for the storage ratio, and vehicles are easier to read on the dashboard.
 
 Queue length is a lane KPI. Shared lanes are reported as described in section 2.1, and an approach's queue is its longest lane (section 2.4). Queue duration is measured per vehicle and is calculated with delay (section 2.3).
 
@@ -215,7 +215,7 @@ For each lane and interval, the reported queue is the **largest cycle queue** in
 
 For the analysis page, each lane also receives the **95th-percentile cycle queue** over all cycles of the analysis period, calculated with the **nearest-rank method**: the cycle queues are sorted and the value at rank ⌈0.95 × n⌉ is taken. For example, with 20 cycles the 19th smallest queue is reported.
 
-A lane-area detector writes a record every cycle, even when there is no queue (then the queue is 0), so an interval without records is missing data. If any interval of the period has no records for a lane, that lane's period value is `unavailable` ("no cycle records in at least one interval of the analysis period"): the percentile of the remaining intervals would look like a whole-period value while missing part of the time, possibly the peak. Its approach, movements and the intersection follow through the roll-up (section 11.4).
+A record is written for every lane and cycle, even when there is no queue (then the queue is 0), so an interval without records is missing data. If any interval of the period has no records for a lane, that lane's period value is `unavailable` ("no cycle records in at least one interval of the analysis period"): the percentile of the remaining intervals would look like a whole-period value while missing part of the time, possibly the peak. Its approach, movements and the intersection follow through the roll-up (section 11.4).
 
 The HCM 7th edition calculates its percentile back of queue analytically and does not prescribe a method for taking a percentile from measured cycles. The nearest-rank method was chosen because the result is always a queue that actually occurred, in whole vehicles, and is simple to explain and to check by hand.
 
@@ -230,7 +230,7 @@ When the storage length of a lane is not known, the queue length is still report
 
 ## 6.6 Missing records are not zero queues
 
-A detector reports every cycle, including cycles with no queue, which are recorded as 0 m. A reported 0 m is a measured zero and is reported as `ok` with a value of 0. When a lane has **no** cycle record in an interval, its data is missing, and its queue is `unavailable` with the reason "no cycle records for this lane in this interval"; it is never reported as 0.
+A record is written for every cycle, including cycles with no queue, which are recorded as 0 m. A reported 0 m is a measured zero and is reported as `ok` with a value of 0. When a lane has **no** cycle record in an interval, its data is missing, and its queue is `unavailable` with the reason "no cycle records for this lane in this interval"; it is never reported as 0.
 
 ## 6.7 Input checks
 
@@ -584,9 +584,10 @@ What the engine expects from the components that prepare its inputs (network map
 ## 13.1 Queue length: lanes and approaches
 
 - **Lanes and movements** report the queue of each lane over the lane's own section (its lane chain, `LaneMapping.sumo_lane_ids`): which lane is full, turn-bay and slip spillback, storage ratio.
-- **Approaches and the intersection** report the **full queue over the whole upstream zone** (section 1.3): how far back the queue reaches. Beyond a lane chain several lanes merge, so a vehicle queued there belongs to the approach but to no single Jaadah lane. Example: on West the lane chains are about 92 m long while the zone is 450 m; a queue reaching 250 m back is reported as 250 m on the approach.
+- **Approaches and the intersection** report the **full queue over the whole upstream zone** (section 1.3): how far back the queue reaches. Beyond a lane chain several lanes merge, so a vehicle queued there belongs to the approach but to no single Jaadah lane. Example: on West the lane sections are 95 m long while the zone is 450 m; a queue reaching 250 m back is reported as 250 m on the approach.
 - A lane whose queue reaches the end of its section is reported as a **minimum value** (`is_lower_bound`, with the reason "queue reaches the end of this lane's measured section (… m); the full queue is shown on the approach").
-- *To be built:* the full-zone queue per approach and cycle (from a virtual lane-area detector over the zone or from vehicle positions), each lane's section length, and the `is_lower_bound` field on `KpiResult`.
+- Each lane's section, its queue and whether the queue reached the section end are measured from vehicle positions ([KPI measurements](kpi_measurements.md), section 5).
+- *To be built:* the full-zone queue per approach and cycle, and the `is_lower_bound` field on `KpiResult`.
 
 ## 13.2 Uncontrolled right-turn slips
 
@@ -658,5 +659,5 @@ The decisions that were hardest to make, what made each difficult, and what was 
 | Baseline versus intervention | Comparing the two means hides the effect behind the variation between seeds | Paired differences over matched seeds, with LOS graded from the same pairs and a partial-sample tag (section 12.4) |
 | Runs without vehicles | Counting them as zero delay seemed natural but would lower the mean and widen the spread | Left out; a mean over no vehicles does not exist (section 12.1) |
 | Unsupported signal patterns | Several greens per cycle are a normal intervention design, but the HCM delay used here assumes one | Capacity kept, HCM delay and Xc `unavailable` until supported (section 9.5) |
-| Queue measurement area | Lane chains are 82–183 m long, the zones 388–500 m; per-lane detectors cannot see a queue beyond the point where lanes merge | Full-zone queue per approach, per-lane queues on the chains, and a minimum-value tag (section 13.1) |
+| Queue measurement area | Lane sections are 85–395 m long (85–119 m except on East), the zones 388–500 m; a lane's queue cannot be followed beyond the point where lanes merge | Full-zone queue per approach, per-lane queues on the chains, and a minimum-value tag (section 13.1) |
 | Vehicles waiting to enter | Their waiting is real but happens outside the model and is not control delay | Not added to delay; the approach is `unavailable` above a 10 s threshold (section 13.7) |

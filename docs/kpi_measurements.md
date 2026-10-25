@@ -12,14 +12,16 @@ jaadah/kpi_inputs/
 ├── network_inputs.py     the engine's lanes, movements and movement attributes
 ├── signal_program.py     the run's SignalProgram from the network file
 ├── vehicle_passages.py   VehicleDelayRecord and IncompletePassage from FCD output
+├── cycle_queues.py       CycleQueueRecord from FCD output
 └── kpi_inputs_tests/
     ├── __init__.py
+    ├── test_cycle_queues.py
     ├── test_network_inputs.py
     ├── test_signal_program.py
     └── test_vehicle_passages.py
 ```
 
-`simulation/scripts/tests/run_kpi_measurement_check.py` runs SUMO once with the measurement output and checks the records (section 2.7).
+`simulation/scripts/tests/run_kpi_measurement_check.py` runs SUMO once with the measurement output and checks the records (section 6).
 
 ---
 
@@ -132,18 +134,6 @@ A vehicle still queued before the stop-line edge when the run ends has no row on
 
 Every vehicle that entered its zone during the run is recorded, including those of the warm-up and clearance; the engine uses those that arrived in the analysis period.
 
-## 2.7 Measurement check
-
-`simulation/scripts/tests/run_kpi_measurement_check.py` generates demand with `jaadah/sumo_demand` (hand-made by default, or from a `SimulationDemand` file with `--demand`), runs SUMO once with the inputs above and reduces the output to records. It passes when:
-
-1. SUMO ends without an error;
-2. every vehicle that arrived in its zone during the analysis period has left it by the end of the run, so the clearance is long enough;
-3. no vehicle's time loss in its zone exceeds its time loss over the whole trip reported by SUMO (tripinfo `timeLoss`) by more than one FCD period, since the zone is part of the trip.
-
-The records are saved as `vehicle_delay_records.json` and `incomplete_passages.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
-
-With the default hand-made demand (20 vehicles per movement and interval) every rule passes: all 1080 vehicles are measured, the smallest time loss is 0.15 s, and every vehicle's zone time loss is 0.2–8.2 s below its whole-trip time loss.
-
 ---
 
 # 3. Signal Program
@@ -195,3 +185,63 @@ Only the analysed movements, those with `MovementAttributes`, are included; ramp
 The mapping accepts drafts in which some attributes are missing; the engine does not. A mapping is rejected, with every gap listed, when an approach lane serves a movement without attributes, or when an analysed movement is served by no approach lane and so has no lane group, capacity or queue.
 
 With these inputs and the signal program (section 3), the engine calculates the HCM saturation flow, capacity, v/c, HCM delay and level of service without any simulation output; only the demand is needed besides. `backend/analytics/kpi/kpi_tests/test_study_area_inputs.py` runs the engine on the study area's real inputs.
+
+---
+
+# 5. Queue Length
+
+Implemented in `jaadah/kpi_inputs/cycle_queues.py` (`collect_cycle_queues`). Queues are measured from the same FCD output as the vehicle passages (section 2.6), read once step by step without keeping the rows, so memory does not grow with the number of vehicles. Lane queues and approach queues are measured with the same rules.
+
+## 5.1 Lane sections
+
+Each canonical lane's queue is measured over its **section** (KPI engine section 13.1): its lane chain (`LaneMapping.sumo_lane_ids`) together with the junction lanes that join the chain's segments, from the start of the first segment to the stop line. A junction lane between two segments can be long, and vehicles on it are part of the section.
+
+| Lanes | Lane chain segments | Junction lanes between them | Section |
+| --- | --- | --- | --- |
+| East 1–4 | 388.1 m | 6.8 m | 394.8 m |
+| South 1–2 | 86.3 m | 32.6 m | 118.9 m |
+| South 3–4 (bypass) | 183.4 m | 23.8 m | 207.2 m |
+| West 1–3 | 91.9 m | 3.1 m | 95.0 m |
+| West 4 (slip) | 107.7 m | 3.1 m | 110.8 m |
+| North 1–3 | 82.0 m | 2.8 m | 84.8 m |
+| North 4 (slip) | 113.2 m | 2.1 m | 115.3 m |
+
+## 5.2 What counts as queued
+
+A vehicle is queued when it is slower than **1.39 m/s (5 km/h) for at least 1 s**. Vehicles creeping at the back of a queue count, so the queue length is how far back the queue reaches; with a standstill-only rule, a long queue moving forward a metre would briefly look much shorter. Queue duration keeps its standstill threshold (section 2.4), because it measures the time a vehicle stood still.
+
+## 5.3 Queue length at one moment
+
+The queue is **anchored at the stop line**: it starts with a queued vehicle whose front is less than **10 m** from the stop line, and continues through queued vehicles less than 10 m behind the back of the one before. Its length is the distance from the stop line to the back of its last vehicle (vehicle fronts from FCD, plus the 5 m vehicle length). Queued vehicles separated from it by a larger gap are not part of it.
+
+Example: 8 cars stopped every 7.5 m from 1 m before the stop line give a queue of 1 + 7 × 7.5 + 5 = 58.5 m and 8 vehicles. A group of slow cars at 75–95 m, more than 10 m behind, is not part of it.
+
+## 5.4 Queues that reach the section end
+
+When the back of a lane's queue is less than 10 m from the start of its section, the queue may continue upstream, where lanes merge and a queued vehicle belongs to the approach but to no single lane. The lane's queue is then capped at the section length and the record is marked `reaches_section_end`; the KPI engine reports it as a minimum value, and the full queue is measured on the approach (KPI engine section 13.1).
+
+## 5.5 Records
+
+One `CycleQueueRecord` (data model section 4.6) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue reached the section end during the cycle. A cycle without a queue is a measured 0.
+
+---
+
+# 6. Measurement Check
+
+`simulation/scripts/tests/run_kpi_measurement_check.py` generates demand with `jaadah/sumo_demand` (hand-made by default, or from a `SimulationDemand` file with `--demand`), builds the signal program, runs SUMO once with the inputs of section 2.6, and reduces the output to records. It passes when:
+
+1. SUMO ends without an error;
+2. every vehicle that arrived in its zone during the analysis period has left it by the end of the run, so the clearance is long enough;
+3. no vehicle's time loss in its zone exceeds its time loss over the whole trip reported by SUMO (tripinfo `timeLoss`) by more than one FCD period, since the zone is part of the trip;
+4. every canonical lane has a queue record for every whole signal cycle of the run, since a missing record would be reported as unavailable.
+
+The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json` and `cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
+
+Results of the check with hand-made demand, the same for every demand movement:
+
+| Demand per movement | Vehicles | Rules | South left time loss | Longest lane queue | Cycles reaching a section end (of 30) |
+| --- | --- | --- | --- | --- | --- |
+| 80 veh/h | 1,080 | all pass | 51 s | 3 vehicles (21 m) | none |
+| 600 veh/h | 8,100 | all pass | 204 s | 16 vehicles (South lane 2, its whole 118.9 m section) | South 25–28, West 1–7 |
+
+At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections. The slip lanes have no queue at either level.
