@@ -103,7 +103,7 @@ def test_review_changes_preserve_all_original_movement_records():
 
 def test_approved_lane_catalog_and_deferred_collections(config):
     assert config.schema_version == '2.0'
-    assert config.mapping_version == '2.2-movement-attributes'
+    assert config.mapping_version == '2.3-measurement-zones'
     expected_ids = {item[0] for item in APPROVED_LANES}
     assert len(config.approach_lanes) == len(config.lane_mappings) == 16
     assert {lane.lane_id for lane in config.approach_lanes} == expected_ids
@@ -208,3 +208,11 @@ def test_approved_movement_attributes(config):
     } == APPROVED_MOVEMENT_ATTRIBUTES
     served = {m for lane in config.approach_lanes for m in lane.served_movement_ids}
     assert served == set(APPROVED_MOVEMENT_ATTRIBUTES)
+
+
+def test_approved_measurement_zones(config):
+    """Upstream before the stop line and downstream after the junction exit, in metres."""
+    assert {
+        item.approach_id: (item.zone_upstream_m, item.zone_downstream_m)
+        for item in config.approach_mappings
+    } == {'APP_E': (388, 155), 'APP_W': (450, 105), 'APP_N': (500, 65), 'APP_S': (500, 65)}

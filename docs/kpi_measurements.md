@@ -20,15 +20,29 @@ Delay, queue duration and throughput are measured per vehicle while it passes th
 | North | 500 m | 65 m | 50 km/h |
 | South | 500 m | 65 m | 50 km/h |
 
-The upstream distances come from the Approach Study Distances Reference. Every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
+The upstream distances come from the Approach Study Distances Reference. The distances are stored on each approach in `network_mappings.json` (`zone_upstream_m`, `zone_downstream_m`; see [Network mapping](network_mapping.md#measurement-zones)), and the network validator checks that every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
 
 A vehicle's zone is therefore the upstream part, the path through the junction, and the downstream part. The path through the junction differs by movement (about 46–70 m for the signalised movements and under 8 m for the slips), so the zone length differs by movement and is the same for every vehicle of a movement.
 
-## 1.1 Why the downstream part is measured from the junction exit
+## 1.1 Reference points
+
+- **Stop line:** the end of the last SUMO lane of the movement's canonical lanes (`LaneMapping.sumo_lane_ids`).
+- **Junction exit:** the end of the junction's internal lane(s) on the vehicle's path, which is the start of the next route edge.
+
+Distances are path lengths along the lanes the vehicle drives, using the lane lengths in the network file, not straight-line distances:
+
+- **zone entry:** the point `zone_upstream_m` before the stop line; it usually falls inside a lane, several lanes back;
+- **zone exit:** the point `zone_downstream_m` after the junction exit.
+
+Example: `MOV_E_W` has 388 m before the stop line, its 63.8 m internal lane, and 155 m of outgoing road, so its zone is 606.8 m long.
+
+The lanes of one road in this network differ in length by less than 0.5 m, so the boundaries do not depend on which lane of a road the vehicle uses.
+
+## 1.2 Why the downstream part is measured from the junction exit
 
 Measured from the stop line, North's 65 m would end the zone inside the junction for left turners, whose path through it is 64–70 m long. Measuring from the junction exit gives every movement its whole path through the junction plus a stretch of outgoing road, where vehicles that stopped regain their speed.
 
-## 1.2 Why a fixed distance is enough
+## 1.3 Why a fixed distance is enough
 
 A vehicle starting from the stop line regains the speed limit within speed² ÷ (2 × acceleration), with SUMO's passenger-car acceleration of 2.6 m/s²:
 

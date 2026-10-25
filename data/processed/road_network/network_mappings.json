@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "mapping_version": "2.2-movement-attributes",
+  "mapping_version": "2.3-measurement-zones",
   "network": {
     "version": "jaadah_network_v2",
     "path": "data/processed/road_network/jaadah_study_area.net.xml",
@@ -16,25 +16,33 @@
       "approach_id": "APP_E",
       "intersection_id": "INT_001",
       "approach_side": "east",
-      "queue_detection_lane_ids": []
+      "queue_detection_lane_ids": [],
+      "zone_upstream_m": 388,
+      "zone_downstream_m": 155
     },
     {
       "approach_id": "APP_S",
       "intersection_id": "INT_001",
       "approach_side": "south",
-      "queue_detection_lane_ids": []
+      "queue_detection_lane_ids": [],
+      "zone_upstream_m": 500,
+      "zone_downstream_m": 65
     },
     {
       "approach_id": "APP_W",
       "intersection_id": "INT_001",
       "approach_side": "west",
-      "queue_detection_lane_ids": []
+      "queue_detection_lane_ids": [],
+      "zone_upstream_m": 450,
+      "zone_downstream_m": 105
     },
     {
       "approach_id": "APP_N",
       "intersection_id": "INT_001",
       "approach_side": "north",
-      "queue_detection_lane_ids": []
+      "queue_detection_lane_ids": [],
+      "zone_upstream_m": 500,
+      "zone_downstream_m": 65
     }
   ],
   "approach_lanes": [
