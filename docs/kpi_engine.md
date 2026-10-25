@@ -48,10 +48,11 @@ backend/
             ├── test_capacity.py
             ├── test_hcm_delay.py
             ├── test_rollup.py
-            └── test_comparison.py
+            ├── test_comparison.py
+            └── test_study_area_inputs.py
 ```
 
-Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`.
+Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`. `test_study_area_inputs.py` runs the engine on the study area's real network inputs and signal program, prepared by `jaadah/kpi_inputs/` ([KPI measurements](kpi_measurements.md)).
 
 ---
 
