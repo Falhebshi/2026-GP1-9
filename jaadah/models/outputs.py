@@ -386,15 +386,15 @@ class ApproachTrafficState(BaseModel):
 
 class VehicleDelayRecord(BaseModel):
     """
-    One simulated vehicle's passage through the delay zone of one
-    movement, in one simulation run.
+    One simulated vehicle's passage through the measurement zone of its
+    movement's approach, in one simulation run.
 
-    The delay zone runs from a fixed distance before the stop line to
-    the point after the intersection where the vehicle is back to
-    speed. Records are produced by the simulation pipeline from SUMO
-    vehicle position output. Only complete passages are recorded
-    here; vehicles that had not finished when the run ended are
-    recorded as IncompletePassage instead, never dropped.
+    The zone runs from a fixed distance before the stop line, through
+    the junction, to a fixed distance after the junction exit
+    (docs/kpi_measurements.md). Records are produced by
+    jaadah/kpi_inputs from SUMO vehicle position output. Only complete
+    passages are recorded here; vehicles that had not finished when the
+    run ended are recorded as IncompletePassage instead, never dropped.
 
     zone_entry_time is when the vehicle arrived: its delay is counted
     in the interval it arrived in.
@@ -403,10 +403,10 @@ class VehicleDelayRecord(BaseModel):
     stop line.
 
     free_flow_travel_time_s is how long the vehicle would have taken
-    through the same zone with no traffic and no signal. How it is
-    obtained (one free-flow speed, or a free-flow speed per lane along
-    the path) is decided by the simulation pipeline. Time loss is the
-    difference between the actual and the free-flow travel time.
+    through the same zone with no traffic and no signal, at its own
+    desired speed on each lane of its path (the lane's speed limit
+    times the vehicle's speed factor). Time loss is the difference
+    between the actual and the free-flow travel time.
 
     halted_time_s is how long the vehicle stood still inside the zone
     (the queue-duration KPI is measured per vehicle from it, so it
@@ -515,7 +515,7 @@ class VehicleDelayRecord(BaseModel):
 
     @property
     def zone_travel_time_s(self) -> float:
-        """Seconds the vehicle spent inside the delay zone."""
+        """Seconds the vehicle spent inside the measurement zone."""
 
         return (
             self.zone_exit_time - self.zone_entry_time
@@ -641,7 +641,7 @@ class CycleQueueRecord(BaseModel):
 
 class IncompletePassage(BaseModel):
     """
-    A vehicle that entered the delay zone of a movement but had not
+    A vehicle that entered the measurement zone of a movement but had not
     left it when the simulation run ended.
 
     Recorded so that unfinished vehicles are never silently dropped:
