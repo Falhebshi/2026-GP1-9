@@ -76,14 +76,16 @@ Right-turn slip roads are unsignalised. They receive simulation delay, queue len
 
 ## 1.3 Measurement zones
 
-Each approach has its own measurement zone, measured from the stop line:
+Each approach has its own measurement zone: an upstream part measured back from the stop line, the path through the junction, and a downstream part measured from the junction exit:
 
-| Approach | Upstream | Downstream | Speed limit |
+| Approach | Upstream (before the stop line) | Downstream (after the junction exit) | Speed limit |
 | --- | --- | --- | --- |
-| East | 0–388 m | ≈155 m | 90 km/h |
-| West | 0–450 m | ≈105 m | 70 km/h |
-| North | 0–500 m | ≈65 m | 50 km/h |
-| South | 0–500 m | ≈65 m | 50 km/h |
+| East | 388 m | 155 m | 90 km/h |
+| West | 450 m | 105 m | 70 km/h |
+| North | 500 m | 65 m | 50 km/h |
+| South | 500 m | 65 m | 50 km/h |
+
+How the zones and the measurement records are produced from a SUMO run is described in [KPI measurements](kpi_measurements.md).
 
 Delay is measured per vehicle over the whole zone. Per-lane queues are measured over each lane's own section (its lane chain), and the full queue of an approach over the whole upstream zone (section 13.1).
 
@@ -243,7 +245,7 @@ Implemented in `backend/analytics/kpi/delay.py`.
 
 ## 7.1 Source
 
-Each `VehicleDelayRecord` describes one vehicle's passage through the measurement zone of its approach (section 1.3). The simulation pipeline provides its zone times, its free-flow travel time and the time it stood still; the record calculates its **time loss** (time in the zone − free-flow travel time). How the zone end and the free-flow speed are defined is decided in the simulation pipeline; the engine uses the finished time loss and does not depend on that definition.
+Each `VehicleDelayRecord` describes one vehicle's passage through the measurement zone of its approach (section 1.3). The simulation pipeline provides its zone times, its free-flow travel time and the time it stood still; the record calculates its **time loss** (time in the zone − free-flow travel time). How the zone and the free-flow travel time are defined is described in [KPI measurements](kpi_measurements.md); the engine uses the finished time loss and does not depend on that definition.
 
 For each movement and interval:
 

@@ -308,7 +308,7 @@ A run is divided into three parts:
 | warm-up | analysis period | clearance |
 ```
 
-Vehicles are counted only if they enter the delay zone during the analysis period. The clearance period lets those vehicles finish their passage; traffic keeps arriving during it, but new arrivals are not counted. Both durations are **required** (zero is allowed, but must be written on purpose), and when the total duration is set, warm-up + clearance must leave a non-empty analysis period.
+Vehicles are counted only if they enter the measurement zone during the analysis period. The clearance period lets those vehicles finish their passage; traffic keeps arriving during it, but new arrivals are not counted. Both durations are **required** (zero is allowed, but must be written on purpose), and when the total duration is set, warm-up + clearance must leave a non-empty analysis period.
 
 ## 3.4 `ReplicationPair` and `ReplicationSet`
 
@@ -367,13 +367,13 @@ Fields: `run_id`, `approach_id`, `queue_detection_lane_ids` (at least one, no du
 
 ## 4.4 `VehicleDelayRecord`
 
-One vehicle's complete passage through the **delay zone** of one movement. The zone runs from 250 m before the stop line to the point after the intersection where the vehicle is back to speed. Records are produced from SUMO vehicle position output (FCD, recorded every 0.4 s).
+One vehicle's complete passage through the **measurement zone** of its approach: a fixed distance before the stop line, the path through the junction, and a fixed distance after the junction exit (East 388 m and 155 m, West 450 m and 105 m, North and South 500 m and 65 m). Records are produced from SUMO vehicle position output (FCD, recorded every 0.4 s); the zones and the rules for producing records are in [KPI measurements](kpi_measurements.md).
 
 Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, `stop_line_time`, `zone_exit_time`, `zone_distance_m`, `free_flow_travel_time_s`, `halted_time_s`.
 
 - `zone_entry_time` is when the vehicle arrived: its delay counts in the 15-minute interval it arrived in.
 - `stop_line_time` is when it got through the signal: it counts as served (throughput) in the interval it crossed the stop line.
-- `free_flow_travel_time_s` is how long it would have needed through the same zone with no traffic and no signal. How it is obtained (one free-flow speed, or one per lane along the path) is decided by the simulation pipeline.
+- `free_flow_travel_time_s` is how long it would have needed through the same zone with no traffic and no signal, at its own desired speed on each piece of its path (each lane's speed limit × the vehicle's speed factor).
 - `halted_time_s` is how long it stood still in the zone. The queue-duration KPI is measured per vehicle from it, so it splits cleanly by movement.
 
 Checks: entry ≤ stop line ≤ exit; entry before exit; free-flow time and halted time each no longer than the time in the zone.
@@ -382,7 +382,7 @@ Properties (calculated, not stored): `zone_travel_time_s` = exit − entry, and 
 
 ## 4.5 `IncompletePassage`
 
-A vehicle that entered the delay zone but had not left it when the run ended. Recorded so that unfinished vehicles are **never silently dropped**: they are usually the most delayed (still queued), so leaving them out would make delay look better than it was.
+A vehicle that entered the measurement zone but had not left it when the run ended. Recorded so that unfinished vehicles are **never silently dropped**: they are usually the most delayed (still queued), so leaving them out would make delay look better than it was.
 
 Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, optional `stop_line_time`, `last_seen_time`.
 
