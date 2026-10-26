@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import AlertCard from '../components/AlertCard'
 import AlertList from '../components/AlertList'
 import ApproachPanel from '../components/ApproachPanel'
 import Badge from '../components/Badge'
+import BrandMark from '../components/BrandMark'
+import Breadcrumbs from '../components/Breadcrumbs'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
@@ -13,6 +14,7 @@ import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
 import LocationSummary from '../components/LocationSummary'
 import LosBadge, { GRADES } from '../components/LosBadge'
+import MethodTag from '../components/MethodTag'
 import Notice from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import PlaybackBar from '../components/PlaybackBar'
@@ -189,19 +191,19 @@ const activeAlerts = [
     id: 'a1',
     title: 'Queue spillback',
     subtitle: 'North approach · 2 min ago',
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/1',
   },
   {
     id: 'a2',
     title: 'Low average speed',
     subtitle: 'East approach · 7 min ago',
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/2',
   },
   {
     id: 'a3',
     title: 'High V/C ratio',
     subtitle: 'West approach · 11 min ago',
-    // no interventionsTo: this alert shows no link
+    // no detailsTo: this alert shows no link
   },
 ]
 
@@ -211,7 +213,7 @@ const recurringAlerts = [
     id: 'r1',
     title: 'Recurring queue buildup',
     details: alertDetailItems,
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/3',
   },
   {
     id: 'r2',
@@ -222,7 +224,7 @@ const recurringAlerts = [
       { label: 'How often', value: '3 of 5 days' },
       { label: 'Status', value: <Badge variant="warning">Active</Badge> },
     ],
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/4',
   },
   {
     id: 'r3',
@@ -299,7 +301,7 @@ const alertCards = [
       { label: 'Detected at', value: '14:05' },
       { label: 'Status', value: <Badge variant="warning">Active</Badge> },
     ],
-    interventionsTo: '/recommendations/1',
+    detailsTo: '/alerts/1',
   },
   {
     id: 'f1',
@@ -310,7 +312,7 @@ const alertCards = [
       { label: 'Expected in', value: '12 min' },
       { label: 'Horizon', value: '+15 min' },
     ],
-    interventionsTo: '/recommendations/2',
+    detailsTo: '/alerts/2',
   },
   {
     id: 'p1',
@@ -322,7 +324,7 @@ const alertCards = [
       { label: 'How often', value: '2 of 2 days' },
       { label: 'Last seen', value: 'Sat 10 Oct' },
     ],
-    // no interventionsTo: the card says "No intervention available"
+    // no detailsTo: the card says "No intervention available"
   },
 ]
 
@@ -411,6 +413,15 @@ function ComponentPreview() {
           <Button disabled>Disabled</Button>
           <Button onClick={() => alert('Clicked!')}>Click me</Button>
         </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>BrandMark</h2>
+        <div className="preview-row">
+          <BrandMark />
+          <BrandMark size="md" />
+        </div>
+        <p className="preview-note">The logo square. Put the word "Jaadah" next to it as text.</p>
       </section>
 
       <section className="preview-section">
@@ -686,6 +697,17 @@ function ComponentPreview() {
       </section>
 
       <section className="preview-section">
+        <h2>MethodTag</h2>
+        <p className="preview-row">
+          Highest v/c <MethodTag method="hcm" />
+        </p>
+        <p className="preview-note">
+          After a KPI calculated with the HCM method. Hover or focus it to read what that means.
+          Simulated values get no tag.
+        </p>
+      </section>
+
+      <section className="preview-section">
         <h2>InfoList</h2>
         <div className="preview-row preview-row-top">
           <Card title="Location & General Information" className="preview-card">
@@ -791,16 +813,13 @@ function ComponentPreview() {
           />
         </div>
 
-        {/* As on Recommendation Details: breadcrumb links and one button */}
+        {/* As on Alert Details: Breadcrumbs above, a subtitle and one button */}
         <div className="preview-box">
+          <Breadcrumbs items={[{ label: 'Alerts', to: '/alerts' }, { label: 'Queue spillback' }]} />
           <PageHeader
-            title="Intervention 1"
-            subtitle={
-              <>
-                <Link to="/recommendations">Interventions</Link> / Intervention 1
-              </>
-            }
-            actions={<Button variant="secondary">Back to interventions</Button>}
+            title="Queue spillback on the north approach"
+            subtitle="Prince Turki Al-Awwal Rd × Imam Saud Rd"
+            actions={<Button variant="secondary">View interventions (4)</Button>}
           />
         </div>
 
@@ -808,6 +827,21 @@ function ComponentPreview() {
         <div className="preview-box">
           <PageHeader title="Traffic Patterns & Trends" />
         </div>
+      </section>
+
+      <section className="preview-section">
+        <h2>Breadcrumbs</h2>
+        <div className="preview-stack">
+          <Breadcrumbs items={[{ label: 'Alerts', to: '/alerts' }, { label: 'Queue spillback' }]} />
+          <Breadcrumbs
+            items={[
+              { label: 'Alerts', to: '/alerts' },
+              { label: 'Queue spillback', to: '/alerts/1' },
+              { label: 'Extend the north left-turn green' },
+            ]}
+          />
+        </div>
+        <p className="preview-note">The last item is the current page, so it has no link.</p>
       </section>
 
       <section className="preview-section">
@@ -819,7 +853,7 @@ function ComponentPreview() {
               type={alert.type}
               title={alert.title}
               details={alert.details}
-              interventionsTo={alert.interventionsTo}
+              detailsTo={alert.detailsTo}
             />
           ))}
         </div>
