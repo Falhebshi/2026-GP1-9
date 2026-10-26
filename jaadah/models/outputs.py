@@ -515,6 +515,124 @@ class CycleQueueRecord(BaseModel):
 
 
 # ============================================================
+# APPROACH CYCLE QUEUE RECORD
+# ============================================================
+
+class ApproachCycleQueueRecord(BaseModel):
+    """
+    The full queue of one approach over one signal cycle, in one
+    simulation run: how far back from the signal stop line the queue
+    reached, over the approach's whole measurement zone and across the
+    points where its lanes merge.
+
+    Produced by jaadah/kpi_inputs from SUMO vehicle position output,
+    per signal cycle, aligned with the cycle start
+    (docs/kpi_measurements.md). Queued vehicles on the signal lanes and
+    on the road behind them count; slip and bypass lanes have their
+    own lane queues (CycleQueueRecord).
+
+    reaches_zone_end is true when the queue reached the far end of the
+    zone during the cycle, so it may continue beyond what is measured;
+    the queue length is then the zone length, a minimum value.
+
+    Only the most specific identifiers are stored: the scenario is
+    found through run_id (SimulationRun) and the intersection through
+    approach_id (Approach).
+
+    These are simulation measurements, not final application KPIs.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    run_id: str
+    approach_id: str
+
+    cycle_start: datetime
+    cycle_end: datetime
+
+    max_queue_length_m: float = Field(ge=0)
+    max_queue_vehicles: int = Field(ge=0)
+    reaches_zone_end: bool = False
+
+    @field_validator(
+        "run_id",
+        "approach_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator(
+        "cycle_start",
+        "cycle_end",
+    )
+    @classmethod
+    def validate_timezone(
+        cls,
+        value: datetime,
+    ) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "timestamp must include timezone information"
+            )
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError(
+                "timestamp must use Riyadh time (UTC+03:00)"
+            )
+
+        return value
+
+    @field_validator(
+        "max_queue_vehicles",
+        mode="before",
+    )
+    @classmethod
+    def validate_integers(cls, value):
+        if isinstance(value, bool):
+            raise ValueError(
+                "value must be an integer, not a boolean"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_cycle(self) -> "ApproachCycleQueueRecord":
+        if self.cycle_end <= self.cycle_start:
+            raise ValueError(
+                "cycle_end must be later than cycle_start"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_queue_units_agree(self) -> "ApproachCycleQueueRecord":
+        has_queue_m = self.max_queue_length_m > 0
+        has_queue_veh = self.max_queue_vehicles > 0
+
+        if has_queue_m != has_queue_veh:
+            raise ValueError(
+                "max_queue_length_m and max_queue_vehicles must both "
+                "be zero or both be greater than zero"
+            )
+
+        if self.reaches_zone_end and not has_queue_m:
+            raise ValueError(
+                "a queue that reaches the zone end must have a length"
+            )
+
+        return self
+
+
+# ============================================================
 # INCOMPLETE PASSAGE
 # ============================================================
 

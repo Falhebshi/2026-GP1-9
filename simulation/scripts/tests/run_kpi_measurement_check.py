@@ -7,7 +7,7 @@ vehicles in every interval; with --demand, SimulationDemand records are
 read from an exported JSON file). SUMO then runs once with FCD output
 (lane, pos, speed, odometer every 0.4 s) and tripinfo, and
 jaadah/kpi_inputs reduces them to VehicleDelayRecord,
-IncompletePassage and CycleQueueRecord records
+IncompletePassage, CycleQueueRecord and ApproachCycleQueueRecord records
 (docs/kpi_measurements.md).
 
 The run passes when:
@@ -20,8 +20,12 @@ The run passes when:
 3. no vehicle's time loss in its zone exceeds its time loss over its
    whole trip, as SUMO reports it in tripinfo, by more than one FCD
    period (the zone is part of the trip, so it cannot lose more);
-4. every canonical lane has a queue record for every whole signal cycle
-   of the run (a missing record would be reported as unavailable).
+4. every canonical lane and every signalised approach has a queue
+   record for every whole signal cycle of the run (a missing record
+   would be reported as unavailable);
+5. no approach's queue is shorter than the queue of one of its signal
+   lanes in the same cycle (the approach queue continues the lane
+   queues, so it cannot be shorter).
 
 The records are saved as JSON next to the SUMO files.
 """
@@ -128,7 +132,7 @@ def run_sumo(sumo_bin, network, route_file, folder, end_s, step_length, seed):
     return completed.returncode, paths
 
 
-def evaluate(passages, queues, expected_cycles, lane_ids, window, returncode, paths):
+def evaluate(passages, queues, expected_cycles, lane_ids, mapping, window, returncode, paths):
     trips = {item.get("id"): item.attrib for item in ET.parse(paths["tripinfo"]).getroot().iter("tripinfo")}
 
     unfinished = sorted(
@@ -140,18 +144,39 @@ def evaluate(passages, queues, expected_cycles, lane_ids, window, returncode, pa
         if item.time_loss_s > float(trips[item.vehicle_id]["timeLoss"]) + FCD_PERIOD_S
     )
     cycles = {lane_id: 0 for lane_id in lane_ids}
-    for item in queues:
+    for item in queues.lanes:
         cycles[item.lane_id] = cycles.get(item.lane_id, 0) + 1
-    incomplete_lanes = sorted(lane for lane, count in cycles.items() if count != expected_cycles)
+    for item in queues.approaches:
+        cycles[item.approach_id] = cycles.get(item.approach_id, 0) + 1
+    approach_ids = sorted({item.approach_id for item in queues.approaches})
+    incomplete_lanes = sorted(key for key, count in cycles.items() if count != expected_cycles)
+
+    signal_movements = {
+        item.movement_id for item in mapping.movement_attributes if item.control.value == "signalized"
+    }
+    approach_of_lane = {
+        lane.lane_id: lane.approach_id for lane in mapping.approach_lanes
+        if set(lane.served_movement_ids) & signal_movements
+    }
+    approach_queue = {(item.approach_id, item.cycle_start): item.max_queue_length_m for item in queues.approaches}
+    shorter = sorted({
+        f"{approach_of_lane[item.lane_id]} {item.cycle_start:%H:%M:%S}"
+        for item in queues.lanes
+        if item.lane_id in approach_of_lane
+        and approach_queue[(approach_of_lane[item.lane_id], item.cycle_start)] < item.max_queue_length_m - 1e-6
+    })
     return {
         "1. SUMO ends without an error": {"passed": returncode == 0, "exit_code": returncode},
         "2. Analysis-period arrivals have left their zone": {
             "passed": not unfinished, "unfinished": unfinished[:20], "count": len(unfinished)},
         "3. Zone time loss within trip time loss": {
             "passed": not exceeding, "exceeding": exceeding[:20], "count": len(exceeding)},
-        "4. A queue record for every lane and cycle": {
-            "passed": not incomplete_lanes, "lanes_with_missing_cycles": incomplete_lanes,
-            "lanes": len(lane_ids), "cycles_per_lane": expected_cycles, "records": len(queues)},
+        "4. A queue record for every lane, approach and cycle": {
+            "passed": not incomplete_lanes, "with_missing_cycles": incomplete_lanes,
+            "lanes": len(lane_ids), "approaches": len(approach_ids), "cycles_each": expected_cycles,
+            "records": len(queues.lanes) + len(queues.approaches)},
+        "5. No approach queue shorter than its lanes'": {
+            "passed": not shorter, "approach_cycles": shorter[:20], "count": len(shorter)},
     }
 
 
@@ -184,6 +209,22 @@ def lane_summary(queues, window):
             "cycles_reaching_section_end": sum(i.reaches_section_end for i in items),
         }
         for lane_id, items in sorted(rows.items())
+    }
+
+
+def approach_summary(queues, window):
+    rows = defaultdict(list)
+    for item in queues:
+        if window.analysis_start <= item.cycle_start < window.analysis_end:
+            rows[item.approach_id].append(item)
+    return {
+        approach_id: {
+            "cycles": len(items),
+            "max_queue_m": max(i.max_queue_length_m for i in items),
+            "max_queue_vehicles": max(i.max_queue_vehicles for i in items),
+            "cycles_reaching_zone_end": sum(i.reaches_zone_end for i in items),
+        }
+        for approach_id, items in sorted(rows.items())
     }
 
 
@@ -267,8 +308,9 @@ def main() -> int:
 
     save(folder / "vehicle_delay_records.json", passages.records)
     save(folder / "incomplete_passages.json", passages.incomplete)
-    save(folder / "cycle_queue_records.json", queues)
-    results = evaluate(passages, queues, expected_cycles, lane_ids, window, returncode, paths)
+    save(folder / "cycle_queue_records.json", queues.lanes)
+    save(folder / "approach_cycle_queue_records.json", queues.approaches)
+    results = evaluate(passages, queues, expected_cycles, lane_ids, mapping, window, returncode, paths)
     summary = {
         "settings": {
             "demand": str(args.demand) if args.demand else f"hand-made, {args.vehicles_per_record} per record",
@@ -277,15 +319,17 @@ def main() -> int:
         },
         "records": len(passages.records),
         "incomplete": len(passages.incomplete),
-        "cycle_queues": len(queues),
+        "cycle_queues": len(queues.lanes),
+        "approach_cycle_queues": len(queues.approaches),
         "results": results,
         "analysis_period_by_movement": movement_summary(passages, window),
-        "analysis_period_by_lane": lane_summary(queues, window),
+        "analysis_period_by_lane": lane_summary(queues.lanes, window),
+        "analysis_period_by_approach": approach_summary(queues.approaches, window),
     }
     (folder / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
     print(f"Measured: {len(passages.records)} complete passages, {len(passages.incomplete)} incomplete, "
-          f"{len(queues)} cycle queues")
+          f"{len(queues.lanes)} lane and {len(queues.approaches)} approach cycle queues")
     for name, result in results.items():
         details = ", ".join(f"{k}={v}" for k, v in result.items() if k != "passed" and not isinstance(v, list))
         print(f"{'PASS' if result['passed'] else 'FAIL'}  {name}: {details}")
@@ -296,6 +340,8 @@ def main() -> int:
         print(f"INFO  {movement_id}: " + ", ".join(f"{k}={v}" for k, v in values.items()))
     for lane_id, values in summary["analysis_period_by_lane"].items():
         print(f"INFO  {lane_id}: " + ", ".join(f"{k}={v}" for k, v in values.items()))
+    for approach_id, values in summary["analysis_period_by_approach"].items():
+        print(f"INFO  {approach_id}: " + ", ".join(f"{k}={v}" for k, v in values.items()))
 
     passed = all(result["passed"] for result in results.values())
     print(("All checks passed." if passed else "Some checks failed.") + f" Report: {folder / 'summary.json'}")

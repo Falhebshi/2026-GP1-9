@@ -12,7 +12,7 @@ jaadah/kpi_inputs/
 ├── network_inputs.py     the engine's lanes, movements and movement attributes
 ├── signal_program.py     the run's SignalProgram from the network file
 ├── vehicle_passages.py   VehicleDelayRecord and IncompletePassage from FCD output
-├── cycle_queues.py       CycleQueueRecord from FCD output
+├── cycle_queues.py       CycleQueueRecord and ApproachCycleQueueRecord from FCD output
 └── kpi_inputs_tests/
     ├── __init__.py
     ├── test_cycle_queues.py
@@ -224,6 +224,20 @@ When the back of a lane's queue is less than 10 m from the start of its section,
 
 One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue reached the section end during the cycle. A cycle without a queue is a measured 0.
 
+## 5.6 Approach queue
+
+The full queue of an approach answers how far back from the signal its queue reaches, over the approach's whole upstream zone (`zone_upstream_m`: East 388 m, West 450 m, North and South 500 m) and across the points where its lanes merge. It is measured with the same rules as the lane queues (sections 5.2 and 5.3), anchored at the **signal stop line**, over:
+
+- the sections of the lanes that serve the approach's signalised movements;
+- the route edges behind them, back to the zone start;
+- the junction lanes between those edges, each with its own length (on West, 9.8–12.7 m by lane at the first junction).
+
+Slip and bypass lanes are left out; their queues are lane queues. Vehicles on the road behind the signal lanes count whichever way they turn: a vehicle heading for a slip that waits behind the signal queue is part of it.
+
+When the back of the queue is less than 10 m from the far end of the zone, the queue may continue beyond what is measured: it is capped at the zone length and the record is marked `reaches_zone_end`.
+
+One `ApproachCycleQueueRecord` (data model section 4.6) is written for every approach with signalised movements and every whole signal cycle of the run, with the longest queue of the cycle in metres and vehicles. An approach's queue continues its lanes' queues, so it is never shorter than the queue of one of its signal lanes in the same cycle.
+
 ---
 
 # 6. Measurement Check
@@ -233,15 +247,18 @@ One `CycleQueueRecord` (data model section 4.5) is written for every canonical l
 1. SUMO ends without an error;
 2. every vehicle that arrived in its zone during the analysis period has left it by the end of the run, so the clearance is long enough;
 3. no vehicle's time loss in its zone exceeds its time loss over the whole trip reported by SUMO (tripinfo `timeLoss`) by more than one FCD period, since the zone is part of the trip;
-4. every canonical lane has a queue record for every whole signal cycle of the run, since a missing record would be reported as unavailable.
+4. every canonical lane and every signalised approach has a queue record for every whole signal cycle of the run, since a missing record would be reported as unavailable;
+5. no approach's queue is shorter than the queue of one of its signal lanes in the same cycle.
 
-The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json` and `cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
+The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json`, `cycle_queue_records.json` and `approach_cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
 
 Results of the check with hand-made demand, the same for every demand movement:
 
-| Demand per movement | Vehicles | Rules | South left time loss | Longest lane queue | Cycles reaching a section end (of 30) |
-| --- | --- | --- | --- | --- | --- |
-| 80 veh/h | 1,080 | all pass | 51 s | 3 vehicles (21 m) | none |
-| 600 veh/h | 8,100 | all pass | 204 s | 16 vehicles (South lane 2, its whole 118.9 m section) | South 25–28, West 1–7 |
+| Demand per movement | Vehicles | Rules | South left time loss | Longest lane queue | Cycles reaching a section end (of 30) | Longest approach queue |
+| --- | --- | --- | --- | --- | --- | --- |
+| 80 veh/h | 1,080 | all pass | 51 s | 3 vehicles (21 m) | none | 21 m |
+| 600 veh/h | 8,100 | all pass | 204 s | 16 vehicles (South lane 2, its whole 118.9 m section) | South 25–28, West 1–7 | South 291 m (54 vehicles) |
 
-At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections. The slip lanes have no queue at either level.
+At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections and reaches 291 m back on the approach; no approach queue reaches its zone end. The slip lanes have no queue at either level.
+
+At 600 veh/h West's vehicles wait up to 22 s to enter the network although West's queue reaches only 104 m: the demand file inserts every West vehicle on lane 0 of the three-lane entry edge (`departLane="best"`), and one lane cannot take 1,800 veh/h at full speed. South's vehicles, also all on one entry lane, wait up to 5.5 s. A long wait to enter is therefore not on its own evidence that the queue reached the model edge.

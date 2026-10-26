@@ -59,7 +59,7 @@ The current implementation contains **25 canonical models**:
 | `traffic.py` | `TrafficObservation`, `ImputedDetector`,`SimulationDemand` |
 | `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
-| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord` |
+| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord`, `ApproachCycleQueueRecord` |
 | `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
 | `kpis.py` | `KpiResult`, `KpiComparison` |
 
@@ -390,7 +390,15 @@ Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `
 
 The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
-## 4.6 Vehicle Type Enum
+## 4.6 `ApproachCycleQueueRecord`
+
+The full queue of one approach over one signal cycle, aligned with the cycle start: how far back from the signal stop line the queue reached, over the approach's whole measurement zone and across the points where its lanes merge ([KPI measurements](kpi_measurements.md), section 5.6).
+
+Fields: `run_id`, `approach_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_zone_end` (default false).
+
+Queued vehicles on the signal lanes and on the road behind them count; slip and bypass lanes have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the queue reached the far end of the zone during the cycle, so it may continue beyond what is measured; the queue length is then the zone length, a minimum value. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
+
+## 4.7 Vehicle Type Enum
 
 `VehicleType`: `car`. A stable application-level category, rather than arbitrary SUMO vehicle-type identifiers.
 
@@ -672,7 +680,7 @@ The models do not decide how observed detector counts become movement demand (e.
 
 ## 9.4 Output reduction is separate
 
-The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; vehicle positions over each lane's section into `CycleQueueRecord`; the network's signal program into `SignalProgram`.
+The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; vehicle positions over each lane's section into `CycleQueueRecord`, and over each approach's zone into `ApproachCycleQueueRecord`; the network's signal program into `SignalProgram`.
 
 ## 9.5 KPI calculation is separate
 
@@ -772,4 +780,5 @@ Together, these structures form the common data language used across the Jaadah 
 | 23 Oct 2026 (movement attributes) | Added `NetworkMappingConfig.movement_attributes`, optional and empty by default, holding the approved `MovementAttributes` of the nine analysed movements. Checks: no duplicates, known movement with an approach, `control` agrees with `signal_controlled`, no lane mixing signalized and uncontrolled movements. `MOV_S_W` classified as a protected left. `mapping_version` set to `2.2-movement-attributes`; `schema_version` stays `2.0` |
 | 25 Oct 2026 (measurement zones) | Added optional `ApproachMapping.zone_upstream_m` and `zone_downstream_m` (given together, finite and positive), holding each approach's measurement zone; the network validator checks that each zone fits on the routes of its movements. `mapping_version` set to `2.3-measurement-zones`; `schema_version` stays `2.0` |
 | 26 Oct 2026 (approach traffic state) | Removed `ApproachTrafficState` (unused: queue length is measured per lane in `CycleQueueRecord` and time loss per vehicle in `VehicleDelayRecord`) |
+| 26 Oct 2026 (approach queues) | Added `ApproachCycleQueueRecord`: each approach's full queue per signal cycle, measured from the signal stop line over the whole zone, with `reaches_zone_end` |
 | 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |

@@ -587,7 +587,8 @@ What the engine expects from the components that prepare its inputs (network map
 - **Approaches and the intersection** report the **full queue over the whole upstream zone** (section 1.3): how far back the queue reaches. Beyond a lane chain several lanes merge, so a vehicle queued there belongs to the approach but to no single Jaadah lane. Example: on West the lane sections are 95 m long while the zone is 450 m; a queue reaching 250 m back is reported as 250 m on the approach.
 - A lane whose queue reaches the end of its section is reported as a **minimum value** (`is_lower_bound`, with the reason "queue reaches the end of this lane's measured section (… m); the full queue is shown on the approach").
 - Each lane's section, its queue and whether the queue reached the section end are measured from vehicle positions ([KPI measurements](kpi_measurements.md), section 5).
-- *To be built:* the full-zone queue per approach and cycle, and the `is_lower_bound` field on `KpiResult`.
+- The full-zone queue per approach and cycle is measured from vehicle positions (`ApproachCycleQueueRecord`, [KPI measurements](kpi_measurements.md), section 5.6).
+- *To be built:* the `is_lower_bound` field on `KpiResult`, and the approach and intersection queue taken from the full-zone queue.
 
 ## 13.2 Uncontrolled right-turn slips
 

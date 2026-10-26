@@ -1,6 +1,7 @@
 """
-Lane queues per signal cycle, measured from a SUMO run's FCD output and
-reduced to CycleQueueRecord records (KPI measurements, section 5).
+Lane and approach queues per signal cycle, measured from a SUMO run's
+FCD output and reduced to CycleQueueRecord and ApproachCycleQueueRecord
+records (KPI measurements, section 5).
 
 The FCD file is read once, step by step, without keeping the rows, so
 memory does not grow with the number of vehicles.
@@ -27,7 +28,16 @@ Rules applied, and why:
   the queue belongs to no single lane. Its length is capped at the
   section length and the record is marked reaches_section_end; the full
   queue is measured on the approach.
-- Cycles: one record per lane and whole signal cycle of the run, aligned
+- Approach: the full queue of an approach is measured from its signal
+  stop line over its whole upstream zone (zone_upstream_m), across the
+  points where lanes merge: on the signal lanes' sections, on the route
+  edges behind them and on the junction lanes between those edges.
+  Slip and bypass lanes are left out; their queues are lane queues.
+  Vehicles on the road behind the signal lanes count whichever way they
+  turn. A queue whose last vehicle's back is less than 10 m from the far
+  end of the zone is capped at the zone length and marked
+  reaches_zone_end.
+- Cycles: one record per lane or approach and whole signal cycle of the run, aligned
   with the cycle start (KPI engine section 6.1): the cycle is the signal
   program's, and the signal's offset must be a whole number of cycles.
   The record holds the longest queue in the cycle, in metres and in
@@ -43,9 +53,11 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ..models.mappings import NetworkMappingConfig
-from ..models.outputs import CycleQueueRecord
+from ..models.network import MovementControl
+from ..models.outputs import ApproachCycleQueueRecord, CycleQueueRecord
 from ..models.signals import SignalProgram
 from ..sumo_demand.planner import RunWindow
+from .vehicle_passages import movement_zones
 
 
 JAM_SPEED_MPS = 1.39
@@ -71,6 +83,23 @@ class LaneSection(NamedTuple):
     lane_id: str
     length_m: float
     to_stop_line_m: dict[str, float]
+
+
+class ApproachPath(NamedTuple):
+    """
+    The part of an approach its full queue is measured over. to_stop_line_m
+    gives, for each SUMO lane of the path, the distance from the end of
+    that lane to the signal stop line; length_m is the upstream zone.
+    """
+
+    approach_id: str
+    length_m: float
+    to_stop_line_m: dict[str, float]
+
+
+class CycleQueues(NamedTuple):
+    lanes: list[CycleQueueRecord]
+    approaches: list[ApproachCycleQueueRecord]
 
 
 class QueueAtStep(NamedTuple):
@@ -126,6 +155,73 @@ def lane_sections(config: NetworkMappingConfig, network_path: str | Path) -> dic
     return sections
 
 
+def approach_paths(
+    config: NetworkMappingConfig,
+    network_path: str | Path,
+    sections: dict[str, LaneSection],
+) -> dict[str, ApproachPath]:
+    """
+    The path of every approach with signalised analysed movements: its
+    signal lanes' sections, the route edges behind them up to the zone
+    start, and the junction lanes between those edges.
+    """
+
+    root = ET.parse(network_path).getroot()
+    lanes_of_edge = defaultdict(list)
+    lengths = {}
+    for edge in root.iter("edge"):
+        for lane in edge.findall("lane"):
+            lanes_of_edge[edge.get("id")].append(lane.get("id"))
+            lengths[lane.get("id")] = float(lane.get("length"))
+    via, internal_next = defaultdict(set), {}
+    for connection in root.iter("connection"):
+        source = f"{connection.get('from')}_{connection.get('fromLane')}"
+        if connection.get("from", "").startswith(":"):
+            internal_next[source] = connection.get("via")
+        elif connection.get("via"):
+            via[(connection.get("from"), connection.get("to"))].add(connection.get("via"))
+
+    zones = movement_zones(config, network_path)
+    movements = {item.movement_id: item for item in config.movement_mappings}
+    approaches = {item.approach_id: item for item in config.approach_mappings}
+    signalised = {
+        item.movement_id for item in config.movement_attributes
+        if item.control == MovementControl.SIGNALIZED
+    }
+    section_lanes = {lane for section in sections.values() for lane in section.to_stop_line_m}
+
+    paths = {}
+    for approach_id in sorted({movements[m].approach_id for m in signalised}):
+        own = [m for m in signalised if movements[m].approach_id == approach_id]
+        to_stop: dict[str, float] = {}
+        for lane in config.approach_lanes:
+            if lane.approach_id == approach_id and set(lane.served_movement_ids) & set(own):
+                to_stop.update(sections[lane.lane_id].to_stop_line_m)
+        for movement_id in own:
+            zone = zones[movement_id]
+            route = movements[movement_id].sumo_route_edge_ids
+            upstream = route[: route.index(zone.stop_edge) + 1]
+            for edge in upstream:
+                for lane in lanes_of_edge[edge]:
+                    if lane not in section_lanes:
+                        to_stop.setdefault(lane, zone.to_stop_line_m[edge])
+            for edge, following in zip(upstream, upstream[1:]):
+                start_of_following = zone.to_stop_line_m[following] + lengths[lanes_of_edge[following][0]]
+                for junction in via[(edge, following)]:
+                    pieces = []
+                    while junction and len(pieces) < 10:
+                        pieces.append(junction)
+                        junction = internal_next.get(junction)
+                    remaining = start_of_following
+                    for piece in reversed(pieces):
+                        to_stop.setdefault(piece, remaining)
+                        remaining += lengths[piece]
+        paths[approach_id] = ApproachPath(
+            approach_id, approaches[approach_id].zone_upstream_m, to_stop,
+        )
+    return paths
+
+
 def anchored_queue(fronts_m: list[float], section_length_m: float, vehicle_length_m: float) -> QueueAtStep:
     """
     The queue anchored at the stop line, from the distances of queued
@@ -158,8 +254,8 @@ def collect_cycle_queues(
     run_id: str,
     window: RunWindow,
     vehicle_length_m: float,
-) -> list[CycleQueueRecord]:
-    """Every canonical lane's longest queue in every whole signal cycle of the run."""
+) -> CycleQueues:
+    """Every canonical lane's and approach's longest queue in every whole signal cycle of the run."""
 
     cycle = program.cycle_length_s
     plans = [item for item in ET.parse(network_path).getroot().findall("tlLogic")
@@ -171,18 +267,22 @@ def collect_cycle_queues(
 
     sections = lane_sections(config, network_path)
     section_of = {lane: section for section in sections.values() for lane in section.to_stop_line_m}
+    paths = approach_paths(config, network_path, sections)
+    path_of = {lane: path for path in paths.values() for lane in path.to_stop_line_m}
     lengths = {lane.get("id"): float(lane.get("length")) for lane in ET.parse(network_path).getroot().iter("lane")}
 
     slow_since: dict[str, float] = {}
     best: dict[tuple[str, int], list] = defaultdict(lambda: [0.0, 0, False])
     fronts = defaultdict(list)
+    lengths_of = {lane_id: section.length_m for lane_id, section in sections.items()}
+    lengths_of.update({approach_id: path.length_m for approach_id, path in paths.items()})
     time_s = None
 
     def close_step():
         number = int(math.floor(time_s / cycle + TOLERANCE_S))
-        for lane_id, section in sections.items():
-            queue = anchored_queue(fronts[lane_id], section.length_m, vehicle_length_m)
-            item = best[(lane_id, number)]
+        for key, length in lengths_of.items():
+            queue = anchored_queue(fronts[key], length, vehicle_length_m)
+            item = best[(key, number)]
             item[0] = max(item[0], queue.length_m)
             item[1] = max(item[1], queue.vehicles)
             item[2] = item[2] or queue.reaches_section_end
@@ -197,17 +297,20 @@ def collect_cycle_queues(
                 slow_since.setdefault(vehicle_id, time_s)
             else:
                 slow_since.pop(vehicle_id, None)
-            section = section_of.get(lane)
-            if section is not None and time_s - slow_since.get(vehicle_id, math.inf) >= JAM_TIME_S - TOLERANCE_S:
-                front = lengths[lane] - float(element.get("pos")) + section.to_stop_line_m[lane]
-                fronts[section.lane_id].append(front)
+            queued = time_s - slow_since.get(vehicle_id, math.inf) >= JAM_TIME_S - TOLERANCE_S
+            if queued and (lane in section_of or lane in path_of):
+                rest = lengths[lane] - float(element.get("pos"))
+                if lane in section_of:
+                    fronts[section_of[lane].lane_id].append(rest + section_of[lane].to_stop_line_m[lane])
+                if lane in path_of:
+                    fronts[path_of[lane].approach_id].append(rest + path_of[lane].to_stop_line_m[lane])
             element.clear()
         elif event == "end" and element.tag == "timestep":
             close_step()
             element.clear()
 
     whole_cycles = int(window.duration_s // cycle + TOLERANCE_S)
-    return [
+    lane_records = [
         CycleQueueRecord(
             run_id=run_id,
             lane_id=lane_id,
@@ -220,3 +323,17 @@ def collect_cycle_queues(
         for lane_id in sections
         for number in range(whole_cycles)
     ]
+    approach_records = [
+        ApproachCycleQueueRecord(
+            run_id=run_id,
+            approach_id=approach_id,
+            cycle_start=window.epoch + timedelta(seconds=number * cycle),
+            cycle_end=window.epoch + timedelta(seconds=(number + 1) * cycle),
+            max_queue_length_m=round(best[(approach_id, number)][0], 3),
+            max_queue_vehicles=best[(approach_id, number)][1],
+            reaches_zone_end=best[(approach_id, number)][2],
+        )
+        for approach_id in paths
+        for number in range(whole_cycles)
+    ]
+    return CycleQueues(lanes=lane_records, approaches=approach_records)
