@@ -141,8 +141,8 @@ function AlertSection({ type, title, description, alerts }) {
               type={type}
               title={alert.title}
               details={toRows(type, alert)}
-              interventionsTo={
-                alert.interventionId ? `/recommendations/${alert.interventionId}` : undefined
+              detailsTo={
+                alert.problemId ? `/alerts/${alert.problemId}` : undefined
               }
             />
           ))}

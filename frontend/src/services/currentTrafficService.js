@@ -9,7 +9,7 @@
 //     timeline: [{ time, value, level }],      one bar per 15 minutes, last 24 hours
 //     kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level, latest
 //                                        15 minutes and the 15 minutes before, for the change
-//     alerts: [{ id, title, details: [{ label, value }], interventionsTo }],
+//     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
 //     approaches: [{
 //       approach_id, arm, road,
 //       kpis: { <kpi name>: KpiResult },                    approach level
@@ -97,7 +97,7 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'North approach' },
       { label: 'Detected', value: '2 min ago' },
     ],
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/1',
   },
   {
     id: 'a2',
@@ -106,7 +106,7 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'East approach' },
       { label: 'Detected', value: '7 min ago' },
     ],
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/2',
   },
   {
     id: 'a3',
@@ -115,7 +115,6 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'West approach' },
       { label: 'Detected', value: '11 min ago' },
     ],
-    interventionsTo: '/recommendations',
   },
 ]
 

@@ -1,7 +1,7 @@
 import './PageHeader.css'
 
 // The heading at the top of a page: a title, a line under it, and buttons
-// or links on the right. Used on Alerts and Recommendation Details.
+// or links on the right. Used on Alerts and Alert Details.
 //
 //   title      the page title, e.g. "Alerts"
 //   subtitle   the line under the title. Text, or a component such as
