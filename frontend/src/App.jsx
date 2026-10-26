@@ -8,6 +8,8 @@ import TrafficForecast from './pages/TrafficForecast'
 import TrafficTrends from './pages/TrafficTrends'
 import ComponentPreview from './pages/ComponentPreview'
 import Alerts from './pages/Alerts'
+import AlertDetails from './pages/AlertDetails'
+import RecommendationDetails from './pages/RecommendationDetails'
 
 
 // App is the router: it looks at the URL and decides which page to show.
@@ -26,6 +28,10 @@ function App() {
           <Route path="/forecast" element={<TrafficForecast />} />
           <Route path="/trends" element={<TrafficTrends />} />
           <Route path="/alerts" element={<Alerts />} />
+          {/* Opened from an alert card */}
+          <Route path="/alerts/:problemId" element={<AlertDetails />} />
+          {/* Opened from a recommended intervention on Alert Details */}
+          <Route path="/alerts/:problemId/recommendations/:recommendationId" element={<RecommendationDetails />} />
           <Route path="/preview" element={<ComponentPreview />} />
         </Route>
 
