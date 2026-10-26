@@ -77,7 +77,7 @@ The acceleration after a stop therefore lies inside the zone. A fixed zone was p
 
 # 2. Control Delay and Queue Duration
 
-Each vehicle that enters a zone produces one `VehicleDelayRecord` (data model section 4.4), or an `IncompletePassage` (section 4.5) when it has not left the zone when the run ends. Records are produced from SUMO's vehicle position output (FCD), recorded every 0.4 s.
+Each vehicle that enters a zone produces one `VehicleDelayRecord` (data model section 4.3), or an `IncompletePassage` (section 4.4) when it has not left the zone when the run ends. Records are produced from SUMO's vehicle position output (FCD), recorded every 0.4 s.
 
 Implemented in `jaadah/kpi_inputs/vehicle_passages.py` (`collect_vehicle_passages`).
 
@@ -222,7 +222,7 @@ When the back of a lane's queue is less than 10 m from the start of its section,
 
 ## 5.5 Records
 
-One `CycleQueueRecord` (data model section 4.6) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue reached the section end during the cycle. A cycle without a queue is a measured 0.
+One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue reached the section end during the cycle. A cycle without a queue is a measured 0.
 
 ---
 
