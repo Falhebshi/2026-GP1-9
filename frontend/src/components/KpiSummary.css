@@ -1,0 +1,64 @@
+/* The intersection's KPIs: the level of service on top, then the tiles */
+.kpi-summary-los p {
+  margin: 0;
+}
+
+/* the level of service as a headline: the grade, what it means, and the A to F scale */
+.kpi-summary-los {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.kpi-summary-los-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.kpi-summary-los-badge {
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.kpi-summary-los-words {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.kpi-summary-los-scale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px !important;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.kpi-summary-los-current {
+  font-weight: 700;
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.kpi-summary-los-ends {
+  margin-left: var(--space-xs);
+}
+
+/* The tiles, two per row. minmax(0, 1fr): a long value cannot push a tile out of the card */
+.kpi-summary-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+/* A little less padding than on a wide page, so the names fit on one line */
+.kpi-summary-tiles .kpi-tile {
+  padding: var(--space-sm) 12px;
+}

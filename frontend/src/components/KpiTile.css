@@ -4,7 +4,16 @@
   padding: 12px var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
   border-radius: var(--radius);
+}
+
+.kpi-tile-good {
+  border-left-color: var(--color-success);
+}
+
+.kpi-tile-bad {
+  border-left-color: var(--color-danger);
 }
 
 /* Inline: label across the top, then value on the left, change on the right */
@@ -61,7 +70,7 @@
 }
 
 .kpi-label {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
@@ -70,6 +79,7 @@
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The unit is smaller than the number, so the number stands out */
@@ -92,6 +102,14 @@
   color: var(--color-text-muted);
 }
 
+/* Over a standard limit, e.g. "over capacity". Quieter than the change
+   line, so it does not read as a second change. */
+.kpi-warning {
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
 /* The reason a value is missing, under "Unavailable" */
 .kpi-reason {
   font-size: var(--text-xs);
@@ -101,6 +119,7 @@
 
 .kpi-change {
   font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 .kpi-change-neutral {
