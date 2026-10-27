@@ -77,6 +77,8 @@ function sampleIntersectionKpis(interval, previousInterval) {
   return [
     pair('control_delay', 46, 44),
     pair('queue_length', 128, 114),
+    pair('queue_duration', 37, 35),
+    pair('queue_storage_ratio', 1.12, 1.05),
     pair('throughput', 1842, 1788),
     pair('volume_to_capacity_ratio', 0.91, 0.87),
     pair('level_of_service', 'D', 'D'),
@@ -162,7 +164,7 @@ function sampleKpis(element, interval, values, sharedLane) {
   return results
 }
 
-function sampleApproaches(interval) {
+export function sampleApproaches(interval) {
   const approach = (approach_id, arm, road, values, movements) => ({
     approach_id,
     arm,

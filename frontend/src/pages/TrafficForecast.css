@@ -1,25 +1,97 @@
-/* Simulation, then KPIs and alerts side by side (same layout as Current Traffic) */
+/* Laid out like Current Traffic: KPIs, alerts and the selected approach on the left; the scene
+   and its play bar on the right */
 .traffic-forecast {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.traffic-forecast-row {
+/* both columns start on the same line and are as tall as each other */
+.traffic-forecast-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(300px, 360px) 1fr;
   gap: var(--space-md);
-  align-items: start;
+  align-items: stretch;
 }
 
-.traffic-forecast-kpis {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm);
+.traffic-forecast-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+  min-height: 0;
 }
 
-@media (max-width: 900px) {
-  .traffic-forecast-row {
+/* the alerts fill the rest of the left column, and scroll when there are many */
+.traffic-forecast-side > :last-child {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.traffic-forecast-scene {
+  min-width: 0;
+}
+
+/* stack everything on narrow screens, the scene first */
+@media (max-width: 1000px) {
+  .traffic-forecast-layout {
     grid-template-columns: 1fr;
   }
+
+  .traffic-forecast-scene {
+    order: -1;
+  }
+}
+
+/* the predicted time, how far ahead, the badge and the full screen button */
+.traffic-forecast-time {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.traffic-forecast-time-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic-forecast-ahead {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* full screen: the scene fills the screen, with the selected approach on its left */
+.traffic-forecast-scene:fullscreen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-bg);
+}
+
+.traffic-forecast-scene:fullscreen .traffic-forecast-stage {
+  display: flex;
+  flex: 1;
+  gap: var(--space-md);
+  min-height: 0;
+}
+
+.traffic-forecast-scene:fullscreen .forecast-sim {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.traffic-forecast-scene:fullscreen .viewport-stage {
+  flex: 1;
+}
+
+.traffic-forecast-fullscreen-side {
+  width: 360px;
+  flex-shrink: 0;
+  overflow-y: auto;
 }

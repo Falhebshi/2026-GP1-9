@@ -1,23 +1,26 @@
-import { useEffect, useState } from 'react'
-import Badge from './Badge'
 import LocationSummary from './LocationSummary'
 import PlaybackBar from './PlaybackBar'
 import SimulationViewport from './SimulationViewport'
 import TrafficScene3D from './TrafficScene3D'
-import usePlayback from '../hooks/usePlayback'
 import { darkness } from '../utils/daylight'
 import './ForecastSimulation.css'
 
 // The 3D simulation for the Traffic Forecast page: the predicted next 60 minutes, played in
-// accelerated time, with the team's PlaybackBar under it (marks at 15, 30, 45 and 60 min) and the
-// predicted time above it. Clicking a mark jumps there. The horizon is the next mark ahead of the
-// playhead, so the KPIs below show the prediction for the stretch being played.
+// accelerated time, with the team's PlaybackBar under it (marks at 15, 30, 45 and 60 min).
+// Clicking a mark jumps there. The page owns the clock (usePlayback), so it can show the
+// predicted time and the KPIs of the horizon being played.
 //
-//   intersection     the intersection to show: { id, center, bounds, name, area, ... }
-//   start            the time the forecast starts from (a Date, now unless you say otherwise)
-//   scenario         which simulation run to show ('forecast' when the backend provides it)
-//   onHorizonChange  called with the horizon in minutes (15, 30, 45 or 60) when it changes
-//   error            text to show instead of the simulation, e.g. when the forecast is unavailable
+//   intersection      the intersection to show: { id, center, bounds, name, area, ... }
+//   playback          the clock from usePlayback({ duration: 3600 })
+//   shown             the predicted time being played (a Date)
+//   horizon           the next mark ahead of the playhead, in seconds (900 to 3600)
+//   approaches        the predicted approaches of that horizon, for the chips on the scene
+//   openApproachId    approach_id of the selected approach, or null
+//   onApproachChange  called with an approach_id (or null) when one is selected or cleared
+//   height            height of the scene in pixels, or '100%' in full screen
+//   scenario          which simulation run to show ('forecast' when the backend provides it)
+//   error             text to show instead of the simulation, e.g. when the forecast is unavailable
+//   onLoadError       called with a message if the scene's data could not be loaded
 
 const HORIZONS = [
   { time: 900, label: '15' },
@@ -26,74 +29,55 @@ const HORIZONS = [
   { time: 3600, label: '60' },
 ]
 
-function ForecastSimulation({ intersection, start, scenario = 'baseline', onHorizonChange, error }) {
-  const [startTime] = useState(() => start ?? new Date())
-  const [runLength, setRunLength] = useState(120)
-  const [loadError, setLoadError] = useState(null)
-  const playback = usePlayback({ duration: 3600 })
-  const horizon = Math.min(3600, Math.max(900, Math.ceil(playback.time / 900) * 900))
-
-  useEffect(() => {
-    onHorizonChange?.(horizon / 60)
-  }, [horizon, onHorizonChange])
-
-  // The test run is shorter than the horizons, so it repeats. With the real forecast run the
-  // length matches and this does nothing.
-  const sceneTime = playback.time % runLength
-  const shown = new Date(startTime.getTime() + playback.time * 1000)
-  const minutes = Math.floor(playback.time / 60)
-
+function ForecastSimulation({
+  intersection,
+  playback,
+  shown,
+  horizon,
+  approaches,
+  openApproachId,
+  onApproachChange,
+  height = 520,
+  scenario = 'baseline',
+  error,
+  onLoadError,
+}) {
   return (
-    <div className="forecast-sim">
-      {/* the predicted time above the map, on the right, like on Current Traffic */}
-      <div className="forecast-sim-time">
-        <span className="forecast-sim-time-value">{formatLabel(shown)}</span>
-        <span className="forecast-sim-ahead">+{minutes} min</span>
-        <Badge variant="count">Forecast</Badge>
-      </div>
-
-      <SimulationViewport
-        height={520}
-        overlay={<LocationSummary intersection={intersection} />}
-        error={error || loadError}
-        footer={
-          <PlaybackBar
-            duration={3600}
-            time={playback.time}
-            onTimeChange={playback.setTime}
-            playing={playback.playing}
-            onPlayingChange={playback.setPlaying}
-            speed={playback.speed}
-            onSpeedChange={playback.setSpeed}
-            marks={HORIZONS}
-            selectedMark={horizon}
-            onMarkSelect={playback.setTime}
-            disabled={Boolean(error || loadError)}
-          />
-        }
-      >
-        <TrafficScene3D
-          intersectionId={intersection.id}
-          center={intersection.center}
-          bounds={intersection.bounds}
-          scenario={scenario}
-          time={sceneTime}
-          night={darkness(shown, intersection.center)}
-          onReady={({ duration }) => setRunLength(duration || 120)}
-          onError={setLoadError}
+    <SimulationViewport
+      height={height}
+      className="forecast-sim"
+      overlay={<LocationSummary intersection={intersection} />}
+      error={error}
+      footer={
+        <PlaybackBar
+          duration={3600}
+          time={playback.time}
+          onTimeChange={playback.setTime}
+          playing={playback.playing}
+          onPlayingChange={playback.setPlaying}
+          speed={playback.speed}
+          onSpeedChange={playback.setSpeed}
+          marks={HORIZONS}
+          selectedMark={horizon}
+          onMarkSelect={playback.setTime}
+          disabled={Boolean(error)}
         />
-      </SimulationViewport>
-    </div>
+      }
+    >
+      <TrafficScene3D
+        intersectionId={intersection.id}
+        center={intersection.center}
+        bounds={intersection.bounds}
+        scenario={scenario}
+        time={playback.time}
+        night={darkness(shown, intersection.center)}
+        approaches={approaches}
+        openApproachId={openApproachId}
+        onApproachChange={onApproachChange}
+        onError={onLoadError}
+      />
+    </SimulationViewport>
   )
-}
-
-// e.g. "Thu 15 Oct, 16:45"
-function formatLabel(date) {
-  const day = date
-    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-    .replace(',', '')
-  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  return `${day}, ${time}`
 }
 
 export default ForecastSimulation

@@ -1,43 +1,97 @@
-/* Simulation, timeline, then KPIs and alerts side by side */
+/* KPIs, alerts and the selected approach on the left; the scene and the timeline on the right */
 .current-traffic {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.current-traffic-row {
+/* both columns start on the same line and are as tall as each other */
+.current-traffic-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(300px, 360px) 1fr;
   gap: var(--space-md);
-  align-items: start;
+  align-items: stretch;
 }
 
-/* two columns of KPI tiles, like the wireframe */
-.current-traffic-kpis {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm);
+.current-traffic-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+  min-height: 0;
 }
 
-/* stack KPIs and alerts on narrow screens */
-@media (max-width: 900px) {
-  .current-traffic-row {
+/* the alerts fill the rest of the left column, and scroll when there are many */
+.current-traffic-side > :last-child {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.current-traffic-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+/* stack everything on narrow screens, the scene first */
+@media (max-width: 1000px) {
+  .current-traffic-layout {
     grid-template-columns: 1fr;
+  }
+
+  .current-traffic-main {
+    order: -1;
   }
 }
 
-/* simulation time above the map, on the right */
+/* the time, its badge and the full screen button, on the right above both columns */
 .current-traffic-time {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
   font-size: var(--text-sm);
 }
 
+.current-traffic-scene:fullscreen .current-traffic-time {
+  margin-bottom: var(--space-sm);
+}
 
 .current-traffic-time-value {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* full screen: the scene fills the screen, with the selected approach on its left */
+.current-traffic-scene:fullscreen {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  background: var(--color-bg);
+}
+
+.current-traffic-scene:fullscreen .current-traffic-stage {
+  display: flex;
+  flex: 1;
+  gap: var(--space-md);
+  min-height: 0;
+}
+
+.current-traffic-scene:fullscreen .current-traffic-viewport {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.current-traffic-scene:fullscreen .viewport-stage {
+  flex: 1;
+}
+
+.current-traffic-fullscreen-side {
+  width: 360px;
+  flex-shrink: 0;
+  overflow-y: auto;
 }
