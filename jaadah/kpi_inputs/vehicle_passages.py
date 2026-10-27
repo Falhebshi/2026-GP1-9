@@ -1,6 +1,7 @@
 """
-Reduce a SUMO run's vehicle positions to VehicleDelayRecord and
-IncompletePassage records (KPI measurements, section 2).
+Reduce a SUMO run's vehicle positions to VehicleDelayRecord,
+IncompletePassage and UninsertedVehicle records (KPI measurements,
+section 2).
 
 Inputs are files written by one run: the FCD output (lane, pos, speed
 and odometer every fcd_period_s), the tripinfo output (each vehicle's
@@ -35,6 +36,12 @@ Rules applied, and why:
   reaching the zone exit gives an IncompletePassage. Every vehicle that
   entered its zone during the run is recorded; the engine uses those
   that arrived in the analysis period.
+- Never inserted: SUMO leaves a vehicle it could not insert before the
+  run ended out of tripinfo. A planned vehicle due to depart during the
+  run with no tripinfo entry gives an UninsertedVehicle, with the time
+  it was planned to reach the stop line (planned departure plus the
+  movement's free-flow time to the stop line, as the demand planner
+  aims it).
 """
 
 import json
@@ -45,8 +52,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ..models.mappings import NetworkMappingConfig
-from ..models.outputs import IncompletePassage, VehicleDelayRecord
-from ..sumo_demand.planner import RunWindow
+from ..models.outputs import IncompletePassage, UninsertedVehicle, VehicleDelayRecord
+from ..sumo_demand.planner import RunWindow, compute_free_flow_times
 
 
 HALTING_SPEED_MPS = 0.1
@@ -86,6 +93,7 @@ class MovementZone(NamedTuple):
 class VehiclePassages(NamedTuple):
     records: list[VehicleDelayRecord]
     incomplete: list[IncompletePassage]
+    uninserted: list[UninsertedVehicle]
 
 
 # ============================================================
@@ -194,8 +202,13 @@ def vehicle_movements(manifest_path: str | Path, demand_path: str | Path) -> dic
 
     movement_of = {item["demand_id"]: item["movement_id"]
                    for item in json.loads(Path(demand_path).read_text(encoding="utf-8"))}
-    departures = json.loads(Path(manifest_path).read_text(encoding="utf-8"))["departures"]
-    return {item["vehicle_id"]: movement_of[item["demand_id"]] for item in departures}
+    return {item["vehicle_id"]: movement_of[item["demand_id"]] for item in planned_departures(manifest_path)}
+
+
+def planned_departures(manifest_path: str | Path) -> list[dict]:
+    """The manifest's planned departures: vehicle_id, demand_id and depart_s."""
+
+    return json.loads(Path(manifest_path).read_text(encoding="utf-8"))["departures"]
 
 
 def speed_factors(tripinfo_path: str | Path) -> dict[str, float]:
@@ -375,4 +388,20 @@ def collect_vehicle_passages(
 
     if problems:
         raise VehiclePassageError(problems)
-    return VehiclePassages(records=records, incomplete=incomplete)
+
+    free_flow_s = compute_free_flow_times(config, network_path)
+    uninserted = [
+        UninsertedVehicle(
+            run_id=run_id,
+            vehicle_id=item["vehicle_id"],
+            movement_id=movement_of[item["vehicle_id"]],
+            planned_stop_line_time=moment(
+                item["depart_s"] + free_flow_s[movement_of[item["vehicle_id"]]]
+            ),
+        )
+        for item in planned_departures(manifest_path)
+        if item["vehicle_id"] in movement_of
+        and item["vehicle_id"] not in factors
+        and item["depart_s"] < window.duration_s
+    ]
+    return VehiclePassages(records=records, incomplete=incomplete, uninserted=uninserted)

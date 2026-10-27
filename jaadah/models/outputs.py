@@ -730,3 +730,65 @@ class IncompletePassage(BaseModel):
         """True if the vehicle was served before the run ended."""
 
         return self.stop_line_time is not None
+
+
+# ============================================================
+# UNINSERTED VEHICLE
+# ============================================================
+
+class UninsertedVehicle(BaseModel):
+    """
+    A planned vehicle that SUMO could not insert into the network
+    before the simulation run ended.
+
+    Recorded so that missing traffic is never silently dropped: part of
+    its approach's demand was not simulated, so the approach's measured
+    values for the interval it would have arrived in are not valid.
+
+    planned_stop_line_time is when the vehicle was planned to reach the
+    stop line: its planned departure plus its movement's free-flow time
+    to the stop line, the time the demand planner aims it at.
+
+    Only the most specific identifiers are stored: the scenario is
+    found through run_id (SimulationRun) and the approach and
+    intersection through movement_id (Movement).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    run_id: str
+    vehicle_id: str
+    movement_id: str
+
+    planned_stop_line_time: datetime
+
+    @field_validator(
+        "run_id",
+        "vehicle_id",
+        "movement_id",
+    )
+    @classmethod
+    def validate_required_ids(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("identifier must not be empty")
+
+        return value
+
+    @field_validator("planned_stop_line_time")
+    @classmethod
+    def validate_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "timestamp must include timezone information"
+            )
+
+        if value.utcoffset() != timedelta(hours=3):
+            raise ValueError(
+                "timestamp must use Riyadh time (UTC+03:00)"
+            )
+
+        return value

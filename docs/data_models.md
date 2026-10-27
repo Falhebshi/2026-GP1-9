@@ -59,7 +59,7 @@ The current implementation contains **25 canonical models**:
 | `traffic.py` | `TrafficObservation`, `ImputedDetector`,`SimulationDemand` |
 | `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
-| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord`, `ApproachCycleQueueRecord` |
+| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `UninsertedVehicle`, `CycleQueueRecord`, `ApproachCycleQueueRecord` |
 | `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
 | `kpis.py` | `KpiResult`, `KpiComparison` |
 
@@ -386,7 +386,7 @@ Queue length for one lane over one signal cycle, aligned with the cycle start, m
 
 Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_section_end` (default false).
 
-`reaches_section_end` is true when the queue reached the start of the lane's section during the cycle, so it may continue upstream where lanes merge; the queue length is then the section length, a minimum value. It requires a queue.
+`reaches_section_end` is true when the queue reached the start of the lane's section during the cycle, so it may continue upstream where lanes merge; the real queue was then longer than the recorded one. It requires a queue.
 
 The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
@@ -396,9 +396,17 @@ The full queue of one approach over one signal cycle, aligned with the cycle sta
 
 Fields: `run_id`, `approach_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_zone_end` (default false).
 
-Queued vehicles on the signal lanes and on the road behind them count; slip and bypass lanes have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the queue reached the far end of the zone during the cycle, so it may continue beyond what is measured; the queue length is then the zone length, a minimum value. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
+Queued vehicles on the signal lanes and on the road behind them count; slip and bypass lanes have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the queue reached the far end of the zone during the cycle, so it may continue beyond what is measured; the real queue was then longer than the recorded one. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
 
-## 4.7 Vehicle Type Enum
+## 4.7 `UninsertedVehicle`
+
+A planned vehicle that SUMO could not insert into the network before the run ended. Recorded so that missing traffic is **never silently dropped**: part of its approach's demand was not simulated, and the vehicles behind it were held back too.
+
+Fields: `run_id`, `vehicle_id`, `movement_id`, `planned_stop_line_time`.
+
+`planned_stop_line_time` is when the vehicle was planned to reach the stop line: its planned departure plus its movement's free-flow time to the stop line, the time the demand planner aims it at. How the KPI engine reports the approach is decided in the engine.
+
+## 4.8 Vehicle Type Enum
 
 `VehicleType`: `car`. A stable application-level category, rather than arbitrary SUMO vehicle-type identifiers.
 
@@ -680,7 +688,7 @@ The models do not decide how observed detector counts become movement demand (e.
 
 ## 9.4 Output reduction is separate
 
-The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; vehicle positions over each lane's section into `CycleQueueRecord`, and over each approach's zone into `ApproachCycleQueueRecord`; the network's signal program into `SignalProgram`.
+The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`, and planned vehicles missing from the trip output into `UninsertedVehicle`; vehicle positions over each lane's section into `CycleQueueRecord`, and over each approach's zone into `ApproachCycleQueueRecord`; the network's signal program into `SignalProgram`.
 
 ## 9.5 KPI calculation is separate
 
@@ -748,7 +756,9 @@ The test suite verifies the shared model before other components rely on it.
    ↓             ↓                      ↓
 VehicleState  VehicleDelayRecord     SignalProgram
 EdgeTraffic-  IncompletePassage      (CurrentSignalState
-State         CycleQueueRecord        for live views)
+State         UninsertedVehicle       for live views)
+              CycleQueueRecord
+              ApproachCycleQueueRecord
    ↓             ↓
 Visualization  KPI engine (+ ApproachLane, MovementAttributes,
                SignalProgram, SimulationDemand)
@@ -782,3 +792,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 26 Oct 2026 (approach traffic state) | Removed `ApproachTrafficState` (unused: queue length is measured per lane in `CycleQueueRecord` and time loss per vehicle in `VehicleDelayRecord`) |
 | 26 Oct 2026 (approach queues) | Added `ApproachCycleQueueRecord`: each approach's full queue per signal cycle, measured from the signal stop line over the whole zone, with `reaches_zone_end` |
 | 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |
+| 27 Oct 2026 (vehicles not inserted) | Added `UninsertedVehicle`: a planned vehicle SUMO could not insert before the run ended, with its planned stop-line time. `reaches_section_end` and `reaches_zone_end` described as cut-off queues, not minimum values |

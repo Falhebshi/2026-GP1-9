@@ -11,7 +11,7 @@ jaadah/kpi_inputs/
 ├── __init__.py
 ├── network_inputs.py     the engine's lanes, movements and movement attributes
 ├── signal_program.py     the run's SignalProgram from the network file
-├── vehicle_passages.py   VehicleDelayRecord and IncompletePassage from FCD output
+├── vehicle_passages.py   VehicleDelayRecord, IncompletePassage and UninsertedVehicle
 ├── cycle_queues.py       CycleQueueRecord and ApproachCycleQueueRecord from FCD output
 └── kpi_inputs_tests/
     ├── __init__.py
@@ -39,7 +39,7 @@ Delay, queue duration and throughput are measured per vehicle while it passes th
 | North | 500 m | 65 m | 50 km/h |
 | South | 500 m | 65 m | 50 km/h |
 
-The upstream distances come from the Approach Study Distances Reference. The distances are stored on each approach in `network_mappings.json` (`zone_upstream_m`, `zone_downstream_m`; see [Network mapping](network_mapping.md#measurement-zones)), and the network validator checks that every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
+The upstream distances come from the Approach Study Distances Reference. A queue that reaches the zone end makes the approach's measured values `unavailable` (section 5.6). If East's queue reaches its zone end in runs with real peak demand, East's zone can be extended: the modelled East road starts about 855 m before the stop line. The distances are stored on each approach in `network_mappings.json` (`zone_upstream_m`, `zone_downstream_m`; see [Network mapping](network_mapping.md#measurement-zones)), and the network validator checks that every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
 
 A vehicle's zone is therefore the upstream part, the path through the junction, and the downstream part. The path through the junction differs by movement (about 46–70 m for the signalised movements and under 8 m for the slips), so the zone length differs by movement. Within a movement it differs by a few metres with the lane a vehicle uses through the junction (for `MOV_E_S`, about 589–593 m).
 
@@ -77,7 +77,7 @@ The acceleration after a stop therefore lies inside the zone. A fixed zone was p
 
 # 2. Control Delay and Queue Duration
 
-Each vehicle that enters a zone produces one `VehicleDelayRecord` (data model section 4.3), or an `IncompletePassage` (section 4.4) when it has not left the zone when the run ends. Records are produced from SUMO's vehicle position output (FCD), recorded every 0.4 s.
+Each vehicle that enters a zone produces one `VehicleDelayRecord` (data model section 4.3), or an `IncompletePassage` (section 4.4) when it has not left the zone when the run ends. Records are produced from SUMO's vehicle position output (FCD), recorded every 0.4 s. A planned vehicle that never entered the network produces an `UninsertedVehicle` (section 4.7; section 2.7 below).
 
 Implemented in `jaadah/kpi_inputs/vehicle_passages.py` (`collect_vehicle_passages`).
 
@@ -133,6 +133,12 @@ The position along a vehicle's path is its **odometer**, the distance SUMO has d
 A vehicle still queued before the stop-line edge when the run ends has no row on that edge. Its stop line is placed from its last row on an earlier route edge: the rest of that lane, plus the route length from there to the stop line (edges and junction internal lanes, from the network file). It is recorded as an `IncompletePassage` if it had entered its zone, never dropped.
 
 Every vehicle that entered its zone during the run is recorded, including those of the warm-up and clearance; the engine uses those that arrived in the analysis period.
+
+## 2.7 Vehicles that never entered the network
+
+SUMO inserts a vehicle only when there is a safe gap at the start of its route; a vehicle still waiting when the run ends never enters and is left out of the tripinfo output. Each vehicle of an analysed movement in the demand manifest that was due to depart before the run ended and has no tripinfo entry gives an `UninsertedVehicle`, with the time it was planned to reach the stop line: its planned departure plus the movement's free-flow time to the stop line, as the demand planner aims it. The KPI engine then reports its approach as `unavailable` in that interval (KPI engine section 13.7).
+
+The count matches SUMO's own: at 1,600 veh/h per movement, 5,907 vehicles were recorded, the number SUMO reports as still waiting at the end of the run (section 6).
 
 ---
 
@@ -218,7 +224,7 @@ Example: 8 cars stopped every 7.5 m from 1 m before the stop line give a queue o
 
 ## 5.4 Queues that reach the section end
 
-When the back of a lane's queue is less than 10 m from the start of its section, the queue may continue upstream, where lanes merge and a queued vehicle belongs to the approach but to no single lane. The lane's queue is then capped at the section length and the record is marked `reaches_section_end`; the KPI engine reports it as a minimum value, and the full queue is measured on the approach (KPI engine section 13.1).
+When the back of a lane's queue is less than 10 m from the start of its section, the queue may continue upstream, where lanes merge and a queued vehicle belongs to the approach but to no single lane. The lane's queue is then capped at the section length and the record is marked `reaches_section_end`; the KPI engine reports the lane's queue and storage ratio as `unavailable`, and the full queue is measured on the approach (KPI engine sections 6.8 and 13.1).
 
 ## 5.5 Records
 
@@ -234,9 +240,9 @@ The full queue of an approach answers how far back from the signal its queue rea
 
 Slip and bypass lanes are left out; their queues are lane queues. Vehicles on the road behind the signal lanes count whichever way they turn: a vehicle heading for a slip that waits behind the signal queue is part of it.
 
-When the back of the queue is less than 10 m from the far end of the zone, the queue may continue beyond what is measured: it is capped at the zone length and the record is marked `reaches_zone_end`.
+When the back of the queue is less than 10 m from the far end of the zone, the queue may continue beyond what is measured: it is capped at the zone length and the record is marked `reaches_zone_end`. The KPI engine then reports the approach's queue, measured delay and queue duration as `unavailable` (KPI engine section 13.7).
 
-One `ApproachCycleQueueRecord` (data model section 4.6) is written for every approach with signalised movements and every whole signal cycle of the run, with the longest queue of the cycle in metres and vehicles. An approach's queue continues its lanes' queues, so it is never shorter than the queue of one of its signal lanes in the same cycle.
+One `ApproachCycleQueueRecord` (data model section 4.6) is written for every approach with signalised movements and every whole signal cycle of the run, with the longest queue of the cycle in metres and vehicles. An approach's queue continues its lanes' queues, so it is never shorter than the queue of one of its signal lanes in the same cycle, unless it reached its zone end: it stops there, while East's lane sections run 6.8 m further back (394.8 m against the 388 m zone, section 5.1). Both values are then `unavailable`.
 
 ---
 
@@ -248,9 +254,9 @@ One `ApproachCycleQueueRecord` (data model section 4.6) is written for every app
 2. every vehicle that arrived in its zone during the analysis period has left it by the end of the run, so the clearance is long enough;
 3. no vehicle's time loss in its zone exceeds its time loss over the whole trip reported by SUMO (tripinfo `timeLoss`) by more than one FCD period, since the zone is part of the trip;
 4. every canonical lane and every signalised approach has a queue record for every whole signal cycle of the run, since a missing record would be reported as unavailable;
-5. no approach's queue is shorter than the queue of one of its signal lanes in the same cycle.
+5. no approach's queue is shorter than the queue of one of its signal lanes in the same cycle, unless it reached its zone end (section 5.6).
 
-The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json`, `cycle_queue_records.json` and `approach_cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
+The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json`, `uninserted_vehicles.json`, `cycle_queue_records.json` and `approach_cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
 
 Results of the check with hand-made demand, the same for every demand movement:
 
@@ -260,5 +266,7 @@ Results of the check with hand-made demand, the same for every demand movement:
 | 600 veh/h | 8,100 | all pass | 204 s | 16 vehicles (South lane 2, its whole 118.9 m section) | South 25–28, West 1–7 | South 291 m (54 vehicles) |
 
 At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections and reaches 291 m back on the approach; no approach queue reaches its zone end. The slip lanes have no queue at either level.
+
+An overload check at 1,600 veh/h per movement, with a 30-minute analysis period (14,400 planned vehicles), also passes every rule. SUMO could not insert 5,907 vehicles before the run ended, the number it reports as still waiting, and each is recorded as an `UninsertedVehicle`. East's queue reached its zone end in all 15 cycles, North's in 9 and South's in 11. West's never did (104 m at most), yet 2,719 of its vehicles never entered, for the insertion reason below; only the never-inserted records show it.
 
 At 600 veh/h West's vehicles wait up to 22 s to enter the network although West's queue reaches only 104 m: the demand file inserts every West vehicle on lane 0 of the three-lane entry edge (`departLane="best"`), and one lane cannot take 1,800 veh/h at full speed. South's vehicles, also all on one entry lane, wait up to 5.5 s. A long wait to enter is therefore not on its own evidence that the queue reached the model edge.

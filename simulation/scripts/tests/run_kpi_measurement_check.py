@@ -25,7 +25,8 @@ The run passes when:
    would be reported as unavailable);
 5. no approach's queue is shorter than the queue of one of its signal
    lanes in the same cycle (the approach queue continues the lane
-   queues, so it cannot be shorter).
+   queues, so it cannot be shorter), unless it reached its zone end
+   (it stops there, and both values are then unavailable).
 
 The records are saved as JSON next to the SUMO files.
 """
@@ -158,11 +159,15 @@ def evaluate(passages, queues, expected_cycles, lane_ids, mapping, window, retur
         lane.lane_id: lane.approach_id for lane in mapping.approach_lanes
         if set(lane.served_movement_ids) & signal_movements
     }
-    approach_queue = {(item.approach_id, item.cycle_start): item.max_queue_length_m for item in queues.approaches}
+    approach_queue = {
+        (item.approach_id, item.cycle_start): item.max_queue_length_m
+        for item in queues.approaches if not item.reaches_zone_end
+    }
     shorter = sorted({
         f"{approach_of_lane[item.lane_id]} {item.cycle_start:%H:%M:%S}"
         for item in queues.lanes
         if item.lane_id in approach_of_lane
+        and (approach_of_lane[item.lane_id], item.cycle_start) in approach_queue
         and approach_queue[(approach_of_lane[item.lane_id], item.cycle_start)] < item.max_queue_length_m - 1e-6
     })
     return {
@@ -178,6 +183,13 @@ def evaluate(passages, queues, expected_cycles, lane_ids, mapping, window, retur
         "5. No approach queue shorter than its lanes'": {
             "passed": not shorter, "approach_cycles": shorter[:20], "count": len(shorter)},
     }
+
+
+def uninserted_by_movement(uninserted):
+    counts = {}
+    for item in uninserted:
+        counts[item.movement_id] = counts.get(item.movement_id, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def movement_summary(passages, window):
@@ -308,6 +320,7 @@ def main() -> int:
 
     save(folder / "vehicle_delay_records.json", passages.records)
     save(folder / "incomplete_passages.json", passages.incomplete)
+    save(folder / "uninserted_vehicles.json", passages.uninserted)
     save(folder / "cycle_queue_records.json", queues.lanes)
     save(folder / "approach_cycle_queue_records.json", queues.approaches)
     results = evaluate(passages, queues, expected_cycles, lane_ids, mapping, window, returncode, paths)
@@ -319,6 +332,8 @@ def main() -> int:
         },
         "records": len(passages.records),
         "incomplete": len(passages.incomplete),
+        "uninserted": len(passages.uninserted),
+        "uninserted_by_movement": uninserted_by_movement(passages.uninserted),
         "cycle_queues": len(queues.lanes),
         "approach_cycle_queues": len(queues.approaches),
         "results": results,
@@ -329,7 +344,10 @@ def main() -> int:
     (folder / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
     print(f"Measured: {len(passages.records)} complete passages, {len(passages.incomplete)} incomplete, "
+          f"{len(passages.uninserted)} never inserted, "
           f"{len(queues.lanes)} lane and {len(queues.approaches)} approach cycle queues")
+    for movement_id, count in summary["uninserted_by_movement"].items():
+        print(f"INFO  {movement_id}: {count} vehicle(s) never inserted")
     for name, result in results.items():
         details = ", ".join(f"{k}={v}" for k, v in result.items() if k != "passed" and not isinstance(v, list))
         print(f"{'PASS' if result['passed'] else 'FAIL'}  {name}: {details}")

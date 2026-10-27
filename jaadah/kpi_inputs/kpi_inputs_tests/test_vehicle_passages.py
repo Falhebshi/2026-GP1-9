@@ -87,8 +87,11 @@ def config_data(upstream=50, downstream=20):
     }
 
 
-def collect(tmp_path, traces, *, factors=None, movements=None, **zone):
-    """traces: {vehicle_id: [(time, odometer, speed), ...]}."""
+def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=None, **zone):
+    """
+    traces: {vehicle_id: [(time, odometer, speed), ...]}.
+    never_inserted: {vehicle_id: depart_s}, planned but not in FCD or tripinfo.
+    """
     (tmp_path / "net.xml").write_text(NETWORK, encoding="utf-8")
     fcd = {}
     for vehicle_id, points in traces.items():
@@ -104,10 +107,11 @@ def collect(tmp_path, traces, *, factors=None, movements=None, **zone):
         f'<tripinfo id="{i}" speedFactor="{factors.get(i, 1.0)}"/>' for i in traces)
         + "</tripinfos>", encoding="utf-8")
     movements = movements or {}
+    departs = {**{i: 0 for i in traces}, **(never_inserted or {})}
     (tmp_path / "manifest.json").write_text(json.dumps({"departures": [
-        {"vehicle_id": i, "demand_id": f"DEM_{i}", "depart_s": 0} for i in traces]}))
+        {"vehicle_id": i, "demand_id": f"DEM_{i}", "depart_s": d} for i, d in departs.items()]}))
     (tmp_path / "demand.json").write_text(json.dumps([
-        {"demand_id": f"DEM_{i}", "movement_id": movements.get(i, "MOV_A")} for i in traces]))
+        {"demand_id": f"DEM_{i}", "movement_id": movements.get(i, "MOV_A")} for i in departs]))
 
     window = RunWindow(epoch=EPOCH, analysis_start=EPOCH + timedelta(minutes=15),
                        analysis_end=EPOCH + timedelta(minutes=75),
@@ -195,11 +199,34 @@ def test_movement_comes_from_the_manifest_not_the_vehicle_id(tmp_path):
 def test_vehicles_of_movements_without_attributes_are_ignored(tmp_path):
     result = collect(tmp_path, {"R": steady(26)}, movements={"R": "MOV_RAMP"})
 
-    assert result == ([], [])
+    assert result == ([], [], [])
 
 
 def test_vehicle_that_never_reached_its_zone_gives_no_record(tmp_path):
-    assert collect(tmp_path, {"Z": steady(5)}) == ([], [])
+    assert collect(tmp_path, {"Z": steady(5)}) == ([], [], [])
+
+
+def test_vehicle_never_inserted_is_reported_with_its_planned_stop_line_time(tmp_path):
+    """Free flow to the stop line: 50 m of u and 100 m of a at 10 m/s, 15 s."""
+    result = collect(tmp_path, {"V": steady(26)}, never_inserted={"N": 30})
+
+    assert len(result.records) == 1
+    [vehicle] = result.uninserted
+    assert (vehicle.vehicle_id, vehicle.movement_id) == ("N", "MOV_A")
+    assert vehicle.planned_stop_line_time == at(45)
+
+
+def test_vehicle_planned_after_the_run_is_not_reported(tmp_path):
+    """The run ends at 90 minutes; a departure at or after it was never due."""
+    result = collect(tmp_path, {}, never_inserted={"LATE": 90 * 60})
+
+    assert result.uninserted == []
+
+
+def test_never_inserted_vehicle_of_an_ignored_movement_is_not_reported(tmp_path):
+    result = collect(tmp_path, {}, never_inserted={"R": 30}, movements={"R": "MOV_RAMP"})
+
+    assert result.uninserted == []
 
 
 # ============================================================

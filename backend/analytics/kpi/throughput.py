@@ -6,16 +6,32 @@ in the interval that contains its stop_line_time. Vehicles that
 crossed the stop line but had not left the zone when the run ended
 (IncompletePassage with a stop_line_time) are counted too.
 
+A movement's throughput is unavailable in an interval when vehicles of
+its approach could not enter the network before the run ended
+(blocked, from delay.uninserted_approaches): they were never served,
+so the count would understate the demand the movement could serve.
+
 Works on the records of one run. Combining runs (mean and standard
 deviation across seeds) is done elsewhere, the same way for every KPI.
 """
 
+from typing import NamedTuple
+
 from backend.analytics.kpi.intervals import AnalysisInterval, find_interval
 from backend.analytics.kpi.parameters import ANALYSIS_INTERVAL_S
+from jaadah.models.kpis import KpiStatus
 from jaadah.models.outputs import IncompletePassage, VehicleDelayRecord
 
 
 SECONDS_PER_HOUR = 3600
+
+
+class MovementThroughput(NamedTuple):
+    """Throughput of one movement in one interval of one run."""
+
+    status: KpiStatus
+    value_veh_h: float | None
+    reason: str | None = None
 
 
 def count_served_vehicles(
@@ -87,3 +103,24 @@ def vehicles_per_hour(count: int) -> float:
     """Convert a count over one analysis interval to an hourly rate."""
 
     return count * SECONDS_PER_HOUR / ANALYSIS_INTERVAL_S
+
+
+def movement_throughput(
+    counts: dict[tuple[str, AnalysisInterval], int],
+    blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
+) -> dict[tuple[str, AnalysisInterval], MovementThroughput]:
+    """
+    Hourly throughput of each (movement, interval) count, unavailable
+    where blocked maps it to a reason.
+    """
+
+    blocked = blocked or {}
+
+    return {
+        key: (
+            MovementThroughput(KpiStatus.UNAVAILABLE, None, blocked[key])
+            if key in blocked
+            else MovementThroughput(KpiStatus.OK, vehicles_per_hour(count))
+        )
+        for key, count in counts.items()
+    }
