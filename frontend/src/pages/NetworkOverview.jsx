@@ -5,7 +5,6 @@ import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
 import NetworkMap from '../components/NetworkMap'
-import Notice from '../components/Notice'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import { getNetwork, getNetworkTimeline, getSegments } from '../services/networkService'
@@ -68,7 +67,9 @@ function NetworkOverview() {
   const [bars, setBars] = useState([])
   const [segments, setSegments] = useState(null)
   const timelineRef = useRef(null)
+  const sideRef = useRef(null)
   const [timelineHeight, setTimelineHeight] = useState(0)
+  const [sideWidth, setSideWidth] = useState(0)
 
   // Load the map area and the intersections once, when the page opens
   useEffect(() => {
@@ -112,11 +113,16 @@ function NetworkOverview() {
     }
   }, [time])
 
-  // keep the map's own buttons above the timeline card
+  // the size of the floating cards: the map keeps its buttons above the timeline, and fits the
+  // study area into the space the cards leave free, so the intersection dots are never under them
   useEffect(() => {
-    if (!timelineRef.current) return undefined
-    const observer = new ResizeObserver(([entry]) => setTimelineHeight(entry.contentRect.height))
+    if (!timelineRef.current || !sideRef.current) return undefined
+    const observer = new ResizeObserver(() => {
+      setTimelineHeight(timelineRef.current.getBoundingClientRect().height)
+      setSideWidth(sideRef.current.getBoundingClientRect().width)
+    })
     observer.observe(timelineRef.current)
+    observer.observe(sideRef.current)
     return () => observer.disconnect()
   }, [network])
 
@@ -166,6 +172,7 @@ function NetworkOverview() {
         intersections={intersections}
         selectedId={intersectionId}
         onSelect={setIntersectionId}
+        padding={{ top: 80, right: 40, bottom: timelineHeight + 40, left: sideWidth + 40 }}
         onArrive={(id) => {
           // after zooming in, open the intersection's own page
           const target = intersections.find((i) => i.id === id)?.simulation
@@ -173,16 +180,10 @@ function NetworkOverview() {
         }}
       />
 
-      <div className="network-overview-side">
+      <div className="network-overview-side" ref={sideRef}>
         <Card floating className="network-overview-title">
           <h1>Network Traffic Overview</h1>
         </Card>
-
-        {network.isSample && (
-          <Notice variant="warning">
-            Sample data for layout only: the congestion levels on the map are illustrative.
-          </Notice>
-        )}
 
         <Card floating title="Intersections by area" className="network-overview-picker">
           {intersections.length ? (

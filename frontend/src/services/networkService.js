@@ -31,14 +31,15 @@ const NETWORK_BOUNDS = [
 ]
 
 // The other intersections in the "Intersections by area" list. Positions are where the two roads
-// cross in OpenStreetMap, and the district is the nearest one on the map, so check them before
-// relying on them. They are listed but not active yet: only the study intersection, which comes
-// from its record (getIntersection), has a simulation.
+// cross in OpenStreetMap. Districts checked on Google Maps (25 Oct): Imam Saud × Takhassusi and
+// Prince Turki × Al Urubah; King Abdullah × King Fahd is not checked yet. They are listed but not
+// active yet: only the study intersection, which comes from its record (getIntersection), has a
+// simulation.
 const OTHER_INTERSECTIONS = [
   {
     id: 'imamsaud_takhassusi',
     name: 'Imam Saud Rd × Takhassusi Rd',
-    area: 'Al Muhammadiyah',
+    area: 'Al Nakheel',
     center: [46.64549, 24.74039],
   },
   {
@@ -50,7 +51,7 @@ const OTHER_INTERSECTIONS = [
   {
     id: 'turki_urubah',
     name: 'Prince Turki Al-Awwal Rd × Al Urubah Rd',
-    area: 'Umm Al Hamam',
+    area: 'Umm Al Hamam Al Gharbi',
     center: [46.65406, 24.70431],
   },
 ]
