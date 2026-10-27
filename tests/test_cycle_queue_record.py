@@ -186,3 +186,19 @@ def test_halting_fields_are_not_fields(field):
 
     with pytest.raises(ValidationError):
         CycleQueueRecord(**valid_queue_data(**{field: 35.0}))
+
+
+def test_queue_does_not_reach_the_section_end_by_default():
+    assert CycleQueueRecord(**valid_queue_data()).reaches_section_end is False
+
+
+def test_queue_reaching_the_section_end():
+    record = CycleQueueRecord(**valid_queue_data(reaches_section_end=True))
+
+    assert record.reaches_section_end is True
+
+
+def test_section_end_without_a_queue_rejected():
+    with pytest.raises(ValidationError, match="must have a length"):
+        CycleQueueRecord(**valid_queue_data(
+            max_queue_length_m=0, max_queue_vehicles=0, reaches_section_end=True))

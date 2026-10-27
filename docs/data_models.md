@@ -59,7 +59,7 @@ The current implementation contains **25 canonical models**:
 | `traffic.py` | `TrafficObservation`, `ImputedDetector`,`SimulationDemand` |
 | `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
-| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `ApproachTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `CycleQueueRecord` |
+| `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `UninsertedVehicle`, `CycleQueueRecord`, `ApproachCycleQueueRecord` |
 | `signals.py` | `SignalPhase`, `SignalProgram`, `MovementSignalState`, `CurrentSignalState` |
 | `kpis.py` | `KpiResult`, `KpiComparison` |
 
@@ -308,7 +308,7 @@ A run is divided into three parts:
 | warm-up | analysis period | clearance |
 ```
 
-Vehicles are counted only if they enter the delay zone during the analysis period. The clearance period lets those vehicles finish their passage; traffic keeps arriving during it, but new arrivals are not counted. Both durations are **required** (zero is allowed, but must be written on purpose), and when the total duration is set, warm-up + clearance must leave a non-empty analysis period.
+Vehicles are counted only if they enter the measurement zone during the analysis period. The clearance period lets those vehicles finish their passage; traffic keeps arriving during it, but new arrivals are not counted. Both durations are **required** (zero is allowed, but must be written on purpose), and when the total duration is set, warm-up + clearance must leave a non-empty analysis period.
 
 ## 3.4 `ReplicationPair` and `ReplicationSet`
 
@@ -357,46 +357,56 @@ Fields: `run_id`, `sumo_edge_id`, `interval_start`, `interval_end`, `vehicles_en
 
 The KPI engine does not use it: it serves network-level views such as speeds and densities on the network overview map.
 
-## 4.3 `ApproachTrafficState`
+## 4.3 `VehicleDelayRecord`
 
-Aggregate queue and time-loss measurements for one approach.
-
-Fields: `run_id`, `approach_id`, `queue_detection_lane_ids` (at least one, no duplicates), `interval_start`, `interval_end`, `max_queue_length_m`, `mean_max_queue_vehicles`, `started_halts`, `vehicles_seen`, optional `mean_time_loss_s`.
-
-**Not used by the KPI engine:** queue length is measured per lane in `CycleQueueRecord`, and time loss and time stopped per vehicle in `VehicleDelayRecord`. It is kept until the team decides whether any component needs it (tracked in a GitHub issue).
-
-## 4.4 `VehicleDelayRecord`
-
-One vehicle's complete passage through the **delay zone** of one movement. The zone runs from 250 m before the stop line to the point after the intersection where the vehicle is back to speed. Records are produced from SUMO vehicle position output (FCD, recorded every 0.4 s).
+One vehicle's complete passage through the **measurement zone** of its approach: a fixed distance before the stop line, the path through the junction, and a fixed distance after the junction exit (East 388 m and 155 m, West 450 m and 105 m, North and South 500 m and 65 m). Records are produced from SUMO vehicle position output (FCD, recorded every 0.4 s); the zones and the rules for producing records are in [KPI measurements](kpi_measurements.md).
 
 Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, `stop_line_time`, `zone_exit_time`, `zone_distance_m`, `free_flow_travel_time_s`, `halted_time_s`.
 
 - `zone_entry_time` is when the vehicle arrived: its delay counts in the 15-minute interval it arrived in.
 - `stop_line_time` is when it got through the signal: it counts as served (throughput) in the interval it crossed the stop line.
-- `free_flow_travel_time_s` is how long it would have needed through the same zone with no traffic and no signal. How it is obtained (one free-flow speed, or one per lane along the path) is decided by the simulation pipeline.
+- `free_flow_travel_time_s` is how long it would have needed through the same zone with no traffic and no signal, at its own desired speed on each piece of its path (each lane's speed limit × the vehicle's speed factor).
 - `halted_time_s` is how long it stood still in the zone. The queue-duration KPI is measured per vehicle from it, so it splits cleanly by movement.
 
 Checks: entry ≤ stop line ≤ exit; entry before exit; free-flow time and halted time each no longer than the time in the zone.
 
 Properties (calculated, not stored): `zone_travel_time_s` = exit − entry, and `time_loss_s` = zone travel time − free-flow travel time.
 
-## 4.5 `IncompletePassage`
+## 4.4 `IncompletePassage`
 
-A vehicle that entered the delay zone but had not left it when the run ended. Recorded so that unfinished vehicles are **never silently dropped**: they are usually the most delayed (still queued), so leaving them out would make delay look better than it was.
+A vehicle that entered the measurement zone but had not left it when the run ended. Recorded so that unfinished vehicles are **never silently dropped**: they are usually the most delayed (still queued), so leaving them out would make delay look better than it was.
 
 Fields: `run_id`, `vehicle_id`, `movement_id`, `zone_entry_time`, optional `stop_line_time`, `last_seen_time`.
 
 Its delay is unknown, so it has no time loss. A vehicle that crossed the stop line before the run ended was served and still counts for throughput (property `crossed_stop_line`). How the KPI engine reports an interval with incomplete passages is decided in the engine.
 
-## 4.6 `CycleQueueRecord`
+## 4.5 `CycleQueueRecord`
 
-Queue length for one lane over one signal cycle, from a lane-area (E2) detector whose output period is one cycle, aligned with the cycle start.
+Queue length for one lane over one signal cycle, aligned with the cycle start, measured from vehicle positions over the lane's section ([KPI measurements](kpi_measurements.md), section 5).
 
-Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`.
+Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_section_end` (default false).
+
+`reaches_section_end` is true when the queue reached the start of the lane's section during the cycle, so it may continue upstream where lanes merge; the real queue was then longer than the recorded one. It requires a queue.
 
 The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
-## 4.7 Vehicle Type Enum
+## 4.6 `ApproachCycleQueueRecord`
+
+The full queue of one approach over one signal cycle, aligned with the cycle start: how far back from the signal stop line the queue reached, over the approach's whole measurement zone and across the points where its lanes merge ([KPI measurements](kpi_measurements.md), section 5.6).
+
+Fields: `run_id`, `approach_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_zone_end` (default false).
+
+Queued vehicles on the signal lanes and on the road behind them count; slip and bypass lanes have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the queue reached the far end of the zone during the cycle, so it may continue beyond what is measured; the real queue was then longer than the recorded one. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
+
+## 4.7 `UninsertedVehicle`
+
+A planned vehicle that SUMO could not insert into the network before the run ended. Recorded so that missing traffic is **never silently dropped**: part of its approach's demand was not simulated, and the vehicles behind it were held back too.
+
+Fields: `run_id`, `vehicle_id`, `movement_id`, `planned_stop_line_time`.
+
+`planned_stop_line_time` is when the vehicle was planned to reach the stop line: its planned departure plus its movement's free-flow time to the stop line, the time the demand planner aims it at. How the KPI engine reports the approach is decided in the engine.
+
+## 4.8 Vehicle Type Enum
 
 `VehicleType`: `car`. A stable application-level category, rather than arbitrary SUMO vehicle-type identifiers.
 
@@ -678,7 +688,7 @@ The models do not decide how observed detector counts become movement demand (e.
 
 ## 9.4 Output reduction is separate
 
-The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`; lane-area detector output into `CycleQueueRecord`; the network's signal program into `SignalProgram`.
+The simulation pipeline turns SUMO output files into canonical records: vehicle position output (FCD) into `VehicleDelayRecord` and `IncompletePassage`, and planned vehicles missing from the trip output into `UninsertedVehicle`; vehicle positions over each lane's section into `CycleQueueRecord`, and over each approach's zone into `ApproachCycleQueueRecord`; the network's signal program into `SignalProgram`.
 
 ## 9.5 KPI calculation is separate
 
@@ -746,7 +756,9 @@ The test suite verifies the shared model before other components rely on it.
    ↓             ↓                      ↓
 VehicleState  VehicleDelayRecord     SignalProgram
 EdgeTraffic-  IncompletePassage      (CurrentSignalState
-State         CycleQueueRecord        for live views)
+State         UninsertedVehicle       for live views)
+              CycleQueueRecord
+              ApproachCycleQueueRecord
    ↓             ↓
 Visualization  KPI engine (+ ApproachLane, MovementAttributes,
                SignalProgram, SimulationDemand)
@@ -776,3 +788,8 @@ Together, these structures form the common data language used across the Jaadah 
 | 22 Oct 2026 (KPI comparison review) | Added `KpiComparison.pair_count` and the computed `is_partial_sample`, marking comparisons based on fewer pairs than the replication set holds |
 | 23 Oct 2026 (run inputs) | Added `SimulationRun.mapping_version`, `demand_sha256` and `route_file_sha256`, required for running and completed runs, so that compared runs can be checked for identical inputs |
 | 23 Oct 2026 (movement attributes) | Added `NetworkMappingConfig.movement_attributes`, optional and empty by default, holding the approved `MovementAttributes` of the nine analysed movements. Checks: no duplicates, known movement with an approach, `control` agrees with `signal_controlled`, no lane mixing signalized and uncontrolled movements. `MOV_S_W` classified as a protected left. `mapping_version` set to `2.2-movement-attributes`; `schema_version` stays `2.0` |
+| 25 Oct 2026 (measurement zones) | Added optional `ApproachMapping.zone_upstream_m` and `zone_downstream_m` (given together, finite and positive), holding each approach's measurement zone; the network validator checks that each zone fits on the routes of its movements. `mapping_version` set to `2.3-measurement-zones`; `schema_version` stays `2.0` |
+| 26 Oct 2026 (approach traffic state) | Removed `ApproachTrafficState` (unused: queue length is measured per lane in `CycleQueueRecord` and time loss per vehicle in `VehicleDelayRecord`) |
+| 26 Oct 2026 (approach queues) | Added `ApproachCycleQueueRecord`: each approach's full queue per signal cycle, measured from the signal stop line over the whole zone, with `reaches_zone_end` |
+| 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |
+| 27 Oct 2026 (vehicles not inserted) | Added `UninsertedVehicle`: a planned vehicle SUMO could not insert before the run ended, with its planned stop-line time. `reaches_section_end` and `reaches_zone_end` described as cut-off queues, not minimum values |
