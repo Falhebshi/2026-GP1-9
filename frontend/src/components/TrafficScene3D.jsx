@@ -18,9 +18,10 @@ import { prepareLaneIndex, approachLanes } from '../simulation_3d/laneIndex'
 import { prepareVegetation, vegetationLayers } from '../simulation_3d/vegetation'
 import { vehicleIntervals, vehicleStates, vehicleLayers } from '../simulation_3d/vehicles'
 import { ENV, envLighting } from '../simulation_3d/palette'
+import { approachColor, selectionLayers } from '../simulation_3d/selection'
 import { getIntersectionScene, getVehicleInterval } from '../services/simulationService'
 import SceneNavControls from './SceneNavControls'
-import ApproachPanel from './ApproachPanel'
+import { ApproachChips } from './ApproachPanel'
 import SegmentedControl from './SegmentedControl'
 import './TrafficScene3D.css'
 
@@ -38,7 +39,10 @@ import './TrafficScene3D.css'
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
 //                    scene's own buttons move down below it
-//   approaches       approaches with their KPIs for the panel (see services/currentTrafficService.js)
+//   approaches       approaches with their KPIs for the chips (see services/currentTrafficService.js)
+//   openApproachId   approach_id of the selected approach, or null; its lanes are highlighted
+//   onApproachChange called with an approach_id (or null) when a chip or an approach's lanes are
+//                    clicked; the page shows the selected approach's details next to the scene
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
 // Cars and signal indications come from the SUMO run (run.json, its 15-minute vehicle files and
@@ -100,12 +104,24 @@ const TOOLTIP_STYLE = {
 
 const CLIP = new ClipExtension()
 
+// How the selected approach is highlighted, while the team compares the two styles (see
+// simulation_3d/selection.js): ?highlight=colour, ?highlight=spotlight or ?highlight=both
+const HIGHLIGHT = (() => {
+  const choice = new URLSearchParams(window.location.search).get('highlight') ?? 'colour'
+  return {
+    colour: choice === 'colour' || choice === 'both',
+    spotlight: choice === 'spotlight' || choice === 'both',
+  }
+})()
+
 function TrafficScene3D({
   intersectionId,
   center,
   bounds,
   night = 0,
   approaches,
+  openApproachId = null,
+  onApproachChange,
   belowStatus = false,
   scenario = 'baseline',
   time,
@@ -238,7 +254,6 @@ function TrafficScene3D({
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [mode, setMode] = useState('top')
   const [viewState, setViewState] = useState(() => base('top'))
-  const [openApproach, setOpenApproach] = useState(null)
 
   // Roads, markings and buildings only need rebuilding when hover, selection or view changes
   function rebuildStatic() {
@@ -248,7 +263,6 @@ function TrafficScene3D({
       outerGround(),
       ...clip([
         ...roadLayers(s.net, {
-          selectedIds: selRef.current,
           xray: xrayRef.current,
           paintOpacity: paintRef.current,
           slatOpacity: slatRef.current,
@@ -275,7 +289,21 @@ function TrafficScene3D({
     lastSigRef.current = dyn
     const vehicles = s.veh?.at(t) // null while this interval's file is still loading
     const cars = vehicles ? vehicleLayers(vehicleStates(vehicles, t), t) : []
-    deckRef.current.setProps({ layers: [...staticLayersRef.current, ...clip(cars), ...clip(dyn)] })
+    const selected = selRef.current
+    const highlight = selected
+      ? selectionLayers({
+          lanes: selected.lanes,
+          centres: s.centres,
+          bounds,
+          color: selected.color,
+          style: HIGHLIGHT,
+          t: performance.now() / 1000,
+          night: ENV.n,
+        })
+      : []
+    deckRef.current.setProps({
+      layers: [...staticLayersRef.current, ...clip(highlight), ...clip(cars), ...clip(dyn)],
+    })
   }
 
   // Set up deck.gl and load the data. The canvas is made here and removed on clean-up so it works
@@ -344,8 +372,8 @@ function TrafficScene3D({
       // closes it
       onClick: ({ object }) => {
         const lane = approachLane(object)
-        if (lane) openArm(lane.arm)
-        else if (!object) openArm(null)
+        if (lane) chooseArm(lane.arm)
+        else if (!object) chooseArm(null)
       },
       getTooltip: ({ object }) => {
         const p = object?.properties
@@ -397,6 +425,11 @@ function TrafficScene3D({
           }),
         }
         sceneRef.current.approachLanes = approachLanes(sceneRef.current.laneIndex, sig)
+        sceneRef.current.centres = Object.fromEntries(
+          (d.detail?.features ?? [])
+            .filter((f) => f.properties.kind === 'lane_centre')
+            .map((f) => [f.properties.lane, f.geometry.coordinates]),
+        )
         sceneRef.current.veg = prepareVegetation({
           streetscape: sceneRef.current.ss,
           context: sceneRef.current.ctx,
@@ -408,6 +441,7 @@ function TrafficScene3D({
         setStatus('ready')
         callbacksRef.current.onReady?.({ duration: to - from })
         rebuildStatic()
+        showSelection()
         // No time from the page, so loop the run at real speed
         if (autoplay) {
           const tick = (now) => {
@@ -459,15 +493,27 @@ function TrafficScene3D({
     return arm ? { id: p.id, arm } : null
   }
 
-  // Open an approach by its arm ('North', 'East'...) and highlight its lanes. Opening the open one again closes it.
-  function openArm(arm) {
-    const current = selRef.current?.arm
+  // Clicking an approach's lanes selects it, clicking it again (or empty ground) clears it
+  function chooseArm(arm) {
+    const current = approaches?.find((a) => a.approach_id === openApproachId)?.arm ?? null
     const next = arm && arm !== current ? arm : null
-    const lanes = sceneRef.current?.approachLanes?.[next]
-    selRef.current = next && lanes ? Object.assign(new Set(lanes), { arm: next }) : null
-    setOpenApproach(next)
-    rebuildStatic()
+    onApproachChange?.(approaches?.find((a) => a.arm === next)?.approach_id ?? null)
   }
+
+  // Highlight the lanes of the selected approach, in its congestion color
+  function showSelection() {
+    const s = sceneRef.current
+    const approach = approaches?.find((a) => a.approach_id === openApproachId)
+    const ids = approach && s?.approachLanes?.[approach.arm]
+    selRef.current = ids
+      ? {
+          lanes: [...s.net.lanes, ...s.net.internal].filter((f) => ids.has(f.properties.id)),
+          color: approachColor(approach.kpis?.level_of_service?.los_grade),
+        }
+      : null
+    redraw()
+  }
+  useEffect(showSelection, [openApproachId, approaches]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Blend lighting and colors to the new darkness over about 1.5 s
   useEffect(() => {
@@ -530,10 +576,10 @@ function TrafficScene3D({
 
       <div className="traffic-scene-bottom-left">
         {status === 'ready' && (
-          <ApproachPanel
+          <ApproachChips
             approaches={approaches}
-            openId={approaches?.find((a) => a.arm === openApproach)?.approach_id ?? null}
-            onToggle={(id) => openArm(approaches.find((a) => a.approach_id === id)?.arm ?? null)}
+            openId={openApproachId}
+            onToggle={(id) => onApproachChange?.(id === openApproachId ? null : id)}
           />
         )}
       </div>
