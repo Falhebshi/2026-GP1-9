@@ -1,0 +1,54 @@
+/* Breadcrumbs: a small trail above a page title. Colors and sizes from
+   index.css. */
+
+.breadcrumbs {
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.breadcrumbs-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.breadcrumbs-link {
+  padding: calc(var(--space-xs) / 2) var(--space-xs);
+  margin: 0 calc(var(--space-xs) * -1);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.breadcrumbs-link:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.breadcrumbs-current {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.breadcrumbs-separator {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--color-border-strong);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

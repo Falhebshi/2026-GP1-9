@@ -16,8 +16,8 @@ import './AlertList.css'
 //                    subtitle         small grey line, e.g. "North approach · 2 min ago"
 //                    details          rows for an InfoList. If present, the
 //                                     alert can be clicked open to show them.
-//                    interventionsTo  URL of its interventions. If present,
-//                                     a "View interventions" link is shown.
+//                    detailsTo        URL of its Alert Details page. If
+//                                     present, a "View details" link is shown.
 //   emptyMessage   text shown when the list is empty
 //   error          text shown instead of the list when alerts failed to load
 function AlertList({
@@ -82,9 +82,9 @@ function AlertList({
                     text
                   )}
 
-                  {alert.interventionsTo && (
-                    <Link to={alert.interventionsTo} className="alert-link">
-                      View interventions →
+                  {alert.detailsTo && (
+                    <Link to={alert.detailsTo} className="alert-link">
+                      View details →
                     </Link>
                   )}
                 </div>

@@ -66,12 +66,12 @@
 //   thresholds: {
 //     totalDays: 30, recurrenceDays: 15,      recurring = at least recurrenceDays
 //     windows: [{ id, start: '07:30', end: '09:00', rule, location, title,
-//                 daysExceeded, interventionId }],
+//                 daysExceeded, problemId }],
 //   },
 //   losDistribution: [{ element: { level, id, label }, shares: { A: 0.15, … F: 0.05 } }],
 //                                      share of 15-minute intervals per grade
 //   recurringAlerts: [{ id, title, location, when, daysSeen, daysTotal, rule,
-//                       status: 'active', interventionId }],
+//                       status: 'active', problemId }],
 //   breakdownWindows: [{ id, label, default }], choices for the breakdown
 //     table. These are the SAME windows as thresholds.windows (same ids),
 //     plus 'whole-day'; default: true marks the one shown first.
@@ -564,11 +564,11 @@ function buildTrends(periodDays, dayType, approachId) {
   const recurrenceDays = Math.ceil(totalDays / 2)
   const dayWord = dayType === 'weekends' ? 'Weekends' : dayType === 'weekdays' ? 'Weekdays' : 'Weekdays'
   const thresholdRules = {
-    early: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Early delay at LOS E', days30: 3, interventionId: null },
-    'am-peak': { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Morning peak delay at LOS E', days30: 17, interventionId: 2 },
-    midday: { rule: 'v/c ≥ 0.90', location: 'East approach · left', title: 'East left near capacity', days30: 16, interventionId: 3 },
-    'pm-peak': { rule: 'Storage ratio ≥ 1.0', location: 'West approach · left', title: 'Left-turn queue overflows its storage', days30: 22, interventionId: 1 },
-    evening: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Evening delay at LOS E', days30: 9, interventionId: null },
+    early: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Early delay at LOS E', days30: 3, problemId: null },
+    'am-peak': { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Morning peak delay at LOS E', days30: 17, problemId: 2 },
+    midday: { rule: 'v/c ≥ 0.90', location: 'East approach · left', title: 'East left near capacity', days30: 16, problemId: 3 },
+    'pm-peak': { rule: 'Storage ratio ≥ 1.0', location: 'West approach · left', title: 'Left-turn queue overflows its storage', days30: 22, problemId: 1 },
+    evening: { rule: 'Control delay > 55 s', location: 'Intersection', title: 'Evening delay at LOS E', days30: 9, problemId: null },
   }
   const windows = TIME_WINDOWS.map((w) => {
     const { days30, ...rest } = thresholdRules[w.id]
@@ -587,7 +587,7 @@ function buildTrends(periodDays, dayType, approachId) {
       daysTotal: totalDays,
       rule: w.rule,
       status: 'active',
-      interventionId: w.interventionId,
+      problemId: w.problemId,
     }))
 
   // ---- Level of service distribution --------------------------------------

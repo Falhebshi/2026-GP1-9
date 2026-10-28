@@ -25,7 +25,7 @@
 //       }],
 //     }],
 //     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay
-//     alerts: [{ id, title, details: [{ label, value }], interventionsTo }],
+//     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
 //   }
 //
 // Every KPI value is a KpiResult, exactly as the backend's KPI engine sends it (data_models.md,
@@ -83,7 +83,7 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'North approach' },
       { label: 'Detected', value: '2 min ago' },
     ],
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/1',
   },
   {
     id: 'a2',
@@ -92,7 +92,7 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'East approach' },
       { label: 'Detected', value: '7 min ago' },
     ],
-    interventionsTo: '/recommendations',
+    detailsTo: '/alerts/2',
   },
   {
     id: 'a3',
@@ -101,14 +101,13 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'West approach' },
       { label: 'Detected', value: '11 min ago' },
     ],
-    interventionsTo: '/recommendations',
   },
 ]
 
 // Approaches and their movements. The movements follow the signal plan in the SUMO network:
-// East and West have through and left on the signal, South and North are left only. Right turns leave before the signal on slip lanes (South to East, West to South and
-// North to West; East has none), so the signal measures (LOS, v/c, capacity, saturation flow)
-// don't apply to them. Whether slip lanes get KPIs at all is still open.
+// East and West have through and left on the signal, South and North are left only. Right turns
+// leave before the signal on slip lanes (South to East, West to South and North to West; East has
+// none), so the signal measures (LOS, v/c, capacity, saturation flow) don't apply to them. Whether slip lanes get KPIs at all is still open.
 // arm is the side of the junction the approach comes from (matches the 3D scene).
 
 // Markers used in the tables below instead of a value
