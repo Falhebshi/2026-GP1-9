@@ -13,12 +13,19 @@ from backend.analytics.kpi.kpi_tests.test_capacity import (
 )
 from backend.analytics.kpi.kpi_tests.test_hcm_delay import INTERVALS
 from backend.analytics.kpi.parameters import level_of_service
-from backend.analytics.kpi.queue import LaneQueue
+from backend.analytics.kpi.queue import (
+    NO_RECORDS_REASON,
+    SECTION_END_REASON,
+    ZONE_END_REASON,
+    LaneQueue,
+)
 from backend.analytics.kpi.rollup import (
     EXCLUDES_UNCONTROLLED,
     INCLUDES_UNCONTROLLED,
     NOTHING_TO_COMBINE_REASON,
+    NO_STORAGE_LENGTH_REASON,
     PART_UNAVAILABLE_REASON,
+    SLIP_SECTION_END_REASON,
     Part,
     combine_highest,
     combine_sum,
@@ -78,12 +85,12 @@ ALL_LANES = [
 ]
 
 
-def delay(mean, vehicles, queue_duration=None, status=OK):
+def delay(mean, vehicles, queue_duration=None, status=OK, reason=None):
     return MovementDelay(
         status, vehicles, 0,
         mean if status == OK else None,
         queue_duration if status == OK else None,
-        None,
+        reason,
     )
 
 
@@ -101,6 +108,25 @@ def all_queues(**overrides):
     values = {lane.lane_id: LaneQueue(30.0, 5) for lane in ALL_LANES}
     values.update(overrides)
     return {(lane_id, INTERVAL): q for lane_id, q in values.items()}
+
+
+SLIP_LANE_IDS = {lane.lane_id for lane in SLIP_LANES}
+
+
+def all_approach_queues(**overrides):
+    """Every approach's full-zone queue 40 m / 6 veh, except the overrides."""
+
+    values = {a: LaneQueue(40.0, 6) for a in ["APP_E", "APP_S", "APP_W", "APP_N"]}
+    values.update(overrides)
+    return {(a, INTERVAL): q for a, q in values.items()}
+
+
+def queues_out(lanes=None, approaches=None, blocked=None, unit="m"):
+    return queue_rollup(
+        ALL_LANES, MOVEMENTS, lanes or all_queues(), INTERVAL,
+        approach_queues=approaches or all_approach_queues(),
+        slip_lane_ids=SLIP_LANE_IDS, blocked=blocked, unit=unit,
+    )
 
 
 # ============================================================
@@ -121,6 +147,24 @@ def test_one_unavailable_part_makes_the_result_unavailable():
     assert result.status == UNAVAILABLE
     assert result.reason == PART_UNAVAILABLE_REASON
     assert result.value is None
+
+
+def test_shared_reason_of_unavailable_parts_is_kept():
+    result = combine_highest([
+        Part(OK, 10),
+        Part(UNAVAILABLE, None, reason="the queue reached the zone end"),
+        Part(UNAVAILABLE, None, reason="the queue reached the zone end"),
+    ])
+
+    assert result.reason == "the queue reached the zone end"
+
+
+def test_different_part_reasons_give_the_general_reason():
+    result = combine_sum([
+        Part(UNAVAILABLE, None, reason="a"), Part(UNAVAILABLE, None, reason="b"),
+    ])
+
+    assert result.reason == PART_UNAVAILABLE_REASON
 
 
 def test_not_applicable_parts_are_left_out():
@@ -225,6 +269,20 @@ def test_unavailable_movement_makes_approach_and_intersection_unavailable():
     assert out[("approach", "APP_E")].status == OK
 
 
+def test_movement_reason_reaches_approach_and_intersection():
+    reason = "the queue reached the end of the measurement zone"
+    delays = all_delays(
+        MOV_W_T=delay(None, 10, status=UNAVAILABLE, reason=reason),
+        MOV_W_L=delay(None, 4, status=UNAVAILABLE, reason=reason),
+        MOV_W_R=delay(None, 3, status=UNAVAILABLE, reason=reason),
+    )
+
+    out = measured_delay_rollup(MOVEMENTS, ALL_ATTRIBUTES, delays, INTERVAL)
+
+    assert out[("approach", "APP_W")].reason == reason
+    assert out[("intersection", "INT_01")].reason == reason
+
+
 def test_movement_without_arrivals_is_left_out():
     delays = all_delays(MOV_E_L=delay(None, 0, status=NA))
 
@@ -256,6 +314,18 @@ def test_throughput_is_summed():
     assert out[("intersection", "INT_01")].value == 900
 
 
+def test_blocked_movement_makes_approach_throughput_unavailable():
+    flows = {(m, INTERVAL): 100.0 for m in MOVEMENTS}
+    blocked = {(m, INTERVAL): "2 vehicle(s) could not enter"
+               for m, a in [(m, MOVEMENTS[m].approach_id) for m in MOVEMENTS] if a == "APP_W"}
+
+    out = throughput_rollup(MOVEMENTS, ALL_ATTRIBUTES, flows, INTERVAL, blocked=blocked)
+
+    assert out[("approach", "APP_W")].reason == "2 vehicle(s) could not enter"
+    assert out[("intersection", "INT_01")].reason == "2 vehicle(s) could not enter"
+    assert out[("approach", "APP_E")].value == 200
+
+
 def test_zero_throughput_is_a_real_zero():
     flows = {(m, INTERVAL): 0.0 for m in MOVEMENTS}
 
@@ -269,20 +339,34 @@ def test_zero_throughput_is_a_real_zero():
 # QUEUE LENGTH AND STORAGE RATIO
 # ============================================================
 
-def test_approach_queue_is_the_longest_lane():
-    queues = all_queues(LANE_E_3=LaneQueue(85.0, 12))
+def test_approach_queue_is_its_full_zone_queue():
+    """Not its longest lane: the zone queue also covers the upstream edges."""
 
-    out = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
+    out = queues_out(
+        lanes=all_queues(LANE_E_3=LaneQueue(85.0, 12)),
+        approaches=all_approach_queues(APP_E=LaneQueue(160.0, 25)),
+    )
 
-    assert out[("approach", "APP_E")].value == 85
-    assert out[("approach", "APP_E")].measured_on_lane_id == "LANE_E_3"
-    assert out[("intersection", "INT_01")].measured_on_lane_id == "LANE_E_3"
+    assert out[("approach", "APP_E")].value == 160
+    assert out[("approach", "APP_E")].measured_on_lane_id is None
+    assert out[("lane", "LANE_E_3")].value == 85
+
+
+def test_approach_takes_a_longer_slip_lane():
+    out = queues_out(lanes=all_queues(LANE_N_SLIP=LaneQueue(95.0, 14)))
+
+    assert out[("approach", "APP_N")].value == 95
+    assert out[("approach", "APP_N")].measured_on_lane_id == "LANE_N_SLIP"
+
+
+def test_intersection_is_the_longest_approach():
+    out = queues_out(approaches=all_approach_queues(APP_S=LaneQueue(290.0, 54)))
+
+    assert out[("intersection", "INT_01")].value == 290
 
 
 def test_movement_queue_is_its_longest_lane():
-    queues = all_queues(LANE_E_4=LaneQueue(60.0, 9), LANE_E_1=LaneQueue(90.0, 13))
-
-    out = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
+    out = queues_out(lanes=all_queues(LANE_E_4=LaneQueue(60.0, 9), LANE_E_1=LaneQueue(90.0, 13)))
 
     assert out[("movement", "MOV_E_T")].value == 60
     assert out[("movement", "MOV_E_T")].measured_on_lane_id == "LANE_E_4"
@@ -290,9 +374,7 @@ def test_movement_queue_is_its_longest_lane():
 
 
 def test_shared_tag_only_when_longest_lane_is_shared():
-    queues = all_queues(LANE_E_2=LaneQueue(70.0, 10))
-
-    out = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
+    out = queues_out(lanes=all_queues(LANE_E_2=LaneQueue(70.0, 10)))
 
     assert out[("movement", "MOV_E_L")].measured_on_lane_id == "LANE_E_2"
     assert out[("movement", "MOV_E_L")].is_shared
@@ -300,35 +382,76 @@ def test_shared_tag_only_when_longest_lane_is_shared():
 
 
 def test_metres_and_vehicles_are_each_the_longest_separately():
-    """A long lane of large gaps and a short lane of many cars."""
+    """A long zone queue of large gaps and a short slip queue of many cars."""
 
-    queues = all_queues(LANE_S_1=LaneQueue(80.0, 8), LANE_S_2=LaneQueue(70.0, 11))
+    lanes = all_queues(LANE_S_SLIP=LaneQueue(70.0, 11))
+    approaches = all_approach_queues(APP_S=LaneQueue(80.0, 8))
 
-    metres = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL, unit="m")
-    vehicles = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL, unit="veh")
+    metres = queues_out(lanes=lanes, approaches=approaches, unit="m")
+    vehicles = queues_out(lanes=lanes, approaches=approaches, unit="veh")
 
-    assert metres[("approach", "APP_S")].measured_on_lane_id == "LANE_S_1"
-    assert vehicles[("approach", "APP_S")].measured_on_lane_id == "LANE_S_2"
+    assert metres[("approach", "APP_S")].measured_on_lane_id is None
+    assert metres[("approach", "APP_S")].value == 80
+    assert vehicles[("approach", "APP_S")].measured_on_lane_id == "LANE_S_SLIP"
     assert vehicles[("approach", "APP_S")].value == 11
 
 
-def test_slip_lanes_are_included_in_the_queue():
-    queues = all_queues(LANE_N_SLIP=LaneQueue(95.0, 14))
+def test_lane_without_records_makes_its_movements_unavailable():
+    out = queues_out(lanes=all_queues(LANE_W_3=None))
 
-    out = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
-
-    assert out[("approach", "APP_N")].measured_on_lane_id == "LANE_N_SLIP"
-
-
-def test_lane_without_records_makes_the_queue_unavailable():
-    queues = all_queues(LANE_W_3=None)
-
-    out = queue_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
-
-    assert out[("approach", "APP_W")].status == UNAVAILABLE
+    assert out[("lane", "LANE_W_3")].reason == NO_RECORDS_REASON
     assert out[("movement", "MOV_W_T")].status == UNAVAILABLE
+    assert out[("movement", "MOV_W_T")].reason == NO_RECORDS_REASON
     assert out[("movement", "MOV_W_L")].status == OK
+    assert out[("approach", "APP_W")].status == OK
+    assert out[("intersection", "INT_01")].status == OK
+
+
+def test_lane_queue_past_its_section_points_to_the_approach_queue():
+    out = queues_out(lanes=all_queues(LANE_E_4=LaneQueue(118.0, 18, reaches_end=True)))
+
+    assert out[("lane", "LANE_E_4")].status == UNAVAILABLE
+    assert out[("lane", "LANE_E_4")].reason == SECTION_END_REASON
+    assert out[("movement", "MOV_E_T")].reason == SECTION_END_REASON
+    assert out[("approach", "APP_E")].status == OK
+
+
+def test_slip_lane_past_its_section_makes_the_approach_unavailable():
+    out = queues_out(lanes=all_queues(LANE_N_SLIP=LaneQueue(60.0, 9, reaches_end=True)))
+
+    assert out[("approach", "APP_N")].status == UNAVAILABLE
+    assert out[("approach", "APP_N")].reason == SLIP_SECTION_END_REASON
+
+
+def test_queue_at_the_zone_end_makes_approach_and_intersection_unavailable():
+    out = queues_out(approaches=all_approach_queues(APP_E=LaneQueue(388.0, 60, reaches_end=True)))
+
+    assert out[("approach", "APP_E")].reason == ZONE_END_REASON
     assert out[("intersection", "INT_01")].status == UNAVAILABLE
+    assert out[("intersection", "INT_01")].reason == ZONE_END_REASON
+    assert out[("approach", "APP_S")].status == OK
+
+
+def test_blocked_approach_makes_all_its_queues_unavailable():
+    reason = "3 vehicle(s) could not enter the network before the run ended"
+
+    out = queues_out(blocked={("APP_W", INTERVAL): reason})
+
+    assert out[("lane", "LANE_W_1")].reason == reason
+    assert out[("movement", "MOV_W_T")].reason == reason
+    assert out[("approach", "APP_W")].reason == reason
+    assert out[("intersection", "INT_01")].reason == reason
+    assert out[("approach", "APP_E")].status == OK
+    assert out[("movement", "MOV_E_T")].status == OK
+
+
+def test_different_reasons_give_the_general_reason():
+    out = queues_out(
+        approaches=all_approach_queues(APP_E=LaneQueue(388.0, 60, reaches_end=True)),
+        blocked={("APP_W", INTERVAL): "3 vehicle(s) could not enter"},
+    )
+
+    assert out[("intersection", "INT_01")].reason == PART_UNAVAILABLE_REASON
 
 
 def test_storage_ratio_is_the_highest_lane():
@@ -350,7 +473,27 @@ def test_unknown_storage_length_makes_the_ratio_unavailable():
     out = storage_ratio_rollup(lanes, MOVEMENTS, all_queues(), INTERVAL)
 
     assert out[("approach", "APP_S")].status == UNAVAILABLE
+    assert out[("approach", "APP_S")].reason == NO_STORAGE_LENGTH_REASON
     assert out[("approach", "APP_E")].status == OK
+
+
+def test_storage_ratio_of_a_lane_past_its_section_is_unavailable():
+    queues = all_queues(LANE_N_2=LaneQueue(84.8, 14, reaches_end=True))
+
+    out = storage_ratio_rollup(ALL_LANES, MOVEMENTS, queues, INTERVAL)
+
+    assert out[("lane", "LANE_N_2")].reason == SECTION_END_REASON
+    assert out[("approach", "APP_N")].reason == SECTION_END_REASON
+    assert out[("lane", "LANE_N_1")].value == pytest.approx(0.3)
+
+
+def test_storage_ratio_of_a_blocked_approach_is_unavailable():
+    out = storage_ratio_rollup(
+        ALL_LANES, MOVEMENTS, all_queues(), INTERVAL, blocked={("APP_S", INTERVAL): "why"}
+    )
+
+    assert out[("approach", "APP_S")].reason == "why"
+    assert out[("approach", "APP_N")].status == OK
 
 
 # ============================================================

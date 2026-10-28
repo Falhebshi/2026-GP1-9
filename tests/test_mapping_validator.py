@@ -332,3 +332,60 @@ def test_detector_location_reports_unusable_network_lane_length(tmp_path, length
     path.write_text(path.read_text().replace('length="10"', replacement), encoding='utf-8')
     config.network.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     assert 'invalid SUMO lane length: a_0' in '\n'.join(validate_network_mappings(config, path))
+
+
+# ============================================================
+# MEASUREMENT ZONES
+# ============================================================
+
+
+def zone_case(tmp_path, *, upstream=100, downstream=100, mapped=True):
+    """Route a (100 m) -> b (20 m) -> c (80 m); the stop line is the end of a_0."""
+    config, path = case(tmp_path)
+    network = NETWORK.replace('<lane id="a_0" index="0"/>', '<lane id="a_0" index="0" length="100"/>')
+    network = network.replace('<lane id="a_1" index="1"/>', '<lane id="a_1" index="1" length="100"/>')
+    network = network.replace('<lane id="b_0" index="0"/>', '<lane id="b_0" index="0" length="20"/>')
+    network = network.replace('<lane id="c_0" index="0"/>', '<lane id="c_0" index="0" length="80"/>')
+    path.write_text(network, encoding='utf-8')
+    config.network.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    config = with_canonical_lane(config, ['a_0'])
+    data = config.model_dump()
+    data['approach_mappings'][0].update(zone_upstream_m=upstream, zone_downstream_m=downstream)
+    if not mapped:
+        data['lane_mappings'] = []
+    return NetworkMappingConfig.model_validate(data), path
+
+
+def test_zone_fitting_the_route_is_valid(tmp_path):
+    """Exactly the 100 m before the stop line and the 100 m after it."""
+    config, path = zone_case(tmp_path)
+    assert validate_network_mappings(config, path) == []
+
+
+def test_zone_upstream_longer_than_route_rejected(tmp_path):
+    config, path = zone_case(tmp_path, upstream=100.5)
+    errors = validate_network_mappings(config, path)
+    assert errors == [
+        'Approach APP_A zone, movement MOV_A_C: zone_upstream_m 100.5 m exceeds '
+        'the 100.0 m of route before the stop line'
+    ]
+
+
+def test_zone_downstream_longer_than_route_rejected(tmp_path):
+    config, path = zone_case(tmp_path, downstream=150)
+    assert 'zone_downstream_m 150.0 m exceeds the 100.0 m of route after the junction exit' in (
+        '\n'.join(validate_network_mappings(config, path))
+    )
+
+
+def test_zone_is_not_checked_without_lane_mappings(tmp_path):
+    """A draft whose lanes are not mapped yet has no known stop line."""
+    config, path = zone_case(tmp_path, upstream=1000, mapped=False)
+    assert validate_network_mappings(config, path) == []
+
+
+def test_zone_reports_unusable_edge_length(tmp_path):
+    config, path = zone_case(tmp_path)
+    path.write_text(path.read_text().replace('length="80"', 'length="bad"'), encoding='utf-8')
+    config.network.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert 'invalid SUMO edge length on the route' in '\n'.join(validate_network_mappings(config, path))

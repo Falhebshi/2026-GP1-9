@@ -198,8 +198,8 @@ For the study area:
 
 | Movement | Free-flow time |
 |---|---:|
-| `MOV_W_E`, `MOV_W_N` | 28.72 s |
-| `MOV_W_S_SLIP` | 30.30 s |
+| `MOV_W_E`, `MOV_W_N` | 27.60 s |
+| `MOV_W_S_SLIP` | 29.18 s |
 | `MOV_E_W`, `MOV_E_S` | 33.24 s |
 | `MOV_N_E` | 45.03 s |
 | `MOV_N_W_SLIP` | 47.28 s |
@@ -396,7 +396,7 @@ The third rule selects vehicles by their planned stop-line time (departure plus 
 
 Insertion delay is reported but not judged. Slip roads are used for the timing rule because they have no signal, so a vehicle's crossing time depends only on its departure and speed; preferred speeds vary by about ±10 %, which is why the rule requires 95 % rather than all vehicles. Results are saved in `simulation/outputs/tests/sumo_demand_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
 
-For example, with seed 42 the study-area run inserts all 1,080 vehicles, 296 of the 300 slip-road vehicles cross in their interval (98.7 %), and the mean insertion delay is 0.1 s.
+For example, with seed 42 the study-area run inserts all 1,080 vehicles, 297 of the 300 slip-road vehicles cross in their interval (99.0 %), and the mean insertion delay is 0.1 s.
 
 ---
 

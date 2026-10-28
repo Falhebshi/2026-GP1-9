@@ -100,9 +100,21 @@ def test_one_unavailable_run_makes_the_result_unavailable():
     result = combine_runs(delay_spec(), values)
 
     assert result.status == UNAVAILABLE
-    assert result.reason == "unavailable in 1 of 10 runs"
+    assert result.reason == "incomplete passages; unavailable in 1 of 10 runs"
     assert result.value is None
     assert len(result.run_ids) == 10  # every run that was looked at
+
+
+def test_unavailable_runs_with_different_reasons_give_the_count_only():
+    values = {
+        "R1": ok(30),
+        "R2": RunValue(UNAVAILABLE, None, "incomplete passages"),
+        "R3": RunValue(UNAVAILABLE, None, "queue reached the zone end"),
+    }
+
+    result = combine_runs(delay_spec(), values)
+
+    assert result.reason == "unavailable in 2 of 3 runs"
 
 
 def test_runs_without_cars_are_left_out():
@@ -270,6 +282,63 @@ def test_unavailable_lane_makes_its_elements_unavailable():
     assert out[("approach", "APP_S")].result.status == UNAVAILABLE
     assert out[("approach", "APP_E")].result.status == OK
     assert out[("intersection", "INT_01")].result.status == UNAVAILABLE
+
+
+def approach_result(approach_id, runs, status=None, reason=None):
+    spec = KpiSpec(
+        kpi=KpiName.QUEUE_LENGTH, level=KpiLevel.APPROACH, element_id=approach_id,
+        unit=KpiUnit.METRES, method=KpiMethod.SIMULATION, interval=INTERVAL,
+        scenario_id="SCN_BASE", input_origins=SIM_ORIGINS,
+    )
+    if status == UNAVAILABLE:
+        return combine_runs(spec, {"R1": RunValue(UNAVAILABLE, None, reason)})
+    return combine_runs(spec, {f"R{i}": ok(v) for i, v in enumerate(runs, start=1)})
+
+
+def approach_results(**overrides):
+    runs = {"APP_E": [150, 150, 150], "APP_S": [90, 90, 90], **overrides}
+    return {a: v if not isinstance(v, list) else approach_result(a, v) for a, v in runs.items()}
+
+
+def test_approach_queue_is_its_full_zone_queue_combined_over_the_runs():
+    out = queue_from_lanes(
+        lane_results(LANE_E_4=[100, 100, 100]), QUEUE_LANES, MOVEMENT_MODELS,
+        approach_results=approach_results(APP_E=[140, 160, 150]),
+    )
+
+    east = out[("approach", "APP_E")]
+    assert east.result.value == pytest.approx(150)
+    assert east.lane_id is None
+    assert east.result.standard_deviation == pytest.approx(10)
+    assert out[("movement", "MOV_E_T")].result.value == pytest.approx(100)
+
+
+def test_approach_takes_a_longer_slip_lane_and_intersection_the_longest_approach():
+    """LANE_S_2 stands in for a slip lane here."""
+
+    out = queue_from_lanes(
+        lane_results(LANE_S_2=[200, 200, 200]), QUEUE_LANES, MOVEMENT_MODELS,
+        approach_results=approach_results(), slip_lane_ids={"LANE_S_2"},
+    )
+
+    assert out[("approach", "APP_S")].lane_id == "LANE_S_2"
+    assert out[("approach", "APP_S")].result.value == pytest.approx(200)
+    assert out[("intersection", "INT_01")].result.value == pytest.approx(200)
+    assert out[("intersection", "INT_01")].lane_id == "LANE_S_2"
+
+
+def test_unavailable_approach_queue_keeps_its_reason():
+    reason = "the queue reached the end of the measurement zone"
+    results = approach_results(APP_E=approach_result("APP_E", [], UNAVAILABLE, reason))
+
+    out = queue_from_lanes(
+        lane_results(), QUEUE_LANES, MOVEMENT_MODELS, approach_results=results
+    )
+
+    assert out[("approach", "APP_E")].result.status == UNAVAILABLE
+    assert out[("approach", "APP_E")].result.reason == f"{reason}; unavailable in 1 of 1 runs"
+    assert out[("intersection", "INT_01")].result.reason == out[("approach", "APP_E")].result.reason
+    assert out[("approach", "APP_S")].result.status == OK
 
 
 def test_slip_approaches_are_tagged():
