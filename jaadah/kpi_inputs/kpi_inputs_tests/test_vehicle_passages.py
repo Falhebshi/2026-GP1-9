@@ -87,10 +87,12 @@ def config_data(upstream=50, downstream=20):
     }
 
 
-def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=None, **zone):
+def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=None,
+            undeparted_in_tripinfo=False, **zone):
     """
     traces: {vehicle_id: [(time, odometer, speed), ...]}.
-    never_inserted: {vehicle_id: depart_s}, planned but not in FCD or tripinfo.
+    never_inserted: {vehicle_id: depart_s}, planned but not in FCD; in tripinfo with
+    depart -1 when undeparted_in_tripinfo (SUMO's write-undeparted), otherwise absent.
     """
     (tmp_path / "net.xml").write_text(NETWORK, encoding="utf-8")
     fcd = {}
@@ -105,6 +107,8 @@ def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=No
     factors = factors or {}
     (tmp_path / "trip.xml").write_text("<tripinfos>" + "".join(
         f'<tripinfo id="{i}" speedFactor="{factors.get(i, 1.0)}"/>' for i in traces)
+        + "".join(f'<tripinfo id="{i}" depart="-1" speedFactor="1.073"/>'
+                  for i in (never_inserted or {}) if undeparted_in_tripinfo)
         + "</tripinfos>", encoding="utf-8")
     movements = movements or {}
     departs = {**{i: 0 for i in traces}, **(never_inserted or {})}
@@ -213,6 +217,16 @@ def test_vehicle_never_inserted_is_reported_with_its_planned_stop_line_time(tmp_
     assert len(result.records) == 1
     [vehicle] = result.uninserted
     assert (vehicle.vehicle_id, vehicle.movement_id) == ("N", "MOV_A")
+    assert vehicle.planned_stop_line_time == at(45)
+
+
+def test_vehicle_written_as_undeparted_is_reported(tmp_path):
+    """SUMO's write-undeparted lists it in tripinfo with depart -1."""
+    result = collect(tmp_path, {"V": steady(26)}, never_inserted={"N": 30},
+                     undeparted_in_tripinfo=True)
+
+    [vehicle] = result.uninserted
+    assert vehicle.vehicle_id == "N"
     assert vehicle.planned_stop_line_time == at(45)
 
 
