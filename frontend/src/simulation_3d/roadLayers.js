@@ -145,7 +145,6 @@ export function prepareNetwork({ surface, markings, arrows, underpass, detail = 
 export function roadLayers(
   net,
   {
-    selectedIds = null,
     xray = false,
     paintOpacity = 1,
     slatOpacity = 1,
@@ -354,14 +353,6 @@ export function roadLayers(
       getFillColor: [255, 200, 140, Math.round(14 * night)],
       parameters: ADD,
       updateTriggers: { getFillColor: night },
-    }),
-    // The clicked lane gets a blue tint. It's drawn under the paint so the markings stay visible.
-    new SolidPolygonLayer({
-      id: 'lane-selected',
-      data: selectedIds ? net.lanes.filter((f) => selectedIds.has(f.properties.id)) : [],
-      getPolygon: ring,
-      getFillColor: [37, 99, 235, 150],
-      parameters: STREET,
     }),
     paint('paint', net.strokes, { parameters: STREET }),
     new SolidPolygonLayer({

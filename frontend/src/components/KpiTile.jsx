@@ -13,6 +13,8 @@ import './KpiTile.css'
 //                there is no value ('unavailable' unless you say otherwise)
 //   reason       why there is no value, shown in small text under the word
 //   detail       a small grey line under the value, e.g. "LOS C" (optional)
+//   warning      a quiet note when the value is over a standard limit,
+//                e.g. "over capacity" (optional, kpiTileProps fills it)
 //   tag          a small label in the top right corner, e.g. "Simulated"
 //                (optional)
 //   change       how much the value changed: positive = up, negative = down
@@ -22,6 +24,7 @@ import './KpiTile.css'
 //   changeTone   "good" (green), "bad" (red) or "neutral" (grey).
 //                The page decides, because it depends on the KPI:
 //                delay going up is bad, speed going up is good.
+//                A good or bad change also colors the tile's left edge.
 //   layout       "inline"   change sits to the right of the value
 //                "stacked"  change sits at the bottom of the tile.
 //
@@ -40,6 +43,7 @@ function KpiTile({
   status,
   reason,
   detail,
+  warning,
   tag,
   change,
   changeUnit = '%',
@@ -61,8 +65,11 @@ function KpiTile({
       : value
 
   let arrow = ''
-  if (change > 0) arrow = '↑'
-  if (change < 0) arrow = '↓'
+  if (change > 0) arrow = '▲'
+  if (change < 0) arrow = '▼'
+
+  // The colored edge shows at a glance whether the value got better or worse
+  const toneClass = hasChange && changeTone !== 'neutral' ? `kpi-tile-${changeTone}` : ''
 
   let changeLine = null
   if (isUnavailable) {
@@ -81,7 +88,7 @@ function KpiTile({
   }
 
   return (
-    <div className={`kpi-tile kpi-tile-${layout} ${className}`}>
+    <div className={`kpi-tile kpi-tile-${layout} ${toneClass} ${className}`}>
       <div className="kpi-head">
         <p className="kpi-label">{label}</p>
         {tag && <span className="kpi-tag">{tag}</span>}
@@ -100,12 +107,13 @@ function KpiTile({
 
       {layout === 'inline' && changeLine}
 
-      {/* The detail line, and why there is no value. In a stacked tile this
+      {/* The detail line, the warning, and why there is no value. In a stacked tile this
           box is always there, even when empty, so tiles in a kpi-row keep
           the same rows. */}
-      {(layout === 'stacked' || detail || (isUnavailable && reason)) && (
+      {(layout === 'stacked' || detail || warning || (isUnavailable && reason)) && (
         <div className="kpi-info">
           {detail && <p className="kpi-detail">{detail}</p>}
+          {warning && !isUnavailable && <p className="kpi-warning">{warning}</p>}
           {isUnavailable && reason && <p className="kpi-reason">{reason}</p>}
         </div>
       )}

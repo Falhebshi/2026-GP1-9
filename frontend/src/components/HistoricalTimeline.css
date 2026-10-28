@@ -101,6 +101,11 @@
   border-radius: 2px 2px 0 0;
 }
 
+/* A few bars only: wider, up to most of their column */
+.timeline-plot-few .timeline-bar {
+  max-width: 48px;
+}
+
 /* The slider. Its line is see-through, so the knob rides on the bottom
    edge of the bars. The margins pull it in by half a column on each side,
    which puts the knob exactly under the middle of the selected bar. */

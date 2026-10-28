@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
+import KpiGroup from '../components/KpiGroup'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
 import Notice from '../components/Notice'
@@ -157,7 +158,13 @@ function TrafficTrends() {
         </aside>
 
         <div className="trends-main">
-          <KpiRow summary={data.summary} dayType={dayType} approachId={approachId} note={note} />
+          <KpiRow
+            summary={data.summary}
+            dayType={dayType}
+            approachId={approachId}
+            periodDays={periodDays}
+            note={note}
+          />
 
           <div className="trends-row trends-row-wide-left">
             <TrendChart trend={data.trend} />
@@ -183,7 +190,7 @@ function TrafficTrends() {
 
 // ---- The five KPI tiles ----------------------------------------------------
 
-function KpiRow({ summary, dayType, approachId, note }) {
+function KpiRow({ summary, dayType, approachId, periodDays, note }) {
   const delay = summary.control_delay
   const queue = summary.queue_length
   const vc = summary.volume_to_capacity_ratio
@@ -191,42 +198,51 @@ function KpiRow({ summary, dayType, approachId, note }) {
   const peak = summary.peakWindow
   const dayWord = DAY_WORDS[dayType]
 
+  // What the tiles share is said once by KpiGroup, so the tiles leave out the tag and the
+  // "vs prev." note
+  const results = [delay.current, queue.current, summary.throughput.current, vc.current]
+
   return (
-    <div className="kpi-row">
-      <KpiTile
-        layout="stacked"
-        label="Avg control delay"
-        detail={grade ? `LOS ${grade}` : 'LOS unavailable'}
-        {...kpiTileProps(delay.current, delay.previous, note)}
-      />
-      <KpiTile
-        layout="stacked"
-        label="95th-pct queue, worst movement"
-        detail={`${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`}
-        {...kpiTileProps(queue.current, queue.previous, note)}
-      />
-      <KpiTile
-        layout="stacked"
-        label="Avg throughput"
-        detail={approachId === 'all' ? 'All signalized movements' : 'All movements of this approach'}
-        {...kpiTileProps(summary.throughput.current, summary.throughput.previous, note)}
-      />
-      <KpiTile
-        layout="stacked"
-        label={approachId === 'all' ? 'Critical v/c, peak 15 min' : 'Highest v/c, peak 15 min'}
-        detail={`${dayWord} ${timeRange(vc.current.interval_start, vc.current.interval_end)}`}
-        {...kpiTileProps(vc.current, vc.previous, note)}
-      />
-      <KpiTile
-        layout="stacked"
-        label="Peak congestion window"
-        value={timeOf(peak.interval_start)}
-        unit={`–${timeOf(peak.interval_end)}`}
-        detail={`Highest avg control delay, ${dayWord.toLowerCase()}`}
-        changeNote={peak.sameAsPrevious ? `Same window as ${note.replace('vs ', '')}` : 'Moved since the previous period'}
-        tag="Simulated"
-      />
-    </div>
+    <KpiGroup compared={`the previous ${periodDays} days`} results={results}>
+      <div className="kpi-row">
+        <KpiTile
+          layout="stacked"
+          label="Avg control delay"
+          detail={grade ? `LOS ${grade}` : 'LOS unavailable'}
+          {...kpiTileProps(delay.current, delay.previous)}
+          tag={undefined}
+        />
+        <KpiTile
+          layout="stacked"
+          label="95th-pct queue, worst movement"
+          detail={`${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`}
+          {...kpiTileProps(queue.current, queue.previous)}
+          tag={undefined}
+        />
+        <KpiTile
+          layout="stacked"
+          label="Avg throughput"
+          detail={approachId === 'all' ? 'All signalized movements' : 'All movements of this approach'}
+          {...kpiTileProps(summary.throughput.current, summary.throughput.previous)}
+          tag={undefined}
+        />
+        <KpiTile
+          layout="stacked"
+          label={approachId === 'all' ? 'Critical v/c, peak 15 min' : 'Highest v/c, peak 15 min'}
+          detail={`${dayWord} ${timeRange(vc.current.interval_start, vc.current.interval_end)}`}
+          {...kpiTileProps(vc.current, vc.previous)}
+          tag={undefined}
+        />
+        <KpiTile
+          layout="stacked"
+          label="Peak congestion window"
+          value={timeOf(peak.interval_start)}
+          unit={`–${timeOf(peak.interval_end)}`}
+          detail={`Highest avg control delay, ${dayWord.toLowerCase()}`}
+          changeNote={peak.sameAsPrevious ? `Same window as ${note.replace('vs ', '')}` : 'Moved since the previous period'}
+        />
+      </div>
+    </KpiGroup>
   )
 }
 

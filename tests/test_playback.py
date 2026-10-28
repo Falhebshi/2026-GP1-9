@@ -4,10 +4,12 @@ from datetime import datetime, timedelta
 import pytest
 
 from backend.outputs.playback import (
+    build_failed_run_index,
     build_run_index,
     interval_files,
     pack_signal_changes,
     pack_vehicle_intervals,
+    write_failed_run,
     write_playback,
 )
 from backend.outputs.signals import SignalChange
@@ -268,3 +270,96 @@ def test_car_never_under_a_roof_has_no_hidden_spans() -> None:
     [trip] = payloads["vehicles_0800.json"]["trips"]
 
     assert "hidden_spans" not in trip
+
+
+def test_completed_run_says_so() -> None:
+    index = build_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        duration_s=5400,
+        warm_up_s=900,
+        clearance_s=900,
+    )
+
+    assert index["status"] == "completed"
+    assert "failure_reason" not in index
+
+
+def test_failed_run_has_its_reason_and_no_files() -> None:
+    index = build_failed_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        failure_reason=" TraCIException: connection closed ",
+    )
+
+    assert index["status"] == "failed"
+    assert index["failure_reason"] == "TraCIException: connection closed"
+    assert "intervals" not in index
+    assert "signals_file" not in index
+
+
+def test_failed_run_without_a_reason_is_refused() -> None:
+    with pytest.raises(
+        ValueError,
+        match="needs a failure reason",
+    ):
+        build_failed_run_index(
+            run_id="RUN_TEST",
+            intersection_id="INT_001",
+            scenario="baseline",
+            run_start=RUN_START,
+            failure_reason="  ",
+        )
+
+
+def test_failed_run_writes_only_run_json(
+    tmp_path,
+) -> None:
+    index = build_failed_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        failure_reason="SUMO stopped",
+    )
+
+    write_failed_run(
+        output_dir=tmp_path,
+        run_index=index,
+    )
+
+    assert [path.name for path in tmp_path.iterdir()] == ["run.json"]
+
+    with (tmp_path / "run.json").open(
+        encoding="utf-8",
+    ) as file:
+        assert json.load(file) == index
+
+
+def test_only_a_test_run_is_marked_as_test() -> None:
+    real = build_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        duration_s=5400,
+        warm_up_s=900,
+        clearance_s=900,
+    )
+    test = build_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        duration_s=5400,
+        warm_up_s=900,
+        clearance_s=900,
+        is_test=True,
+    )
+
+    assert "is_test" not in real
+    assert test["is_test"] is True

@@ -9,24 +9,61 @@
 //     kpis: { 15: [...], 30: [...], 45: [...], 60: [...] },   predicted intersection KPIs
 //                                        per horizon, each [{ current: KpiResult, previous: KpiResult }]
 //                                        where previous is the value now, for the change
+//     approaches: { 15: [...], 30: [...], 45: [...], 60: [...] },   predicted approach KPIs per
+//                                        horizon, the same shape as on Current Traffic
 //     alerts: [{ id, title, details: [{ label, value }] }],
 //   }
 
-import { getIntersection } from './currentTrafficService'
+import { getIntersection, sampleApproaches } from './currentTrafficService'
 import { latestInterval, sampleResult, unavailableResult } from './sampleKpiResults'
 
 const ELEMENT = { level: 'intersection', id: 'INT_001' }
 const HORIZONS = [15, 30, 45, 60]
 
 // The intersection now, the same numbers as the Current Traffic sample
-const NOW = { control_delay: 46, queue_length: 128, throughput: 1842, volume_to_capacity_ratio: 0.91 }
+const NOW = {
+  control_delay: 46,
+  queue_length: 128,
+  queue_duration: 37,
+  queue_storage_ratio: 1.12,
+  throughput: 1842,
+  volume_to_capacity_ratio: 0.91,
+}
 
 // Predicted values at each horizon (minutes ahead)
 const PREDICTED = {
-  15: { control_delay: 50, queue_length: 138, throughput: 1780, volume_to_capacity_ratio: 0.84 },
-  30: { control_delay: 55, queue_length: 150, throughput: 1701, volume_to_capacity_ratio: 0.81 },
-  45: { control_delay: 58, queue_length: 162, throughput: 1655, volume_to_capacity_ratio: 0.88 },
-  60: { control_delay: 52, queue_length: 144, throughput: 1724, volume_to_capacity_ratio: 0.83 },
+  15: {
+    control_delay: 50,
+    queue_length: 138,
+    queue_duration: 40,
+    queue_storage_ratio: 1.15,
+    throughput: 1780,
+    volume_to_capacity_ratio: 0.84,
+  },
+  30: {
+    control_delay: 55,
+    queue_length: 150,
+    queue_duration: 44,
+    queue_storage_ratio: 1.2,
+    throughput: 1701,
+    volume_to_capacity_ratio: 0.81,
+  },
+  45: {
+    control_delay: 58,
+    queue_length: 162,
+    queue_duration: 47,
+    queue_storage_ratio: 1.24,
+    throughput: 1655,
+    volume_to_capacity_ratio: 0.88,
+  },
+  60: {
+    control_delay: 52,
+    queue_length: 144,
+    queue_duration: 42,
+    queue_storage_ratio: 1.18,
+    throughput: 1724,
+    volume_to_capacity_ratio: 0.83,
+  },
 }
 
 // The 15 minutes that end `minutes` after the latest interval
@@ -46,11 +83,25 @@ function sampleForecastKpis() {
     }))
     // LOS is left out of the forecast sample on purpose, to show how a missing value looks
     kpis[horizon].push({
-      current: unavailableResult('level_of_service', ELEMENT, interval, 'Not calculated for forecasts yet.'),
+      current: unavailableResult(
+        'level_of_service',
+        ELEMENT,
+        interval,
+        'Not calculated for forecasts yet.',
+      ),
       previous: null,
     })
   }
   return kpis
+}
+
+// Predicted approach KPIs per horizon. For now the same sample values as Current Traffic, for
+// the interval of each horizon.
+function sampleForecastApproaches() {
+  const now = latestInterval()
+  return Object.fromEntries(
+    HORIZONS.map((horizon) => [horizon, sampleApproaches(intervalAhead(now, horizon))]),
+  )
 }
 
 // Problems the forecast expects. Click one to see where and when.
@@ -89,13 +140,15 @@ export async function getForecast() {
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === 'error') throw new Error('The forecast service is not responding.')
   if (demo === 'empty') {
-    return { isSample: true, intersection, kpis: { 15: [], 30: [], 45: [], 60: [] }, alerts: [] }
+    const none = { 15: [], 30: [], 45: [], 60: [] }
+    return { isSample: true, intersection, kpis: none, approaches: none, alerts: [] }
   }
 
   return {
     isSample: true,
     intersection,
     kpis: sampleForecastKpis(),
+    approaches: sampleForecastApproaches(),
     alerts: SAMPLE_FORECAST_ALERTS,
   }
 }

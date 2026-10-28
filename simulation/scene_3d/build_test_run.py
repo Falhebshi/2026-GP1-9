@@ -221,6 +221,7 @@ def main() -> None:
             warm_up_s=WARM_UP_S,
             clearance_s=CLEARANCE_S,
             scenario="baseline",
+            is_test=True,
         )
 
 
