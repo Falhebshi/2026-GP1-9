@@ -16,9 +16,9 @@ import { prepareBuildings, buildingLayers } from '../simulation_3d/buildings'
 import { prepareContext } from '../simulation_3d/context'
 import { prepareLaneIndex, approachLanes } from '../simulation_3d/laneIndex'
 import { prepareVegetation, vegetationLayers } from '../simulation_3d/vegetation'
-import { prepareVehicles, vehicleStates, vehicleLayers } from '../simulation_3d/vehicles'
+import { vehicleIntervals, vehicleStates, vehicleLayers } from '../simulation_3d/vehicles'
 import { ENV, envLighting } from '../simulation_3d/palette'
-import { getIntersectionScene } from '../services/simulationService'
+import { getIntersectionScene, getVehicleInterval } from '../services/simulationService'
 import SceneNavControls from './SceneNavControls'
 import ApproachPanel from './ApproachPanel'
 import SegmentedControl from './SegmentedControl'
@@ -29,10 +29,11 @@ import './TrafficScene3D.css'
 // its lanes on the map) highlights its lanes and opens its KPIs and movements.
 // Goes inside <SimulationViewport> and keeps the top-left corner free for the viewport's card.
 //
-//   intersectionId   folder in public/data, e.g. "turki_imamsaud"
+//   intersectionId   folder in public/data, e.g. "INT_001"
 //   center           [longitude, latitude] the camera starts over
 //   scenario         "baseline" (default) or an intervention run
-//   time             simulation time in seconds (optional, without it the scene loops by itself)
+//   time             seconds from the start of the analysis period (optional, without it the scene
+//                    loops through the analysis period by itself)
 //   bounds           study area { west, south, east, north }, everything outside is cut off
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
@@ -40,7 +41,9 @@ import './TrafficScene3D.css'
 //   approaches       approaches with their KPIs for the panel (see services/currentTrafficService.js)
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
-// Cars come from the SUMO run (sim.json); cars inside the tunnel are not shown.
+// Cars and signal indications come from the SUMO run (run.json, its 15-minute vehicle files and
+// signals.json); cars inside the tunnel are not shown. Only the analysis period is shown, never the
+// warm-up (the network filling up) or the clearance (the last cars finishing).
 
 const VIEWS = {
   '3d': { pitch: 50, bearing: -25 },
@@ -206,6 +209,7 @@ function TrafficScene3D({
   const staticLayersRef = useRef([])
   const lastSigRef = useRef(null)
   const tRef = useRef(time ?? 0)
+  const startRef = useRef(0) // scene time of the start of the analysis period
   const autoplay = time === undefined
   const hoverRef = useRef(null)
   const selRef = useRef(null)
@@ -269,7 +273,8 @@ function TrafficScene3D({
     // cars move every frame, so with cars the scene is always redrawn
     if (!force && !s.veh && dyn === lastSigRef.current) return
     lastSigRef.current = dyn
-    const cars = s.veh ? vehicleLayers(vehicleStates(s.veh, t), t) : []
+    const vehicles = s.veh?.at(t) // null while this interval's file is still loading
+    const cars = vehicles ? vehicleLayers(vehicleStates(vehicles, t), t) : []
     deckRef.current.setProps({ layers: [...staticLayersRef.current, ...clip(cars), ...clip(dyn)] })
   }
 
@@ -362,7 +367,12 @@ function TrafficScene3D({
     getIntersectionScene(intersectionId, scenario)
       .then((d) => {
         if (cancelled) return
-        const sig = prepareSignals(d.signals, d.surface, center)
+        const sig = prepareSignals(d.signalHeads, d.signals)
+        // the analysis period of the run; no run yet: the lights stay red, the scene loops 2 minutes
+        const from = d.run?.analysis_start_s ?? 0
+        const to = d.run?.analysis_end_s ?? 120
+        startRef.current = from
+        tRef.current = from + (time ?? 0)
         sceneRef.current = {
           net: prepareNetwork({
             surface: d.surface,
@@ -375,13 +385,14 @@ function TrafficScene3D({
           bld: prepareBuildings(d.buildings, center),
           ctx: prepareContext(d.context),
           ss: d.streetscape.features,
-          veh: d.sim && d.sim.available !== false ? prepareVehicles(d.sim) : null,
+          veh: d.run
+            ? vehicleIntervals(d.run, (file) => getVehicleInterval(intersectionId, scenario, file))
+            : null,
           veg: null,
           laneIndex: prepareLaneIndex({
             surface: d.surface,
             detail: d.detail,
             arrows: d.arrows,
-            signals: sig,
             center,
           }),
         }
@@ -395,7 +406,7 @@ function TrafficScene3D({
           planting: d.planting,
         })
         setStatus('ready')
-        callbacksRef.current.onReady?.({ duration: sig.tEnd })
+        callbacksRef.current.onReady?.({ duration: to - from })
         rebuildStatic()
         // No time from the page, so loop the run at real speed
         if (autoplay) {
@@ -403,7 +414,7 @@ function TrafficScene3D({
             const dt = (now - last) / 1000
             last = now
             let nt = tRef.current + dt
-            if (nt > sig.tEnd) nt = 0
+            if (nt > to) nt = from
             tRef.current = nt
             redraw(false)
             raf = requestAnimationFrame(tick)
@@ -435,7 +446,7 @@ function TrafficScene3D({
   // Follow the time from the page, e.g. usePlayback
   useEffect(() => {
     if (time === undefined) return
-    tRef.current = time
+    tRef.current = startRef.current + time
     redraw(false)
   }, [time]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -41,11 +41,39 @@ const CARPAINT = { ambient: 0.38, diffuse: 0.6, shininess: 80, specularColor: [1
 const GLOSS = { ambient: 0.35, diffuse: 0.45, shininess: 120, specularColor: [215, 220, 226] }
 const MATTE = { ambient: 0.45, diffuse: 0.5, shininess: 12, specularColor: [24, 24, 24] }
 
+const LANE_CHANGE_S = 2 // how long a lane change takes on screen, in seconds
+const JUMP_M = 2.5 // a sideways step this big between two samples is a lane change…
+const STRAIGHT_DEG = 5 // …when the car keeps its heading
+
+// SUMO moves a car to the next lane in one step (instant lane changes keep the KPIs right). On
+// screen that looks like a jump, so the sideways move is spread over LANE_CHANGE_S, half before
+// and half after the step. Only the drawing changes; the files keep SUMO's positions.
+function smoothLaneChanges(trip) {
+  const path = trip.path.map((p) => [...p])
+  const ts = trip.timestamps
+  for (let k = 1; k < path.length; k++) {
+    const turn = Math.abs(((trip.angles[k] - trip.angles[k - 1] + 540) % 360) - 180)
+    if (turn >= STRAIGHT_DEG) continue
+    const [dx, dy] = toM(trip.path[k], trip.path[k - 1])
+    const h = (trip.angles[k - 1] * Math.PI) / 180
+    const side = dx * Math.cos(h) - dy * Math.sin(h) // metres to the right of the heading
+    if (Math.abs(side) < JUMP_M) continue
+    const shift = [Math.cos(h) * side, -Math.sin(h) * side] // the sideways part of the step
+    for (let i = 0; i < path.length; i++) {
+      const w = (ts[i] - (ts[k] - LANE_CHANGE_S / 2)) / LANE_CHANGE_S // 0 to 1 across the change
+      if (w <= 0 || w >= 1) continue
+      const part = i < k ? w : w - 1 // before the step: start moving over; after it: still catching up
+      path[i] = fromM([shift[0] * part, shift[1] * part], path[i])
+    }
+  }
+  return { ...trip, path }
+}
+
 // Prepare the trips once. Each frame then finds the right sample with a binary search.
 export function prepareVehicles(sim) {
   const trips = (sim?.trips ?? [])
     .filter((t) => t.timestamps?.length > 1)
-    .map((t) => ({ ...t, ...carOf(t.vehicle_id) }))
+    .map((t) => ({ ...smoothLaneChanges(t), ...carOf(t.vehicle_id) }))
   return { trips, tEnd: sim?.t_end ?? 0 }
 }
 
@@ -153,12 +181,15 @@ function sample(trip, t) {
   }
 }
 
+// A car is hidden only while it is under the tunnel roof (hidden_spans, from build_playback.py).
+// On the open ramps it stays visible, although it is below street level.
+const underRoof = (trip, t) => trip.hidden_spans?.some(([from, to]) => t >= from && t <= to)
+
 export function vehicleStates(v, t) {
   const out = []
-  // Skip cars in the underpass, since you can't see into the tunnel from above.
   for (const trip of v.trips) {
     const s = sample(trip, t)
-    if (s && s.position[2] > -0.4) out.push(s)
+    if (s && !underRoof(trip, t)) out.push(s)
   }
   return out
 }
@@ -216,4 +247,36 @@ export function vehicleLayers(states, t, { visible = true } = {}) {
     )
   }
   return layers
+}
+
+// Keeps the vehicles of a run, one 15-minute file at a time (see run.json). at(t) gives the
+// vehicles of the interval that contains t, or null while its file is still loading. It also
+// starts loading the next interval of the analysis period (the first one again at its end), so
+// the playback does not stop at the boundary.
+//   run        run.json
+//   loadFile   loads one vehicle file by its name, e.g. getVehicleInterval from the service
+export function vehicleIntervals(run, loadFile) {
+  const intervals = run.intervals
+  const first = intervals.findIndex((interval) => interval.start_s >= run.analysis_start_s)
+  const last = intervals.findLastIndex((interval) => interval.end_s <= run.analysis_end_s)
+  const loaded = {}
+  const requested = new Set()
+
+  const request = (interval) => {
+    if (requested.has(interval.file)) return
+    requested.add(interval.file)
+    loadFile(interval.file)
+      .then((data) => (loaded[interval.file] = prepareVehicles(data)))
+      .catch(() => (loaded[interval.file] = null)) // a missing file shows no cars for that interval
+  }
+
+  return {
+    at(t) {
+      const found = intervals.findIndex((interval) => t < interval.end_s)
+      const i = found === -1 ? intervals.length - 1 : found
+      request(intervals[i])
+      request(intervals[i >= last ? first : i + 1])
+      return loaded[intervals[i].file] ?? null
+    },
+  }
 }
