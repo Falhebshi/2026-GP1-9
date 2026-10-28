@@ -262,11 +262,11 @@ Results of the check with hand-made demand, the same for every demand movement:
 
 | Demand per movement | Vehicles | Rules | South left time loss | Longest lane queue | Cycles reaching a section end (of 30) | Longest approach queue |
 | --- | --- | --- | --- | --- | --- | --- |
-| 80 veh/h | 1,080 | all pass | 51 s | 3 vehicles (21 m) | none | 21 m |
-| 600 veh/h | 8,100 | all pass | 204 s | 16 vehicles (South lane 2, its whole 118.9 m section) | South 25–28, West 1–7 | South 291 m (54 vehicles) |
+| 80 veh/h | 1,080 | all pass | 50 s | 3 vehicles (21 m) | none | 21 m |
+| 600 veh/h | 8,100 | all pass | 220 s | 16 vehicles (South lanes 1 and 2, their whole 118.9 m section) | North 1, South 28, West 2–9 | South 314 m (57 vehicles) |
 
-At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections and reaches 291 m back on the approach; no approach queue reaches its zone end. The slip lanes have no queue at either level.
+At 600 veh/h South's left turn is over its capacity of about 440 veh/h, so its queue grows beyond its lanes' sections and reaches 314 m back on the approach; no approach queue reaches its zone end. The slip lanes have no queue at either level.
 
-An overload check at 1,600 veh/h per movement, with a 30-minute analysis period (14,400 planned vehicles), also passes every rule. SUMO could not insert 5,907 vehicles before the run ended, the number it reports as still waiting, and each is recorded as an `UninsertedVehicle`. East's queue reached its zone end in all 15 cycles, North's in 9 and South's in 11. West's never did (104 m at most), yet 2,719 of its vehicles never entered, for the insertion reason below; only the never-inserted records show it.
+An overload check at 1,600 veh/h per movement, with a 30-minute analysis period (14,400 planned vehicles), also passes every rule. SUMO could not insert 4,689 vehicles before the run ended, the number it reports as still waiting, and each is recorded as an `UninsertedVehicle`. East's and West's queues reached their zone ends in all 15 cycles, North's in 13 and South's in 9.
 
-At 600 veh/h West's vehicles wait up to 22 s to enter the network although West's queue reaches only 104 m: the demand file inserts every West vehicle on lane 0 of the three-lane entry edge (`departLane="best"`), and one lane cannot take 1,800 veh/h at full speed. South's vehicles, also all on one entry lane, wait up to 5.5 s. A long wait to enter is therefore not on its own evidence that the queue reached the model edge.
+West's routes start on `133793906#0`. Starting them one edge further back, on `133793727#0`, put every West vehicle on lane 0 of that edge (`departLane="best"`), and one lane cannot take 1,800 veh/h at full speed: at 600 veh/h West's vehicles waited up to 22 s to enter although West's queue reached only 104 m. From `133793906#0` they wait at most 1.4 s. South's vehicles, all on one entry lane, wait up to 5.0 s. A long wait to enter is therefore not on its own evidence that the queue reached the model edge.

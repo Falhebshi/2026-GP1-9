@@ -99,13 +99,22 @@ def execute_scenario(
     raw_dir.mkdir()
     fcd_path = raw_dir / "fcd.xml"
     tripinfo_path = raw_dir / "tripinfo.xml"
+    tls_states_path = raw_dir / "tls_states.xml"
+    # Saves the signal state of every traffic light each time it switches.
+    additional_path = run_dir / "tls_states.add.xml"
+    additional = ET.Element("additional")
+    ET.SubElement(additional, "timedEvent", type="SaveTLSSwitchStates", dest=str(tls_states_path))
+    additional_path.write_bytes(ET.tostring(additional, encoding="utf-8", xml_declaration=True))
     config = ET.Element("configuration")
     inputs = ET.SubElement(config, "input")
     ET.SubElement(inputs, "net-file", value=network_filename)
     ET.SubElement(inputs, "route-files", value=route_filename)
+    ET.SubElement(inputs, "additional-files", value=str(additional_path))
     outputs = ET.SubElement(config, "output")
+    ET.SubElement(outputs, "precision", value="3")
     ET.SubElement(outputs, "fcd-output", value=str(fcd_path))
-    ET.SubElement(outputs, "fcd-output.attributes", value="id,x,y,angle,type,speed,lane,edge,pos")
+    ET.SubElement(outputs, "fcd-output.geo", value="true")
+    ET.SubElement(outputs, "fcd-output.attributes", value="id,x,y,angle,type,speed,lane,pos,odometer,signals")
     ET.SubElement(outputs, "tripinfo-output", value=str(tripinfo_path))
     ET.SubElement(outputs, "tripinfo-output.write-unfinished", value="true")
     ET.SubElement(outputs, "tripinfo-output.write-undeparted", value="true")
@@ -132,7 +141,9 @@ def execute_scenario(
                 "exists": path.is_file(),
                 "potentially_partial": execution["status"] != "completed" and path.is_file(),
             }
-            for name, path in (("fcd", fcd_path), ("tripinfo", tripinfo_path))
+            for name, path in (
+                ("fcd", fcd_path), ("tripinfo", tripinfo_path), ("tls_states", tls_states_path),
+            )
         },
         "provenance": {
             "mapping_version": mapping.mapping_version,

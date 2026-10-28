@@ -107,10 +107,18 @@ def test_execution_uses_validated_artifacts_and_full_window(case):
     root = ET.parse(args[0]).getroot()
     assert root.find("input/net-file").get("value") == str(case.network.resolve())
     assert root.find("input/route-files").get("value") == str(case.generated.route_file)
-    assert [child.tag for child in root.find("input")] == ["net-file", "route-files"]
+    assert [child.tag for child in root.find("input")] == ["net-file", "route-files", "additional-files"]
     assert [child.tag for child in root] == ["input", "output"]
+    additional_path = case.run_dir / "tls_states.add.xml"
+    assert root.find("input/additional-files").get("value") == str(additional_path)
+    events = ET.parse(additional_path).getroot().findall("timedEvent")
+    assert [event.attrib for event in events] == [
+        {"type": "SaveTLSSwitchStates", "dest": str(case.run_dir / "raw/tls_states.xml")}
+    ]
+    assert root.find("output/precision").get("value") == "3"
     assert root.find("output/fcd-output").get("value") == str(case.run_dir / "raw/fcd.xml")
-    assert root.find("output/fcd-output.attributes").get("value") == "id,x,y,angle,type,speed,lane,edge,pos"
+    assert root.find("output/fcd-output.geo").get("value") == "true"
+    assert root.find("output/fcd-output.attributes").get("value") == "id,x,y,angle,type,speed,lane,pos,odometer,signals"
     assert root.find("output/device.fcd.period") is None
     assert root.find("output/tripinfo-output").get("value") == str(case.run_dir / "raw/tripinfo.xml")
     assert root.find("output/tripinfo-output.write-unfinished").get("value") == "true"
@@ -118,6 +126,7 @@ def test_execution_uses_validated_artifacts_and_full_window(case):
     assert result["raw_outputs"] == {
         "fcd": {"path": str(case.run_dir / "raw/fcd.xml"), "exists": False, "potentially_partial": False},
         "tripinfo": {"path": str(case.run_dir / "raw/tripinfo.xml"), "exists": False, "potentially_partial": False},
+        "tls_states": {"path": str(case.run_dir / "raw/tls_states.xml"), "exists": False, "potentially_partial": False},
     }
     assert (case.run_dir / "raw").is_dir()
     assert {name: path.read_bytes() for name, path in case.files.items()} == before
@@ -294,6 +303,8 @@ def test_completed_run_reports_present_outputs_without_validating_contents(case,
         root = ET.parse(config_path).getroot()
         for tag in ("fcd-output", "tripinfo-output"):
             Path(root.find(f"output/{tag}").get("value")).write_text("unparsed XML")
+        additional = ET.parse(root.find("input/additional-files").get("value")).getroot()
+        Path(additional.find("timedEvent").get("dest")).write_text("unparsed XML")
         return case.summary
 
     monkeypatch.setattr(run_scenario, "run_simulation", write_outputs)
