@@ -1,6 +1,8 @@
 import json
 import sys
 
+import pytest
+
 from backend.outputs.intersections import (
     REPO_ROOT,
 )
@@ -57,6 +59,14 @@ def load_run() -> dict:
         return json.load(file)
 
 
+# Once the baseline run's real files replace the test run, the checks
+# that read the test run from the folder no longer apply.
+needs_test_run = pytest.mark.skipif(
+    not load_run().get("is_test", False),
+    reason="the frontend folder holds a real run, not the test run",
+)
+
+
 def study_kpis() -> dict:
     """Build the test KPI results of the test run."""
 
@@ -90,6 +100,7 @@ def test_every_result_is_a_valid_kpi_result() -> None:
         KpiResult.model_validate(stored)
 
 
+@needs_test_run
 def test_results_cover_every_analysis_interval() -> None:
     results = study_kpis()["results"]
 
@@ -177,11 +188,13 @@ def test_shared_lane_movements_show_the_lane_queue() -> None:
     }
 
 
+@needs_test_run
 def test_test_files_say_they_are_test_data() -> None:
     assert study_kpis()["is_test"] is True
     assert load_run()["is_test"] is True
 
 
+@needs_test_run
 def test_frontend_copy_is_up_to_date() -> None:
     with (RUN_DIR / "kpis.json").open(
         encoding="utf-8",
