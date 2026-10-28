@@ -26,30 +26,25 @@ import {
   sampleResult,
 } from './sampleKpiResults'
 
-const CENTER = [46.633621, 24.735289]
+// The study intersection. Its name, area and centre come from its record in
+// public/data/intersections.json, a copy of data/processed/intersections.json.
+const INTERSECTION_ID = 'INT_001'
 
 // Half the width of the square that is shown around the centre, in metres. 350 m is just inside
 // the shortest main road in the network (Turki Rd going north-west ends at about 359 m), so every
 // main road reaches the edge and they are all cut at the same line.
 const HALF_SIZE_M = 350
 const M_PER_DEG_LAT = 110540
-const M_PER_DEG_LON = 111320 * Math.cos((CENTER[1] * Math.PI) / 180)
 
-// id is the folder in public/data, center is where the 3D camera starts
-const INTERSECTION = {
-  id: 'turki_imamsaud',
-  center: CENTER,
-  // square around the centre, nothing outside it is drawn
-  bounds: {
-    west: CENTER[0] - HALF_SIZE_M / M_PER_DEG_LON,
-    east: CENTER[0] + HALF_SIZE_M / M_PER_DEG_LON,
-    south: CENTER[1] - HALF_SIZE_M / M_PER_DEG_LAT,
-    north: CENTER[1] + HALF_SIZE_M / M_PER_DEG_LAT,
-  },
-  name: 'Prince Turki Al-Awwal Rd × Imam Saud Rd',
-  area: 'An Nakheel, Riyadh',
-  approaches: 4,
-  signalType: 'Fixed-time, 120 s cycle', // same signal program as in SUMO
+// The square around the centre; nothing outside it is drawn
+function squareAround([longitude, latitude]) {
+  const mPerDegLon = 111320 * Math.cos((latitude * Math.PI) / 180)
+  return {
+    west: longitude - HALF_SIZE_M / mPerDegLon,
+    east: longitude + HALF_SIZE_M / mPerDegLon,
+    south: latitude - HALF_SIZE_M / M_PER_DEG_LAT,
+    north: latitude + HALF_SIZE_M / M_PER_DEG_LAT,
+  }
 }
 
 // Sample data until the backend API is ready
@@ -202,16 +197,32 @@ function sampleApproaches(interval) {
   ]
 }
 
-// The intersection on its own, for pages that only need its name and position
+// The intersection on its own, for pages that only need its name and position.
+// id is also the folder of its 3D data in public/data.
 export async function getIntersection() {
-  await wait(150)
-  return INTERSECTION
+  const response = await fetch('/data/intersections.json')
+  if (!response.ok) throw new Error('The intersection information could not be loaded.')
+
+  const record = (await response.json()).find((i) => i.intersection_id === INTERSECTION_ID)
+  if (!record) throw new Error(`${INTERSECTION_ID} is not in intersections.json.`)
+
+  const center = [record.center_longitude, record.center_latitude]
+  return {
+    id: record.intersection_id,
+    center,
+    bounds: squareAround(center),
+    name: record.name_en,
+    area: record.area_label,
+    approaches: 4,
+    signalType: 'Fixed-time, 120 s cycle', // same signal program as in SUMO
+  }
 }
 
 // Gives back everything the Current Traffic page shows. It is "async" because the real version
 // will wait for the server; the sample version waits a moment to behave the same way.
 export async function getCurrentTraffic() {
   await wait(300)
+  const intersection = await getIntersection()
 
   // FOR TESTING ONLY: add ?demo=empty or ?demo=error to the page address
   // to see the empty and error states.
@@ -220,7 +231,7 @@ export async function getCurrentTraffic() {
   if (demo === 'empty') {
     return {
       isSample: true,
-      intersection: INTERSECTION,
+      intersection,
       timeline: [],
       kpis: [],
       alerts: [],
@@ -233,7 +244,7 @@ export async function getCurrentTraffic() {
 
   return {
     isSample: true,
-    intersection: INTERSECTION,
+    intersection,
     timeline: sampleTimelineBars(),
     kpis: sampleIntersectionKpis(interval, previousInterval),
     alerts: SAMPLE_ALERTS,

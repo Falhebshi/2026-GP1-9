@@ -6,13 +6,17 @@ from backend.analytics.kpi.intervals import analysis_intervals
 from backend.analytics.kpi.parameters import QUEUE_PERCENTILE
 from backend.analytics.kpi.queue import (
     LaneQueue,
+    ZONE_END_REASON,
+    approach_interval_queues,
+    approach_period_percentile_queues,
     interval_queues,
     nearest_rank_percentile,
     PERIOD_INCOMPLETE_REASON,
     period_percentile_queues,
     storage_ratio,
+    zone_end_approaches,
 )
-from jaadah.models.outputs import CycleQueueRecord
+from jaadah.models.outputs import ApproachCycleQueueRecord, CycleQueueRecord
 
 
 RIYADH = timezone(timedelta(hours=3))
@@ -341,3 +345,129 @@ def test_same_cycle_start_on_two_lanes_is_allowed():
 def test_checks_also_apply_to_percentile():
     with pytest.raises(ValueError, match="belongs to run RUN_2"):
         per_period([cycle(at(8, 0), 20.0, 3, run_id="RUN_2")])
+
+
+# ============================================================
+# CUT-OFF CYCLES (queue reached the end of what was measured)
+# ============================================================
+
+def test_interval_with_a_cut_off_cycle_reaches_the_end():
+    queues = per_interval([
+        cycle(at(8, 0), 30.0, 5),
+        cycle(at(8, 2), 118.0, 18, reaches_section_end=True),
+    ])
+
+    assert queues[("LANE_E_2", FIRST)] == LaneQueue(118.0, 18, reaches_end=True)
+    assert queues[("LANE_E_2", SECOND)] is None
+
+
+def test_interval_without_cut_off_cycles_does_not_reach_the_end():
+    queues = per_interval([cycle(at(8, 0), 30.0, 5)])
+
+    assert not queues[("LANE_E_2", FIRST)].reaches_end
+
+
+def records_for_period(cut_off_count):
+    """
+    20 cycles (10 per interval) of 10, 20, ... 200 m; the longest
+    cut_off_count of them reached the section end.
+    """
+
+    records = []
+    for i in range(20):
+        start = at(8, 0) + timedelta(seconds=90 * i)
+        records.append(cycle(
+            start, 10.0 * (i + 1), i + 1,
+            reaches_section_end=i >= 20 - cut_off_count,
+        ))
+    return records
+
+
+def test_percentile_is_valid_when_only_cycles_above_its_rank_were_cut_off():
+    """Rank 19 of 20 is 190 m; only the 200 m cycle was cut off."""
+
+    queue = per_period(records_for_period(1))["LANE_E_2"]
+
+    assert queue == LaneQueue(190.0, 19, reaches_end=False)
+
+
+def test_percentile_reaches_the_end_when_its_cycle_was_cut_off():
+    queue = per_period(records_for_period(2))["LANE_E_2"]
+
+    assert queue.reaches_end
+    assert queue.length_m == 190.0
+
+
+def test_cut_off_cycle_sorts_above_an_equal_uncut_cycle():
+    """Its real queue was longer, so it ranks higher."""
+
+    records = records_for_period(0)
+    records[18] = cycle(records[18].cycle_start, 200.0, 20, reaches_section_end=True)
+
+    queue = per_period(records)["LANE_E_2"]
+
+    assert queue == LaneQueue(200.0, 20, reaches_end=False)
+
+
+# ============================================================
+# APPROACH (FULL-ZONE) QUEUES
+# ============================================================
+
+APPROACHES = ["APP_E", "APP_S"]
+
+
+def approach_cycle(cycle_start, length_m, vehicles, **overrides):
+    data = {
+        "run_id": "RUN_1",
+        "approach_id": "APP_E",
+        "cycle_start": cycle_start,
+        "cycle_end": cycle_start + timedelta(seconds=120),
+        "max_queue_length_m": length_m,
+        "max_queue_vehicles": vehicles,
+    }
+    data.update(overrides)
+    return ApproachCycleQueueRecord(**data)
+
+
+def test_approach_queue_per_interval():
+    queues = approach_interval_queues("RUN_1", APPROACHES, INTERVALS, [
+        approach_cycle(at(8, 0), 150.0, 24),
+        approach_cycle(at(8, 2), 210.0, 33),
+    ])
+
+    assert queues[("APP_E", FIRST)] == LaneQueue(210.0, 33)
+    assert queues[("APP_S", FIRST)] is None
+
+
+def test_approach_queue_at_the_zone_end():
+    queues = approach_interval_queues("RUN_1", APPROACHES, INTERVALS, [
+        approach_cycle(at(8, 0), 388.0, 60, reaches_zone_end=True),
+    ])
+
+    assert queues[("APP_E", FIRST)].reaches_end
+    assert zone_end_approaches(queues) == {("APP_E", FIRST): ZONE_END_REASON}
+
+
+def test_approach_percentile_over_the_period():
+    records = [
+        approach_cycle(at(8, 0) + timedelta(seconds=90 * i), 10.0 * (i + 1), i + 1)
+        for i in range(20)
+    ]
+
+    queues = approach_period_percentile_queues("RUN_1", ["APP_E"], INTERVALS, records)
+
+    assert queues["APP_E"] == LaneQueue(190.0, 19)
+
+
+def test_approach_not_analysed_rejected():
+    with pytest.raises(ValueError, match="approach APP_X is not analysed"):
+        approach_interval_queues(
+            "RUN_1", APPROACHES, INTERVALS, [approach_cycle(at(8, 0), 1.0, 1, approach_id="APP_X")]
+        )
+
+
+def test_approach_duplicate_cycle_rejected():
+    with pytest.raises(ValueError, match="approach APP_E has two records"):
+        approach_interval_queues("RUN_1", APPROACHES, INTERVALS, [
+            approach_cycle(at(8, 0), 1.0, 1), approach_cycle(at(8, 0), 2.0, 1),
+        ])

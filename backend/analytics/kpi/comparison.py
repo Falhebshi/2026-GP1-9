@@ -6,8 +6,11 @@ Combining runs and comparing scenarios (docs/kpi_engine.md section 12).
   (n - 1). If any run is unavailable, the result is unavailable; runs
   without a value because nothing happened (not applicable) are left
   out.
-- Queue lengths and storage ratios are combined per lane first; a
-  movement, approach or intersection then takes its longest lane.
+- Queue lengths and storage ratios are combined per lane (and queue
+  lengths per approach, over the whole zone) first; a movement then
+  takes its longest lane, an approach the larger of its full-zone
+  queue and its slip lanes, and the intersection its longest
+  approach.
 - A baseline and an intervention are compared pair by pair (matched
   seeds): the mean of the per-pair differences, with their standard
   deviation, as a KpiComparison.
@@ -219,10 +222,13 @@ def combine_runs(spec: KpiSpec, values: dict[str, RunValue]) -> KpiResult:
     unavailable = [r for r, v in values.items() if v.status == KpiStatus.UNAVAILABLE]
 
     if unavailable:
+        reasons = {values[r].reason for r in unavailable}
+        cause = reasons.pop() if len(reasons) == 1 and None not in reasons else None
+        count = f"unavailable in {len(unavailable)} of {len(values)} runs"
         return _result(
             spec,
             KpiStatus.UNAVAILABLE,
-            reason=f"unavailable in {len(unavailable)} of {len(values)} runs",
+            reason=f"{cause}; {count}" if cause else count,
             run_ids=list(values),
         )
 
@@ -323,7 +329,8 @@ def _element_fields(level: KpiLevel, element_id: str) -> dict:
 class LaneChoice(NamedTuple):
     """
     A movement, approach or intersection queue value and the lane it
-    was taken from (None when it is not ok).
+    was taken from (None when it is not ok, or when it is an approach's
+    full-zone queue).
     """
 
     result: KpiResult
@@ -335,13 +342,24 @@ def queue_from_lanes(
     lanes: list[ApproachLane],
     movements: dict[str, Movement],
     uncontrolled_by_approach: set[str] = frozenset(),
+    approach_results: dict[str, KpiResult] | None = None,
+    slip_lane_ids: set[str] = frozenset(),
 ) -> dict[tuple[str, str], LaneChoice]:
     """
     Movement, approach and intersection values of a queue length or
     storage ratio from the lane results, already combined over the
-    runs: the longest (highest) lane, with that lane's mean, standard
-    deviation and runs. Keys are ("movement", id), ("approach", id)
-    and ("intersection", id).
+    runs. Keys are ("movement", id), ("approach", id) and
+    ("intersection", id). The chosen value keeps its source's mean,
+    standard deviation and runs.
+
+    - A movement takes its longest (highest) lane.
+    - An approach takes, for a queue length (approach_results given),
+      the larger of its full-zone queue and its slip lanes
+      (slip_lane_ids); for a storage ratio, its highest lane.
+    - The intersection takes its longest (highest) approach.
+
+    An unavailable value keeps its parts' reason when they all give the
+    same one.
 
     A movement value names its lane in measured_on_lane_id only when
     the lane is shared. uncontrolled_by_approach lists the approaches
@@ -359,22 +377,8 @@ def queue_from_lanes(
     if len(intersection_ids) != 1:
         raise ValueError("the lanes must belong to exactly one intersection")
 
-    def choose(level, element_id, own_lanes, tagged):
-        parts = [
-            Part(
-                lane_results[lane.lane_id].status,
-                lane_results[lane.lane_id].value,
-                lane_id=lane.lane_id,
-            )
-            for lane in own_lanes
-        ]
-        rolled = combine_highest(parts)
-
-        shared = False
-        if rolled.status == KpiStatus.OK:
-            shared = len(by_lane[rolled.measured_on_lane_id].served_movement_ids) > 1
-
-        spec = KpiSpec(
+    def spec_for(level, element_id, tagged, lane_id=None):
+        return KpiSpec(
             kpi=first.kpi,
             level=level,
             element_id=element_id,
@@ -383,29 +387,49 @@ def queue_from_lanes(
             interval=AnalysisInterval(first.interval_start, first.interval_end),
             scenario_id=first.scenario_id,
             input_origins=first.input_origins,
-            measured_on_lane_id=(
-                rolled.measured_on_lane_id
-                if level == KpiLevel.MOVEMENT and shared
-                else None
-            ),
+            measured_on_lane_id=lane_id,
             uncontrolled_movements=UncontrolledMovements.INCLUDED if tagged else None,
         )
 
+    def choose(level, element_id, sources, tagged):
+        """sources: (lane ID or None, KpiResult) pairs to take the highest of."""
+
+        parts = [
+            Part(result.status, result.value, lane_id=key, reason=result.reason)
+            for key, result in sources
+        ]
+        rolled = combine_highest(parts)
+
         if rolled.status != KpiStatus.OK:
             looked_at = list(
-                dict.fromkeys(
-                    r for lane in own_lanes for r in lane_results[lane.lane_id].run_ids
-                )
+                dict.fromkeys(r for _, result in sources for r in result.run_ids)
             )
             return LaneChoice(
                 _result(
-                    spec, rolled.status, reason=PART_UNAVAILABLE_REASON,
+                    spec_for(level, element_id, tagged),
+                    rolled.status,
+                    reason=rolled.reason,
                     run_ids=looked_at,
                 ),
                 None,
             )
 
-        source = lane_results[rolled.measured_on_lane_id]
+        index = next(
+            i for i, p in enumerate(parts)
+            if p.status == KpiStatus.OK and p.value == rolled.value
+            and p.lane_id == rolled.measured_on_lane_id
+        )
+        lane_id, source = sources[index]
+
+        shared = (
+            lane_id is not None and len(by_lane[lane_id].served_movement_ids) > 1
+        )
+        spec = spec_for(
+            level,
+            element_id,
+            tagged,
+            lane_id=lane_id if level == KpiLevel.MOVEMENT and shared else None,
+        )
 
         return LaneChoice(
             _result(
@@ -415,31 +439,46 @@ def queue_from_lanes(
                 standard_deviation=source.standard_deviation,
                 run_ids=source.run_ids,
             ),
-            rolled.measured_on_lane_id,
+            lane_id,
         )
+
+    def lane_sources(own_lanes):
+        return [(lane.lane_id, lane_results[lane.lane_id]) for lane in own_lanes]
 
     results = {}
 
     for movement_id in sorted({m for lane in lanes for m in lane.served_movement_ids}):
         own = [lane for lane in lanes if movement_id in lane.served_movement_ids]
         results[("movement", movement_id)] = choose(
-            KpiLevel.MOVEMENT, movement_id, own, tagged=False
+            KpiLevel.MOVEMENT, movement_id, lane_sources(own), tagged=False
         )
 
     for approach_id in sorted({lane.approach_id for lane in lanes}):
         own = [lane for lane in lanes if lane.approach_id == approach_id]
+
+        if approach_results is None:
+            sources = lane_sources(own)
+        else:
+            slips = [lane for lane in own if lane.lane_id in slip_lane_ids]
+            sources = [(None, approach_results[approach_id]), *lane_sources(slips)]
+
         results[("approach", approach_id)] = choose(
             KpiLevel.APPROACH,
             approach_id,
-            own,
+            sources,
             tagged=approach_id in uncontrolled_by_approach,
         )
 
     intersection_id = intersection_ids.pop()
+    approach_choices = [
+        (choice.lane_id, choice.result)
+        for key, choice in results.items()
+        if key[0] == "approach"
+    ]
     results[("intersection", intersection_id)] = choose(
         KpiLevel.INTERSECTION,
         intersection_id,
-        lanes,
+        approach_choices,
         tagged=bool(uncontrolled_by_approach),
     )
 

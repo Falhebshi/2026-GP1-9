@@ -42,3 +42,41 @@ class SyntheticTrafficClient:
             )
 
         return observations
+
+    def fetch_latest_available_timestamp(self) -> datetime | None:
+        """
+        Return the end of the latest interval the source has stored,
+        or None when it has no observations yet.
+
+        Records are labelled by interval end, so a value of 09:15 means
+        that every interval up to 09:00-09:15 is available.
+        """
+
+        response = httpx2.get(
+            f"{self.base_url}/health",
+            timeout=self.timeout_s,
+        )
+
+        response.raise_for_status()
+
+        body = response.json()
+
+        if "latest_available_timestamp" not in body:
+            raise ValueError(
+                "synthetic source health response must contain "
+                "latest_available_timestamp"
+            )
+
+        value = body["latest_available_timestamp"]
+
+        if value is None:
+            return None
+
+        timestamp = datetime.fromisoformat(value)
+
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError(
+                "latest_available_timestamp must include timezone information"
+            )
+
+        return timestamp

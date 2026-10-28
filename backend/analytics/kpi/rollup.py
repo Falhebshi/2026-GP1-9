@@ -9,9 +9,22 @@ run (docs/kpi_engine.md section 11).
 - Volume-to-capacity ratios, queue lengths and storage ratios take the
   worst (highest) value; they are never averaged.
 
-When any part is unavailable, the combined value is unavailable. Parts
-that are not applicable are left out; when no part is left, the
-combined value is not applicable.
+When any part is unavailable, the combined value is unavailable; when
+all its unavailable parts give the same reason, that reason is kept, so
+the cause stays visible at every level. Parts that are not applicable
+are left out; when no part is left, the combined value is not
+applicable.
+
+A queue is measured twice: per lane, over the lane's section, and per
+approach, over the whole measurement zone (section 5). Movements take
+their longest lane; an approach takes the larger of its full-zone queue
+and its uncontrolled slip lanes; the intersection takes its longest
+approach.
+
+Two conditions make every value of an approach unavailable in an
+interval (passed as blocked, from delay.py and queue.py): the queue
+reached the end of the measurement zone (delay, queue duration and
+queue), and vehicles could not enter the network (also throughput).
 
 Uncontrolled right-turn slips are included in the measured delay,
 queue duration, throughput, queue length and storage ratio of their
@@ -30,7 +43,13 @@ from backend.analytics.kpi.hcm_delay import HcmDelayResults
 from backend.analytics.kpi.intervals import AnalysisInterval
 from backend.analytics.kpi.lane_groups import LaneGroup
 from backend.analytics.kpi.parameters import level_of_service
-from backend.analytics.kpi.queue import LaneQueue, storage_ratio
+from backend.analytics.kpi.queue import (
+    NO_RECORDS_REASON,
+    SECTION_END_REASON,
+    ZONE_END_REASON,
+    LaneQueue,
+    storage_ratio,
+)
 from jaadah.models.kpis import (
     KpiStatus,
     LevelOfServiceGrade,
@@ -48,6 +67,11 @@ INCLUDES_UNCONTROLLED = UncontrolledMovements.INCLUDED
 EXCLUDES_UNCONTROLLED = UncontrolledMovements.EXCLUDED
 PART_UNAVAILABLE_REASON = "a part of this element has no result"
 NOTHING_TO_COMBINE_REASON = "no part of this element has a result"
+NO_APPROACH_RECORDS_REASON = "no cycle records for this approach in this interval"
+NO_STORAGE_LENGTH_REASON = "the lane has no storage length"
+SLIP_SECTION_END_REASON = (
+    "the queue on an uncontrolled right-turn lane extends beyond its section"
+)
 
 
 class RolledUp(NamedTuple):
@@ -70,13 +94,17 @@ class RolledUp(NamedTuple):
 
 
 class Part(NamedTuple):
-    """One input to a combination: a status, a value and a weight."""
+    """
+    One input to a combination: a status, a value and a weight, with
+    the reason when it has no value.
+    """
 
     status: KpiStatus
     value: float | None
     weight: float = 1.0
     lane_id: str | None = None
     is_shared: bool = False
+    reason: str | None = None
 
 
 # ============================================================
@@ -136,12 +164,15 @@ def combine_highest(parts: list[Part]) -> RolledUp:
 def _usable(parts: list[Part]) -> list[Part] | RolledUp:
     """
     The parts that apply, or the combined result when they cannot be
-    combined: unavailable if any part is unavailable, not applicable if
-    no part applies.
+    combined: unavailable if any part is unavailable (with the parts'
+    reason when they all give the same one), not applicable if no part
+    applies.
     """
 
-    if any(p.status == KpiStatus.UNAVAILABLE for p in parts):
-        return RolledUp(KpiStatus.UNAVAILABLE, None, PART_UNAVAILABLE_REASON)
+    unavailable = [p for p in parts if p.status == KpiStatus.UNAVAILABLE]
+
+    if unavailable:
+        return RolledUp(KpiStatus.UNAVAILABLE, None, shared_reason(unavailable))
 
     usable = [p for p in parts if p.status == KpiStatus.OK]
 
@@ -149,6 +180,20 @@ def _usable(parts: list[Part]) -> list[Part] | RolledUp:
         return RolledUp(KpiStatus.NOT_APPLICABLE, None, NOTHING_TO_COMBINE_REASON)
 
     return usable
+
+
+def shared_reason(parts) -> str:
+    """
+    The reason the parts give, when they all give the same one;
+    otherwise PART_UNAVAILABLE_REASON.
+    """
+
+    reasons = {p.reason for p in parts}
+
+    if len(reasons) == 1 and None not in reasons:
+        return reasons.pop()
+
+    return PART_UNAVAILABLE_REASON
 
 
 # ============================================================
@@ -177,7 +222,10 @@ def measured_delay_rollup(
     def part(movement_id):
         result = delays[(movement_id, interval)]
         return Part(
-            result.status, getattr(result, field), result.completed_vehicles
+            result.status,
+            getattr(result, field),
+            result.completed_vehicles,
+            reason=result.reason,
         )
 
     return _by_approach_and_intersection(
@@ -194,10 +242,23 @@ def throughput_rollup(
     movement_attributes: dict[str, MovementAttributes],
     throughput_veh_h: dict[tuple[str, AnalysisInterval], float],
     interval: AnalysisInterval,
+    blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
 ) -> dict[tuple[str, str], RolledUp]:
-    """Approach and intersection throughput: sums of their movements."""
+    """
+    Approach and intersection throughput: sums of their movements.
+
+    blocked maps (movement_id, interval) to the reason a movement's
+    throughput is unavailable (vehicles could not enter the network).
+    """
+
+    blocked = blocked or {}
 
     def part(movement_id):
+        reason = blocked.get((movement_id, interval))
+
+        if reason is not None:
+            return Part(KpiStatus.UNAVAILABLE, None, reason=reason)
+
         return Part(KpiStatus.OK, throughput_veh_h[(movement_id, interval)])
 
     return _by_approach_and_intersection(
@@ -248,31 +309,101 @@ def queue_rollup(
     movements: dict[str, Movement],
     lane_queues: dict[tuple[str, AnalysisInterval], LaneQueue | None],
     interval: AnalysisInterval,
+    *,
+    approach_queues: dict[tuple[str, AnalysisInterval], LaneQueue | None],
+    slip_lane_ids: set[str] = frozenset(),
+    blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
     unit: str = "m",
 ) -> dict[tuple[str, str], RolledUp]:
     """
-    Movement, approach and intersection queue lengths, in metres
-    (unit "m") or vehicles ("veh"): the longest lane, with the lane it
-    was measured on. Keys are ("movement", id), ("approach", id) and
-    ("intersection", id).
+    Lane, movement, approach and intersection queue lengths, in metres
+    (unit "m") or vehicles ("veh"). Keys are ("lane", id),
+    ("movement", id), ("approach", id) and ("intersection", id).
+
+    - A lane is unavailable when it has no cycle records, or when its
+      queue reached the end of its section (the approach queue then
+      gives the full length).
+    - A movement takes its longest lane, with the lane it was measured
+      on.
+    - An approach takes the larger of its full-zone queue
+      (approach_queues) and its uncontrolled slip lanes (slip_lane_ids,
+      which the full-zone queue leaves out). It is unavailable when its
+      queue reached the zone end.
+    - The intersection takes its longest approach.
+
+    blocked maps (approach_id, interval) to the reason every queue of
+    that approach (lanes, movements and the approach) is unavailable.
     """
+
+    blocked = blocked or {}
+
+    def pick(queue):
+        return queue.length_m if unit == "m" else queue.vehicles
 
     def lane_part(lane):
         queue = lane_queues[(lane.lane_id, interval)]
+        reason = blocked.get((lane.approach_id, interval))
 
-        if queue is None:
-            return Part(KpiStatus.UNAVAILABLE, None)
+        if reason is None and queue is None:
+            reason = NO_RECORDS_REASON
+        elif reason is None and queue.reaches_end:
+            reason = SECTION_END_REASON
 
-        value = queue.length_m if unit == "m" else queue.vehicles
+        if reason is not None:
+            return Part(KpiStatus.UNAVAILABLE, None, reason=reason)
 
         return Part(
             KpiStatus.OK,
-            value,
+            pick(queue),
             lane_id=lane.lane_id,
             is_shared=len(lane.served_movement_ids) > 1,
         )
 
-    return _lanes_rollup(lanes, movements, lane_part)
+    def approach_part(approach_id):
+        queue = approach_queues[(approach_id, interval)]
+        reason = blocked.get((approach_id, interval))
+
+        if reason is None and queue is None:
+            reason = NO_APPROACH_RECORDS_REASON
+        elif reason is None and queue.reaches_end:
+            reason = ZONE_END_REASON
+
+        if reason is not None:
+            return Part(KpiStatus.UNAVAILABLE, None, reason=reason)
+
+        return Part(KpiStatus.OK, pick(queue))
+
+    lane_parts = {lane.lane_id: lane_part(lane) for lane in lanes}
+    results = _lanes_rollup(lanes, movements, lane_parts, approaches=False)
+
+    approach_results = {}
+
+    for approach_id in sorted({lane.approach_id for lane in lanes}):
+        slips = []
+        for lane in lanes:
+            if lane.approach_id == approach_id and lane.lane_id in slip_lane_ids:
+                part = lane_parts[lane.lane_id]
+                if part.reason == SECTION_END_REASON:
+                    part = part._replace(reason=SLIP_SECTION_END_REASON)
+                slips.append(part)
+
+        approach_results[approach_id] = combine_highest(
+            [approach_part(approach_id), *slips]
+        )
+        results[("approach", approach_id)] = approach_results[approach_id]
+
+    intersection_id = _intersection_id(
+        movements, [m for lane in lanes for m in lane.served_movement_ids]
+    )
+    results[("intersection", intersection_id)] = combine_highest(
+        [
+            Part(r.status, r.value, lane_id=r.measured_on_lane_id,
+                 is_shared=r.is_shared, reason=r.reason)
+            for r in approach_results.values()
+        ]
+    )
+
+    return results
 
 
 def storage_ratio_rollup(
@@ -280,44 +411,65 @@ def storage_ratio_rollup(
     movements: dict[str, Movement],
     lane_queues: dict[tuple[str, AnalysisInterval], LaneQueue | None],
     interval: AnalysisInterval,
+    blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
 ) -> dict[tuple[str, str], RolledUp]:
     """
-    Movement, approach and intersection queue storage ratios: the
+    Lane, movement, approach and intersection queue storage ratios: the
     highest lane ratio, with the lane it was measured on. A lane
-    without a storage length or without queue records makes the
-    combined value unavailable.
+    without a storage length or without queue records, or whose queue
+    reached the end of its section, is unavailable, and so is every
+    element it is part of; blocked is as for queue_rollup.
     """
+
+    blocked = blocked or {}
 
     def lane_part(lane):
         queue = lane_queues[(lane.lane_id, interval)]
-        ratio = (
-            storage_ratio(queue.length_m, lane.storage_length_m)
-            if queue is not None
-            else None
-        )
+        reason = blocked.get((lane.approach_id, interval))
 
-        if ratio is None:
-            return Part(KpiStatus.UNAVAILABLE, None)
+        if reason is None and queue is None:
+            reason = NO_RECORDS_REASON
+        elif reason is None and queue.reaches_end:
+            reason = SECTION_END_REASON
+        elif reason is None and lane.storage_length_m is None:
+            reason = NO_STORAGE_LENGTH_REASON
+
+        if reason is not None:
+            return Part(KpiStatus.UNAVAILABLE, None, reason=reason)
 
         return Part(
             KpiStatus.OK,
-            ratio,
+            storage_ratio(queue.length_m, lane.storage_length_m),
             lane_id=lane.lane_id,
             is_shared=len(lane.served_movement_ids) > 1,
         )
 
-    return _lanes_rollup(lanes, movements, lane_part)
+    parts = {lane.lane_id: lane_part(lane) for lane in lanes}
+
+    return _lanes_rollup(lanes, movements, parts, approaches=True)
 
 
-def _lanes_rollup(lanes, movements, lane_part):
-    """Highest lane value per movement, approach and intersection."""
+def _lanes_rollup(lanes, movements, parts, approaches):
+    """
+    Each lane's own value, and the highest lane value per movement and,
+    when approaches is True, per approach and for the intersection.
+    """
 
     intersection_id = _intersection_id(
         movements, [m for lane in lanes for m in lane.served_movement_ids]
     )
 
-    parts = {lane.lane_id: lane_part(lane) for lane in lanes}
     results = {}
+
+    for lane in lanes:
+        part = parts[lane.lane_id]
+        results[("lane", lane.lane_id)] = RolledUp(
+            part.status,
+            part.value,
+            part.reason,
+            measured_on_lane_id=part.lane_id,
+            is_shared=part.is_shared,
+        )
 
     movement_ids = sorted({m for lane in lanes for m in lane.served_movement_ids})
 
@@ -326,6 +478,9 @@ def _lanes_rollup(lanes, movements, lane_part):
         results[("movement", movement_id)] = combine_highest(
             [parts[l.lane_id] for l in own]
         )
+
+    if not approaches:
+        return results
 
     for approach_id in sorted({lane.approach_id for lane in lanes}):
         own = [l for l in lanes if l.approach_id == approach_id]
@@ -365,11 +520,13 @@ def hcm_rollup(
     def delay_part(group):
         delay = hcm.lane_groups[group.lane_group_id]
         demand = capacity.lane_groups[group.lane_group_id].demand_veh_h
-        return Part(delay.status, delay.control_delay_s, demand or 0.0)
+        return Part(
+            delay.status, delay.control_delay_s, demand or 0.0, reason=delay.reason
+        )
 
     def capacity_part(group, field):
         result = capacity.lane_groups[group.lane_group_id]
-        return Part(result.status, getattr(result, field))
+        return Part(result.status, getattr(result, field), reason=result.reason)
 
     slips_exist = {
         movements[m].approach_id

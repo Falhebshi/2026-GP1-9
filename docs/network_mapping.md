@@ -35,7 +35,7 @@ not independently verify their geographic correctness.
 
 | Field | Purpose |
 | --- | --- |
-| `approach_mappings` | Approach IDs, parent intersections, sides, and queue-detection lane references. |
+| `approach_mappings` | Approach IDs, parent intersections, sides, queue-detection lane references, and measurement-zone distances. |
 | `movement_mappings` | Movement IDs, parent relationships, complete SUMO routes, and signal crossings. |
 | `approach_lanes` | Canonical `ApproachLane` definitions. |
 | `lane_mappings` | Canonical lane IDs and their SUMO lane segments. |
@@ -316,6 +316,33 @@ tests, not at load time. The SUMO network validator does not compare
 `movement_type` with SUMO connection directions, since these differ by design
 for `MOV_S_W`; the integration tests pin the approved values instead.
 
+## Measurement zones
+
+Each approach mapping holds the distances of its KPI measurement zone:
+`zone_upstream_m` before the stop line and `zone_downstream_m` after the
+junction exit. The zone covers both parts and the path through the junction
+between them. How the zones are used is described in
+[KPI measurements](kpi_measurements.md).
+
+| Approach | `zone_upstream_m` | `zone_downstream_m` |
+| --- | --- | --- |
+| `APP_E` | 388 | 155 |
+| `APP_W` | 450 | 105 |
+| `APP_N` | 500 | 65 |
+| `APP_S` | 500 | 65 |
+
+Both fields are optional, as in a draft, but are given together, and each is
+a finite positive number of metres. The network validator checks every movement
+served by an approach's mapped lanes:
+
+- `zone_upstream_m` fits on the route up to the stop line, the end of the
+  last SUMO lane of the movement's canonical lanes;
+- `zone_downstream_m` fits on the route after the junction exit, the start of
+  the next route edge.
+
+Movements whose lanes have no SUMO mapping yet are not checked. The
+integration tests pin the approved values.
+
 ## Loading and validation
 
 From the repository root:
@@ -389,7 +416,7 @@ its recorded checksum.
 `schema_version` identifies the mapping configuration's structure and validation
 contract. The repository currently accepts only `"2.0"`. `mapping_version` is a
 nonempty label identifying a specific revision of the study-area mapping data;
-the current value is `"2.2-movement-attributes"`. The version labels do not need to match.
+the current value is `"2.4-west-route-start"`. The version labels do not need to match.
 
 ### Maintaining versions
 
@@ -434,11 +461,11 @@ python -m pytest tests/test_mapping_validator.py
 
 | Test file | Coverage |
 | --- | --- |
-| `tests/test_mappings.py` | Schema fields, canonical views, lane ownership, detector candidates/status, pending SUMO mappings, and movement attribute checks, including drafts. |
+| `tests/test_mappings.py` | Schema fields, canonical views, lane ownership, detector candidates/status, pending SUMO mappings, movement attribute checks, including drafts, and measurement-zone distances. |
 | `tests/test_mapping_loader.py` | Loading, optional network checks, missing files, and invalid references. |
-| `tests/test_mapping_validator.py` | Lane connections and ordering, route loops, required-mapping lookup, and checksum portability. |
+| `tests/test_mapping_validator.py` | Lane connections and ordering, route loops, required-mapping lookup, checksum portability, and measurement zones fitting their routes. |
 | `tests/test_movement_smoke.py` | Runner preparation, mocked TraCI behavior, and direct CLI invocation. |
-| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings; the exact approved movement attributes for the nine lane-served movements. |
+| `tests/test_network_mapping_integration.py` | Exact approved lane, lane-mapping, movement, and synthetic detector inventories; associations, allocation statuses, and modeled placement; actual network validation and a fingerprint of all 18 movement records, including routes and signal crossings; the exact approved movement attributes for the nine lane-served movements; the approved measurement zones. |
 
 The Python suite includes static network checks and mocked runner tests.
 Live SUMO movement tests run separately; see
