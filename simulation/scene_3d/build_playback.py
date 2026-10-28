@@ -11,9 +11,14 @@ The run folder holds the SUMO outputs fcd.xml (written with
 (SaveTLSStates), and the manifest and demand files of the SUMO demand
 generation. The files are written to
 frontend/public/data/<intersection>/<scenario>/.
+
+With --run-result (the result the scenario runner saved), a run that
+did not complete gets only run.json, with status "failed" and the
+runner's error, so the view shows the failure instead of a partial run.
 """
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -28,9 +33,11 @@ REPO_ROOT = SCRIPTS_DIR.parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from backend.outputs.playback import (  # noqa: E402
+    build_failed_run_index,
     build_run_index,
     pack_signal_changes,
     pack_vehicle_intervals,
+    write_failed_run,
     write_playback,
 )
 from backend.outputs.signals import (  # noqa: E402
@@ -280,6 +287,50 @@ class UnderpassHeight:
                         )
 
 
+def read_run_result(
+    path: Path,
+) -> tuple[str, str | None]:
+    """
+    Return the status ("completed" or "failed") and the error of a run
+    from the result the scenario runner saved (its "execution" part).
+    """
+
+    with path.open(
+        encoding="utf-8",
+    ) as file:
+        execution = json.load(file)["execution"]
+
+    return execution["status"], execution.get("error")
+
+
+def write_failed_playback(
+    run_id: str,
+    run_start: datetime,
+    scenario: str,
+    failure_reason: str,
+) -> Path:
+    """Write run.json of a failed run, so the view shows the failure."""
+
+    config = load_network_mappings(MAPPING_PATH)
+    intersection_id = config.intersection_mapping.intersection_id
+    output_dir = FRONTEND_DATA_DIR / intersection_id / scenario
+
+    write_failed_run(
+        output_dir=output_dir,
+        run_index=build_failed_run_index(
+            run_id=run_id,
+            intersection_id=intersection_id,
+            scenario=scenario,
+            run_start=run_start,
+            failure_reason=failure_reason,
+        ),
+    )
+
+    print(f"run.json: {run_id} failed: {failure_reason}")
+
+    return output_dir
+
+
 def build_playback(
     run_dir: Path,
     run_id: str,
@@ -400,7 +451,28 @@ def main() -> None:
         "--scenario",
         default="baseline",
     )
+    parser.add_argument(
+        "--run-result",
+        type=Path,
+        help="the result the scenario runner saved; a failed run gets "
+        "only run.json with its status and error",
+    )
     args = parser.parse_args()
+
+    if args.run_result is not None:
+        status, error = read_run_result(
+            path=args.run_result,
+        )
+
+        if status != "completed":
+            output_dir = write_failed_playback(
+                run_id=args.run_id,
+                run_start=args.run_start,
+                scenario=args.scenario,
+                failure_reason=error or "The simulation did not finish.",
+            )
+            print(f"Done: {output_dir.relative_to(REPO_ROOT)}")
+            return
 
     output_dir = build_playback(
         run_dir=args.run_dir,

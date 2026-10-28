@@ -5,6 +5,9 @@ from pathlib import Path
 
 from backend.outputs.signals import SignalChange
 from jaadah.models.outputs import VehicleState
+from jaadah.models.scenario import (
+    SimulationRunStatus,
+)
 
 
 INTERVAL_S = 15 * 60
@@ -86,6 +89,7 @@ def build_run_index(
         "run_id": run_id,
         "intersection_id": intersection_id,
         "scenario": scenario,
+        "status": SimulationRunStatus.COMPLETED.value,
         "run_start": run_start.isoformat(),
         "duration_s": duration_s,
         "analysis_start_s": warm_up_s,
@@ -97,6 +101,33 @@ def build_run_index(
             duration_s=duration_s,
         ),
         "signals_file": "signals.json",
+    }
+
+
+def build_failed_run_index(
+    run_id: str,
+    intersection_id: str,
+    scenario: str,
+    run_start: datetime,
+    failure_reason: str,
+) -> dict:
+    """
+    Return run.json for a run that failed: its status and why, and no
+    files, so the view shows the failure instead of a partial run.
+    """
+
+    failure_reason = failure_reason.strip()
+
+    if not failure_reason:
+        raise ValueError("a failed run needs a failure reason")
+
+    return {
+        "run_id": run_id,
+        "intersection_id": intersection_id,
+        "scenario": scenario,
+        "status": SimulationRunStatus.FAILED.value,
+        "failure_reason": failure_reason,
+        "run_start": run_start.isoformat(),
     }
 
 
@@ -222,6 +253,45 @@ def pack_signal_changes(
     }
 
 
+def write_json(
+    path: Path,
+    payload: dict,
+) -> None:
+    """Write one playback file in compact JSON."""
+
+    with path.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            payload,
+            file,
+            separators=(",", ":"),
+        )
+
+
+def write_failed_run(
+    output_dir: str | Path,
+    run_index: dict,
+) -> None:
+    """
+    Write run.json of a failed run into output_dir. The files of an
+    earlier run may stay in the folder; the view does not read them,
+    because run.json lists none.
+    """
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    write_json(
+        path=output_dir / "run.json",
+        payload=run_index,
+    )
+
+
 def write_playback(
     output_dir: str | Path,
     run_index: dict,
@@ -246,12 +316,7 @@ def write_playback(
     }
 
     for name, payload in files.items():
-        with (output_dir / name).open(
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                payload,
-                file,
-                separators=(",", ":"),
-            )
+        write_json(
+            path=output_dir / name,
+            payload=payload,
+        )
