@@ -113,6 +113,9 @@
   --scene-sky-night-3: #1b2638;
   --scene-sky-night-4: #232a33;
 
+  /* Brand */
+  --gradient-brand: linear-gradient(135deg, var(--teal), var(--indigo)); /* the logo square (BrandMark) */
+
   /* ---- 3. SIZES ---------------------------------------------------------- */
 
   --font: "Inter", system-ui, "Segoe UI", sans-serif;
@@ -135,6 +138,11 @@
   --radius-pill: 999px; /* badges and status pills */
 
   --shadow-float: 0 2px 8px rgba(23, 28, 74, 0.12); /* panels floating on the map */
+
+  --icon-sm: 20px;          /* small logo square */
+  --icon-md: 28px;          /* logo square on the Login page */
+  --control-height: 44px;   /* form inputs and full-width form buttons */
+  --content-narrow: 400px;  /* forms */
 
   --nav-height: 64px;
   --page-padding: 32px;

@@ -249,7 +249,7 @@ function toAlertListItem(alert) {
         value: alert.status === 'active' ? <Badge variant="warning">Active</Badge> : undefined,
       },
     ],
-    interventionsTo: alert.interventionId ? `/recommendations/${alert.interventionId}` : undefined,
+    detailsTo: alert.problemId ? `/alerts/${alert.problemId}` : undefined,
   }
 }
 

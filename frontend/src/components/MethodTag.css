@@ -1,0 +1,47 @@
+/* MethodTag: "HCM" after a KPI, with its meaning on hover or focus.
+   Colors and sizes from index.css. */
+
+.method-tag {
+  display: inline-block;
+  margin-left: var(--space-xs);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  cursor: help;
+  vertical-align: baseline;
+}
+
+.method-tag:hover,
+.method-tag:focus-visible {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+/* The meaning: hidden until the tag is hovered or focused */
+.method-tag-hint {
+  position: fixed;
+  z-index: 50;
+  display: none;
+  max-width: 260px;
+  padding: 6px var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.method-tag-hint-open {
+  display: block;
+}
