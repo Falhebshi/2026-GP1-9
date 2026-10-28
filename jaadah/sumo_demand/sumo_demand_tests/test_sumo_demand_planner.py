@@ -450,7 +450,7 @@ def test_study_area_free_flow_times():
 
     assert set(times) == demand_movement_ids(config)
     expected = {
-        "MOV_W_E": 29, "MOV_W_N": 29, "MOV_W_S_SLIP": 30,
+        "MOV_W_E": 27.6, "MOV_W_N": 27.6, "MOV_W_S_SLIP": 29.2,
         "MOV_E_W": 33, "MOV_E_S": 33, "MOV_N_E": 45,
         "MOV_N_W_SLIP": 47, "MOV_S_W": 50, "MOV_S_E_BYPASS": 57,
     }

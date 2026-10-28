@@ -214,3 +214,127 @@ def test_non_list_observations_is_rejected(
             start=start,
             end=end,
         )
+
+
+def fake_health(monkeypatch, captured, status_code=200, json_data=None):
+    """Replace httpx2.get with a fake /health response."""
+
+    def fake_get(url: str, timeout: float) -> httpx2.Response:
+        captured["url"] = url
+        captured["timeout"] = timeout
+
+        return make_response(
+            status_code=status_code,
+            json_data=json_data,
+        )
+
+    monkeypatch.setattr(
+        httpx2,
+        "get",
+        fake_get,
+    )
+
+
+def test_latest_available_timestamp_is_read_from_health(
+    monkeypatch,
+) -> None:
+    captured = {}
+    fake_health(
+        monkeypatch,
+        captured,
+        json_data={
+            "status": "ok",
+            "source": "synthetic",
+            "latest_available_timestamp": "2026-10-20T09:15:00+03:00",
+        },
+    )
+
+    client = SyntheticTrafficClient(
+        base_url="http://synthetic-source/",
+        timeout_s=5.0,
+    )
+
+    latest = client.fetch_latest_available_timestamp()
+
+    assert captured == {
+        "url": "http://synthetic-source/health",
+        "timeout": 5.0,
+    }
+    assert latest == datetime.fromisoformat(
+        "2026-10-20T09:15:00+03:00"
+    )
+    assert latest.utcoffset() is not None
+
+
+def test_empty_source_has_no_latest_timestamp(
+    monkeypatch,
+) -> None:
+    fake_health(
+        monkeypatch,
+        {},
+        json_data={
+            "status": "ok",
+            "latest_available_timestamp": None,
+        },
+    )
+
+    client = SyntheticTrafficClient(
+        base_url="http://synthetic-source"
+    )
+
+    assert client.fetch_latest_available_timestamp() is None
+
+
+def test_latest_available_timestamp_raises_on_http_error(
+    monkeypatch,
+) -> None:
+    fake_health(
+        monkeypatch,
+        {},
+        status_code=500,
+        json_data={
+            "detail": "synthetic source failed",
+        },
+    )
+
+    client = SyntheticTrafficClient(
+        base_url="http://synthetic-source"
+    )
+
+    with pytest.raises(httpx2.HTTPStatusError):
+        client.fetch_latest_available_timestamp()
+
+
+@pytest.mark.parametrize(
+    "json_data, message",
+    [
+        (
+            {"status": "ok"},
+            "must contain latest_available_timestamp",
+        ),
+        (
+            {"latest_available_timestamp": "2026-10-20T09:15:00"},
+            "must include timezone information",
+        ),
+    ],
+)
+def test_invalid_health_response_is_rejected(
+    monkeypatch,
+    json_data,
+    message,
+) -> None:
+    fake_health(
+        monkeypatch,
+        {},
+        json_data=json_data,
+    )
+
+    client = SyntheticTrafficClient(
+        base_url="http://synthetic-source"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=message,
+    ):
+        client.fetch_latest_available_timestamp()

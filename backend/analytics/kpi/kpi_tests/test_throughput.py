@@ -4,9 +4,12 @@ import pytest
 
 from backend.analytics.kpi.intervals import analysis_intervals
 from backend.analytics.kpi.throughput import (
+    MovementThroughput,
     count_served_vehicles,
+    movement_throughput,
     vehicles_per_hour,
 )
+from jaadah.models.kpis import KpiStatus
 from jaadah.models.outputs import IncompletePassage, VehicleDelayRecord
 
 
@@ -249,3 +252,15 @@ def test_incomplete_without_crossing_is_not_checked_for_duplicates():
 )
 def test_vehicles_per_hour(vehicles, expected):
     assert vehicles_per_hour(vehicles) == expected
+
+
+def test_movement_throughput_is_hourly_unless_blocked():
+    counts = count([delay_record("V1", at(8, 1)), delay_record("V2", at(8, 2))])
+
+    result = movement_throughput(counts, {("MOV_E_T", SECOND): "3 vehicle(s) could not enter"})
+
+    assert result[("MOV_E_T", FIRST)] == MovementThroughput(KpiStatus.OK, 8.0)
+    assert result[("MOV_E_T", SECOND)] == MovementThroughput(
+        KpiStatus.UNAVAILABLE, None, "3 vehicle(s) could not enter"
+    )
+    assert result[("MOV_E_L", FIRST)] == MovementThroughput(KpiStatus.OK, 0.0)

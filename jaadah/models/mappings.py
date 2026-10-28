@@ -119,7 +119,14 @@ class IntersectionMapping(BaseModel):
 # ============================================================
 
 class ApproachMapping(BaseModel):
-    """Connects a Jaadah approach to its SUMO queue-detection lanes."""
+    """
+    Connects a Jaadah approach to its SUMO queue-detection lanes and
+    defines its measurement zone.
+
+    The zone is zone_upstream_m before the stop line, the path through
+    the junction, and zone_downstream_m after the junction exit. Both
+    distances are optional, as in a draft, but are given together.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -127,6 +134,8 @@ class ApproachMapping(BaseModel):
     intersection_id: str
     approach_side: ApproachSide
     queue_detection_lane_ids: list[str] = Field(default_factory=list)
+    zone_upstream_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    zone_downstream_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @field_validator("approach_id", "intersection_id")
     @classmethod
@@ -149,6 +158,16 @@ class ApproachMapping(BaseModel):
         if len(cleaned) != len(set(cleaned)):
             raise ValueError("identifiers must be unique within a list")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_zone_pair(self) -> "ApproachMapping":
+        """Require both zone distances or neither."""
+
+        if (self.zone_upstream_m is None) != (self.zone_downstream_m is None):
+            raise ValueError(
+                "zone_upstream_m and zone_downstream_m must be given together"
+            )
+        return self
 
 
 # ============================================================
