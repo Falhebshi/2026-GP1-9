@@ -1,30 +1,37 @@
 // Where the Current Traffic page gets its data.
 //
-// For now it returns SAMPLE data. When the backend is ready, only the inside of
-// getCurrentTraffic() changes; the page stays the same as long as the data keeps this shape:
+// The page shows the simulated run in public/data/<intersection>/baseline/ (the only real data in
+// Sprint 1): the run (run.json), its KPI results (kpis.json, KpiResult records from the KPI
+// engine) and the approaches (network/approaches.json). The alerts are still sample data.
+// getCurrentTraffic() gives back:
 //
 //   {
-//     isSample: true,                    true while the data is sample data
+//     source: 'run',                     'run' for a simulated run; 'live' once live data exists
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
-//     timeline: [{ time, value, level }],      one bar per 15 minutes, last 24 hours
-//     kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level, latest
-//                                        15 minutes and the 15 minutes before, for the change
-//     alerts: [{ id, title, details: [{ label, value }], interventionsTo }],
-//     approaches: [{
-//       approach_id, arm, road,
-//       kpis: { <kpi name>: KpiResult },                    approach level
-//       movements: [{ movement_id, label, kpis: { <kpi name>: KpiResult } }],
+//     run: { id, status, failureReason, start, duration, intervalSeconds },
+//                                        null when there is no run yet. status 'completed' or
+//                                        'failed' (then failureReason says why, and there are no
+//                                        intervals). start: the start of the analysis period (ISO
+//                                        time); duration and intervalSeconds in seconds
+//     hasKpis: false when the run has no KPI results yet (no kpis.json, or one of another run)
+//     intervals: [{                      one per 15 minutes of the analysis period, oldest first
+//       start, end,                      ISO times
+//       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
+//                                        the interval before in the same run (null for the first)
+//       approaches: [{
+//         approach_id, arm, road,
+//         kpis: { <kpi name>: KpiResult },                    approach level
+//         movements: [{ movement_id, label, kpis: { <kpi name>: KpiResult } }],
+//       }],
 //     }],
+//     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay
+//     alerts: [{ id, title, details: [{ label, value }], interventionsTo }],
 //   }
 //
 // Every KPI value is a KpiResult, exactly as the backend's KPI engine sends it (data_models.md,
 // section 6). Pages show them with src/utils/kpi.js. This file never calculates a KPI.
 
-import {
-  latestInterval,
-  notApplicableResult,
-  sampleResult,
-} from './sampleKpiResults'
+import { notApplicableResult, sampleResult } from './sampleKpiResults'
 
 // The study intersection. Its name, area and centre come from its record in
 // public/data/intersections.json, a copy of data/processed/intersections.json.
@@ -67,24 +74,6 @@ export function sampleTimelineBars(now = Date.now()) {
   return bars
 }
 
-// Intersection KPIs for the tiles: the latest 15 minutes and the 15 minutes before
-function sampleIntersectionKpis(interval, previousInterval) {
-  const element = { level: 'intersection', id: 'INT_001' }
-  const pair = (kpi, now, before) => ({
-    current: sampleResult(kpi, now, element, interval),
-    previous: sampleResult(kpi, before, element, previousInterval),
-  })
-  return [
-    pair('control_delay', 46, 44),
-    pair('queue_length', 128, 114),
-    pair('queue_duration', 37, 35),
-    pair('queue_storage_ratio', 1.12, 1.05),
-    pair('throughput', 1842, 1788),
-    pair('volume_to_capacity_ratio', 0.91, 0.87),
-    pair('level_of_service', 'D', 'D'),
-  ]
-}
-
 // Click an alert to see where and when it was detected, like the Forecast Alerts
 const SAMPLE_ALERTS = [
   {
@@ -117,8 +106,7 @@ const SAMPLE_ALERTS = [
 ]
 
 // Approaches and their movements. The movements follow the signal plan in the SUMO network:
-// East and West have through and left on the signal, South is through only and North is left
-// only. Right turns leave before the signal on slip lanes (South to East, West to South and
+// East and West have through and left on the signal, South and North are left only. Right turns leave before the signal on slip lanes (South to East, West to South and
 // North to West; East has none), so the signal measures (LOS, v/c, capacity, saturation flow)
 // don't apply to them. Whether slip lanes get KPIs at all is still open.
 // arm is the side of the junction the approach comes from (matches the 3D scene).
@@ -190,7 +178,7 @@ export function sampleApproaches(interval) {
       ['MOV_W_S_SLIP', 'Right (slip lane)', [7, SLIP, SLIP, SLIP, SLIP, 15, 4, 0.25, 150]],
     ]),
     approach('APP_S', 'South', 'Prince Turki Rd, service road', [33, 'C', 0.71, 1020, M, 74, 22, 0.52, 720], [
-      ['MOV_S_W', 'Through', [33, 'C', 0.71, 1020, 1790, 74, 22, 0.52, 640]],
+      ['MOV_S_W', 'Left', [33, 'C', 0.71, 1020, 1790, 74, 22, 0.52, 640]],
       ['MOV_S_E_BYPASS', 'Right (slip lane)', [6, SLIP, SLIP, SLIP, SLIP, 12, 3, 0.2, 80]],
     ]),
     approach('APP_N', 'North', 'Prince Turki Rd, service road', [58, 'F', 1.04, 760, M, 168, 61, 1.12, 790], [
@@ -221,40 +209,142 @@ export async function getIntersection() {
   }
 }
 
-// Gives back everything the Current Traffic page shows. It is "async" because the real version
-// will wait for the server; the sample version waits a moment to behave the same way.
+// Gives back everything the Current Traffic page shows (see the top of this file)
 export async function getCurrentTraffic() {
-  await wait(300)
   const intersection = await getIntersection()
 
-  // FOR TESTING ONLY: add ?demo=empty or ?demo=error to the page address
-  // to see the empty and error states.
+  // FOR TESTING ONLY: add ?demo=error, ?demo=empty, ?demo=no-run, ?demo=failed or
+  // ?demo=no-kpis to the page address to see those states.
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === 'error') throw new Error('The traffic service is not responding.')
-  if (demo === 'empty') {
+
+  const folder = `/data/${intersection.id}`
+  const approaches = await getJson(`${folder}/network/approaches.json`)
+  if (!approaches) throw new Error('The approaches could not be loaded.')
+
+  let run = demo === 'no-run' ? null : await getJson(`${folder}/baseline/run.json`)
+  if (run && demo === 'failed') {
+    run = { ...run, status: 'failed', failure_reason: 'TraCIException: connection closed by SUMO' }
+  }
+  const page = { source: 'run', intersection, alerts: SAMPLE_ALERTS }
+
+  if (!run || run.status === 'failed') {
     return {
-      isSample: true,
-      intersection,
+      ...page,
+      run: run && {
+        id: run.run_id,
+        status: 'failed',
+        failureReason: run.failure_reason,
+        start: run.run_start,
+      },
+      hasKpis: false,
+      intervals: [],
       timeline: [],
-      kpis: [],
-      alerts: [],
-      approaches: [],
     }
   }
 
-  const interval = latestInterval()
-  const previousInterval = latestInterval(Date.parse(interval[0]))
+  // Only the KPI results of this run; a kpis.json left from another run is not used
+  const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/baseline/kpis.json`)
+  const results = kpis?.run_id === run.run_id ? kpis.results : null
+  const intervals =
+    demo === 'empty' ? [] : groupByInterval(run, results ?? [], approaches.approaches)
 
   return {
-    isSample: true,
-    intersection,
-    timeline: sampleTimelineBars(),
-    kpis: sampleIntersectionKpis(interval, previousInterval),
-    alerts: SAMPLE_ALERTS,
-    approaches: sampleApproaches(interval),
+    ...page,
+    run: {
+      id: run.run_id,
+      status: 'completed',
+      failureReason: null,
+      start: addSeconds(run.run_start, run.analysis_start_s),
+      duration: run.analysis_end_s - run.analysis_start_s,
+      intervalSeconds: run.interval_s,
+    },
+    hasKpis: results !== null,
+    intervals,
+    timeline: intervals.map(timelineBar),
   }
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+// A JSON file, or null when it is not there. The dev server answers a missing file with the
+// page itself, so anything that is not JSON counts as missing too.
+async function getJson(url) {
+  const response = await fetch(url)
+  const isJson = response.headers?.get('content-type')?.includes('json') ?? true
+  if (!response.ok || !isJson) return null
+  return response.json()
+}
+
+// An ISO time plus some seconds, as an ISO time
+function addSeconds(iso, seconds) {
+  return new Date(Date.parse(iso) + seconds * 1000).toISOString()
+}
+
+// The words for a movement, from its type: 'Left', 'Through', 'Right (slip lane)'
+function movementLabel({ movement_type: type, control }) {
+  if (type === 'left') return 'Left'
+  if (type === 'through') return 'Through'
+  return control === 'uncontrolled' ? 'Right (slip lane)' : 'Right'
+}
+
+// The run's analysis period, one entry per 15-minute interval, with its KPI results (none
+// when the run has none yet) in the shape the page uses
+function groupByInterval(run, results, approaches) {
+  const at = (iso) => Date.parse(iso)
+  // the results of one element and interval by KPI name, e.g. of('approach', 'APP_E', start)
+  const of = (level, id, start) =>
+    Object.fromEntries(
+      results
+        .filter(
+          (r) => r.level === level && r[`${level}_id`] === id && at(r.interval_start) === at(start),
+        )
+        .map((r) => [r.kpi, r]),
+    )
+  const starts = []
+  for (let s = run.analysis_start_s; s < run.analysis_end_s; s += run.interval_s) {
+    starts.push(addSeconds(run.run_start, s))
+  }
+
+  return starts.map((start, i) => {
+    const before = starts[i - 1]
+    const intersection = Object.values(of('intersection', run.intersection_id, start))
+
+    return {
+      start,
+      end: addSeconds(start, run.interval_s),
+      kpis: intersection.map((current) => ({
+        current,
+        previous: before
+          ? (of('intersection', run.intersection_id, before)[current.kpi] ?? null)
+          : null,
+      })),
+      approaches: approaches.map((a) => ({
+        approach_id: a.approach_id,
+        arm: a.side[0].toUpperCase() + a.side.slice(1),
+        road: a.road,
+        kpis: of('approach', a.approach_id, start),
+        movements: a.movements.map((m) => ({
+          movement_id: m.movement_id,
+          label: movementLabel(m),
+          kpis: of('movement', m.movement_id, start),
+        })),
+      })),
+    }
+  })
+}
+
+// LOS grades by colour of the timeline bar
+const BAR_LEVELS = { A: 'low', B: 'low', C: 'low', D: 'moderate', E: 'high', F: 'high' }
+
+// One timeline bar for an interval: its height from the intersection's control delay (80 s/veh,
+// where LOS F starts, is a full bar) and its colour from the level of service. No delay, no bar.
+function timelineBar({ start, kpis }) {
+  const result = (kpi) => kpis.find((k) => k.current.kpi === kpi)?.current
+  const delay = result('control_delay')
+  const grade = result('level_of_service')?.los_grade
+
+  return {
+    time: start,
+    value: delay?.status === 'ok' ? Math.min(1, delay.value / 80) : undefined,
+    level: BAR_LEVELS[grade],
+  }
 }

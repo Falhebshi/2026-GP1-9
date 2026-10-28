@@ -20,6 +20,10 @@ import './HistoricalTimeline.css'
 //   intervalMinutes  how long one bar lasts (15 unless you say otherwise)
 //   title            heading of the card
 //   error            text shown instead of the bars when the data failed to load
+//   emptyMessage     what to say when there are no bars (optional)
+//   live             false for a simulated run: the bars are not "the last 24 hours", so the
+//                    Live / Historical badge and the Latest button are left out (true unless
+//                    you say otherwise)
 //
 // Anything you put between <HistoricalTimeline> and </HistoricalTimeline> is
 // shown above the bars, e.g. the peak-period buttons on Network Overview.
@@ -31,6 +35,10 @@ import './HistoricalTimeline.css'
 // has to change:
 //   - while value is null, the slider stays on the newest bar
 //   - while value is a time, the slider stays on that moment as it slides left
+// Up to this many bars (e.g. the four 15-minute bars of a one-hour run), the bars are drawn
+// wider, so they don't turn into thin lines with wide gaps
+const FEW_BARS = 12
+
 function HistoricalTimeline({
   bars = [],
   value = null,
@@ -38,6 +46,8 @@ function HistoricalTimeline({
   intervalMinutes = 15,
   title = 'Historical Timeline',
   error,
+  live = true,
+  emptyMessage = 'No traffic data is available for the last 24 hours.',
   className = '',
   children,
 }) {
@@ -83,13 +93,16 @@ function HistoricalTimeline({
       )}
 
       {!error && points.length === 0 && (
-        <EmptyState>No traffic data is available for the last 24 hours.</EmptyState>
+        <EmptyState>{emptyMessage}</EmptyState>
       )}
 
       {hasBars && (
         <>
           {/* --count tells the CSS how many columns to make */}
-          <div className="timeline-plot" style={{ '--count': points.length }}>
+          <div
+            className={`timeline-plot ${points.length <= FEW_BARS ? 'timeline-plot-few' : ''}`}
+            style={{ '--count': points.length }}
+          >
             <div
               className="timeline-bars"
               onPointerLeave={() => setHoverIndex(null)}
@@ -184,15 +197,16 @@ function HistoricalTimeline({
           {/* What is being shown, and the way back to the latest time */}
           <div className="timeline-footer">
             <p className="timeline-readout">
-              {isLatest ? (
-                <Badge variant="success">Live</Badge>
-              ) : (
-                <Badge variant="warning">Historical</Badge>
-              )}
+              {live &&
+                (isLatest ? (
+                  <Badge variant="success">Live</Badge>
+                ) : (
+                  <Badge variant="warning">Historical</Badge>
+                ))}
               <span>{describe(selected, intervalMinutes)}</span>
             </p>
 
-            {!isLatest && (
+            {live && !isLatest && (
               <Button variant="secondary" size="sm" onClick={() => onChange(null)}>
                 Latest
               </Button>

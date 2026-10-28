@@ -35,6 +35,10 @@ import './TrafficScene3D.css'
 //   scenario         "baseline" (default) or an intervention run
 //   time             seconds from the start of the analysis period (optional, without it the scene
 //                    loops through the analysis period by itself)
+//   onTimeChange     called with the seconds from the start of the analysis period, once a second,
+//                    while the scene loops by itself (optional)
+//   jumpTo           { time } moves the looping scene to that time; pass a new object for every
+//                    jump (optional)
 //   bounds           study area { west, south, east, north }, everything outside is cut off
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
@@ -125,6 +129,8 @@ function TrafficScene3D({
   belowStatus = false,
   scenario = 'baseline',
   time,
+  onTimeChange,
+  jumpTo,
   onReady,
   onError,
 }) {
@@ -238,8 +244,8 @@ function TrafficScene3D({
   const vsTimerRef = useRef(0)
   const draggingRef = useRef(false)
   const envAnimRef = useRef(0)
-  const callbacksRef = useRef({ onReady, onError })
-  callbacksRef.current = { onReady, onError }
+  const callbacksRef = useRef({ onReady, onError, onTimeChange })
+  callbacksRef.current = { onReady, onError, onTimeChange }
 
   const base = (mode) => ({
     longitude: center[0],
@@ -449,6 +455,10 @@ function TrafficScene3D({
             last = now
             let nt = tRef.current + dt
             if (nt > to) nt = from
+            // tell the page once a second, when the whole second changes
+            if (Math.floor(nt - from) !== Math.floor(tRef.current - from)) {
+              callbacksRef.current.onTimeChange?.(Math.floor(nt - from))
+            }
             tRef.current = nt
             redraw(false)
             raf = requestAnimationFrame(tick)
@@ -483,6 +493,13 @@ function TrafficScene3D({
     tRef.current = startRef.current + time
     redraw(false)
   }, [time]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A jump from the page while the scene loops by itself, e.g. a click on the timeline
+  useEffect(() => {
+    if (!jumpTo || !sceneRef.current) return
+    tRef.current = startRef.current + jumpTo.time
+    redraw(false)
+  }, [jumpTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The lane under the mouse if it is part of an approach, otherwise null
   function approachLane(object) {
