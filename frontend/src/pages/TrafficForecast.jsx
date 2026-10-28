@@ -7,6 +7,7 @@ import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import ForecastSimulation from '../components/ForecastSimulation'
 import KpiSummary from '../components/KpiSummary'
+import Notice from '../components/Notice'
 import useFullScreen from '../hooks/useFullScreen'
 import usePlayback from '../hooks/usePlayback'
 import { getForecast } from '../services/forecastService'
@@ -81,6 +82,12 @@ function TrafficForecast() {
 
   return (
     <div className="traffic-forecast">
+      {data.isSample && (
+        <Notice variant="warning">
+          Sample data for layout only: the predicted KPIs and alerts on this page are illustrative,
+          not forecast results, and the vehicles come from a test run.
+        </Notice>
+      )}
       {!fullScreen && timeBar}
 
       <div className="traffic-forecast-layout">
