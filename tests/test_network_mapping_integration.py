@@ -97,13 +97,13 @@ def test_review_changes_preserve_all_original_movement_records():
     data = json.loads(MAPPING_FILE.read_text(encoding='utf-8'))
     encoded = json.dumps(data['movement_mappings'], sort_keys=True, separators=(',', ':')).encode()
     assert hashlib.sha256(encoded).hexdigest() == (
-        'e18cda9abdedcf1b352720086684a3e7698ba196735ef6aa72ebb2e7e8e69b08'
+        'f0895e79bc1bcc09835f3149697547c0553c42e59a15ddedc6013c2de6623c39'
     )
 
 
 def test_approved_lane_catalog_and_deferred_collections(config):
     assert config.schema_version == '2.0'
-    assert config.mapping_version == '2.3-measurement-zones'
+    assert config.mapping_version == '2.4-west-route-start'
     expected_ids = {item[0] for item in APPROVED_LANES}
     assert len(config.approach_lanes) == len(config.lane_mappings) == 16
     assert {lane.lane_id for lane in config.approach_lanes} == expected_ids

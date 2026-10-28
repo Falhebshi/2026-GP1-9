@@ -416,7 +416,7 @@ its recorded checksum.
 `schema_version` identifies the mapping configuration's structure and validation
 contract. The repository currently accepts only `"2.0"`. `mapping_version` is a
 nonempty label identifying a specific revision of the study-area mapping data;
-the current value is `"2.3-measurement-zones"`. The version labels do not need to match.
+the current value is `"2.4-west-route-start"`. The version labels do not need to match.
 
 ### Maintaining versions
 
