@@ -5,11 +5,21 @@ import pytest
 from backend.analytics.kpi.delay import (
     NO_ARRIVALS_REASON,
     MovementDelay,
+    blocked_movements,
+    blocks_over_period,
+    merge_blocks,
     movement_delays,
+    uninserted_approaches,
+    uninserted_reason,
 )
-from backend.analytics.kpi.intervals import analysis_intervals
+from backend.analytics.kpi.intervals import AnalysisInterval, analysis_intervals
 from jaadah.models.kpis import KpiStatus
-from jaadah.models.outputs import IncompletePassage, VehicleDelayRecord
+from jaadah.models.network import Movement
+from jaadah.models.outputs import (
+    IncompletePassage,
+    UninsertedVehicle,
+    VehicleDelayRecord,
+)
 
 
 RIYADH = timezone(timedelta(hours=3))
@@ -68,13 +78,14 @@ def unfinished(vehicle_id, entry, **overrides):
     return IncompletePassage(**data)
 
 
-def delays(delay_records=(), incomplete_passages=(), run_id="RUN_1"):
+def delays(delay_records=(), incomplete_passages=(), run_id="RUN_1", blocked=None):
     return movement_delays(
         run_id=run_id,
         movement_ids=MOVEMENTS,
         intervals=INTERVALS,
         delay_records=list(delay_records),
         incomplete_passages=list(incomplete_passages),
+        blocked=blocked,
     )
 
 
@@ -293,3 +304,95 @@ def test_same_vehicle_completed_and_unfinished_rejected():
             [passage("v1", at(8, 1), 15, 5)],
             [unfinished("v1", at(8, 25))],
         )
+
+
+# ============================================================
+# BLOCKED APPROACHES
+# ============================================================
+
+MOVEMENT_MODELS = {
+    "MOV_E_T": Movement(movement_id="MOV_E_T", intersection_id="INT_01", approach_id="APP_E"),
+    "MOV_E_L": Movement(movement_id="MOV_E_L", intersection_id="INT_01", approach_id="APP_E"),
+    "MOV_W_T": Movement(movement_id="MOV_W_T", intersection_id="INT_01", approach_id="APP_W"),
+}
+
+
+def never_inserted(vehicle_id, planned, **overrides):
+    data = {
+        "run_id": "RUN_1",
+        "vehicle_id": vehicle_id,
+        "movement_id": "MOV_W_T",
+        "planned_stop_line_time": planned,
+    }
+    data.update(overrides)
+    return UninsertedVehicle(**data)
+
+
+def test_blocked_movement_is_unavailable_with_its_reason():
+    result = delays(
+        [passage("V1", at(8, 1), 10, 4)],
+        blocked={("MOV_E_T", FIRST): "the queue reached the end of the zone"},
+    )
+
+    first = result[("MOV_E_T", FIRST)]
+    assert first.status == KpiStatus.UNAVAILABLE
+    assert first.reason == "the queue reached the end of the zone"
+    assert first.mean_control_delay_s is None
+    assert first.completed_vehicles == 1
+    assert result[("MOV_E_T", SECOND)].status == KpiStatus.NOT_APPLICABLE
+    assert result[("MOV_E_L", FIRST)].status == KpiStatus.NOT_APPLICABLE
+
+
+def test_uninserted_vehicles_block_their_approach_by_planned_stop_line_time():
+    blocks = uninserted_approaches("RUN_1", MOVEMENT_MODELS, INTERVALS, [
+        never_inserted("N1", at(8, 14)),
+        never_inserted("N2", at(8, 14, 30)),
+        never_inserted("N3", at(8, 20)),
+        never_inserted("N4", at(8, 40)),  # clearance: not in an interval
+    ])
+
+    assert blocks == {
+        ("APP_W", FIRST): uninserted_reason(2),
+        ("APP_W", SECOND): uninserted_reason(1),
+    }
+    assert uninserted_reason(2) == "2 vehicle(s) could not enter the network before the run ended"
+
+
+def test_uninserted_vehicle_from_another_run_rejected():
+    with pytest.raises(ValueError, match="belongs to run RUN_2"):
+        uninserted_approaches(
+            "RUN_1", MOVEMENT_MODELS, INTERVALS, [never_inserted("N1", at(8, 1), run_id="RUN_2")]
+        )
+
+
+def test_uninserted_vehicle_of_unknown_movement_rejected():
+    with pytest.raises(ValueError, match="not analysed"):
+        uninserted_approaches(
+            "RUN_1", MOVEMENT_MODELS, INTERVALS, [never_inserted("N1", at(8, 1), movement_id="MOV_X")]
+        )
+
+
+def test_approach_block_spreads_to_its_movements():
+    spread = blocked_movements(MOVEMENT_MODELS, {("APP_E", FIRST): "why"})
+
+    assert spread == {("MOV_E_T", FIRST): "why", ("MOV_E_L", FIRST): "why"}
+
+
+def test_merge_keeps_both_reasons_in_order():
+    merged = merge_blocks({("APP_E", FIRST): "a"}, {("APP_E", FIRST): "b", ("APP_W", FIRST): "c"})
+
+    assert merged == {("APP_E", FIRST): "a; b", ("APP_W", FIRST): "c"}
+
+
+def test_merge_does_not_repeat_the_same_reason():
+    merged = merge_blocks({("APP_E", FIRST): "a"}, {("APP_E", FIRST): "a"})
+
+    assert merged == {("APP_E", FIRST): "a"}
+
+
+def test_block_in_any_interval_blocks_the_period():
+    period = AnalysisInterval(FIRST.start, SECOND.end)
+
+    blocks = blocks_over_period({("APP_E", SECOND): "late", ("APP_W", FIRST): "early"}, INTERVALS)
+
+    assert blocks == {("APP_E", period): "late", ("APP_W", period): "early"}

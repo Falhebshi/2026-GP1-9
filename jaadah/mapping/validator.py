@@ -208,4 +208,66 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
             if any(pair in route_pairs for pairs in controlled_edges.values() for pair in pairs):
                 errors.append(f"{name}: route contains a controlled link but signal_controlled is false")
 
+    errors.extend(_zone_errors(config, edges, lane_edges))
+    return errors
+
+
+def _zone_errors(config: NetworkMappingConfig, edges: dict, lane_edges: dict) -> list[str]:
+    """
+    Check that each approach's measurement zone fits on the routes of the
+    movements its lanes serve: zone_upstream_m on the route up to the stop
+    line, zone_downstream_m on the route after the junction exit.
+
+    The stop line is the end of the last SUMO lane of the movement's
+    canonical lanes; the junction exit is the start of the next route edge.
+    Movements whose lanes are not mapped yet are not checked.
+    """
+
+    def edge_length(edge_id):
+        lanes = edges[edge_id].findall("lane")
+        try:
+            length = float(lanes[0].get("length")) if lanes else None
+        except (TypeError, ValueError):
+            return None
+        return length if length is not None and math.isfinite(length) and length >= 0 else None
+
+    sumo_lanes = {item.lane_id: item.sumo_lane_ids for item in config.lane_mappings}
+    routes = {item.movement_id: item.sumo_route_edge_ids for item in config.movement_mappings}
+    errors = []
+
+    for approach in config.approach_mappings:
+        if approach.zone_upstream_m is None:
+            continue
+        stop_edges = defaultdict(set)
+        for lane in config.approach_lanes:
+            if lane.approach_id != approach.approach_id or lane.lane_id not in sumo_lanes:
+                continue
+            for movement_id in lane.served_movement_ids:
+                stop_edges[movement_id].add(lane_edges.get(sumo_lanes[lane.lane_id][-1]))
+
+        for movement_id, found in sorted(stop_edges.items()):
+            name = f"Approach {approach.approach_id} zone, movement {movement_id}"
+            route = routes.get(movement_id, [])
+            stop_edge = next(iter(found)) if len(found) == 1 else None
+            if stop_edge not in route or any(edge not in edges for edge in route):
+                # Lane and route errors are reported by the checks above.
+                continue
+            lengths = [edge_length(edge) for edge in route]
+            if None in lengths:
+                errors.append(f"{name}: invalid SUMO edge length on the route")
+                continue
+            position = route.index(stop_edge)
+            upstream = sum(lengths[: position + 1])
+            downstream = sum(lengths[position + 1 :])
+            if approach.zone_upstream_m > upstream:
+                errors.append(
+                    f"{name}: zone_upstream_m {approach.zone_upstream_m} m exceeds "
+                    f"the {upstream:.1f} m of route before the stop line"
+                )
+            if approach.zone_downstream_m > downstream:
+                errors.append(
+                    f"{name}: zone_downstream_m {approach.zone_downstream_m} m exceeds "
+                    f"the {downstream:.1f} m of route after the junction exit"
+                )
+
     return errors

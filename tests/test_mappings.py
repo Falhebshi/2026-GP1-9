@@ -709,3 +709,33 @@ def test_lane_mixing_is_not_checked_without_attributes():
     data["detector_mappings"] = []
     data["movement_attributes"] = data["movement_attributes"][:1]
     NetworkMappingConfig.model_validate(data)
+
+
+# ============================================================
+# MEASUREMENT ZONES
+# ============================================================
+
+
+def test_approach_zone_is_optional():
+    approach = makes(ApproachMapping)
+    assert approach.zone_upstream_m is None and approach.zone_downstream_m is None
+
+
+def test_approach_zone_accepted():
+    approach = makes(ApproachMapping, zone_upstream_m=388, zone_downstream_m=155.5)
+    assert (approach.zone_upstream_m, approach.zone_downstream_m) == (388, 155.5)
+    assert ApproachMapping.model_validate_json(approach.model_dump_json()) == approach
+
+
+@pytest.mark.parametrize("fields", [{"zone_upstream_m": 388}, {"zone_downstream_m": 155}])
+def test_approach_zone_distances_given_together(fields):
+    with pytest.raises(ValidationError, match="must be given together"):
+        makes(ApproachMapping, **fields)
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize("field", ["zone_upstream_m", "zone_downstream_m"])
+def test_approach_zone_rejects_invalid_distance(field, value):
+    fields = {"zone_upstream_m": 388, "zone_downstream_m": 155, field: value}
+    with pytest.raises(ValidationError):
+        makes(ApproachMapping, **fields)
