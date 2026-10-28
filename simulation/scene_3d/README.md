@@ -13,18 +13,19 @@ pip install -r requirements.txt
 python simulation/scene_3d/build_all.py                   # roads, buildings, background, signal heads
 python simulation/scene_3d/build_test_run.py              # the test run shown until the baseline run exists
 python simulation/scene_3d/build_test_kpis.py             # its test KPI results, until the KPI engine writes them
-python simulation/scene_3d/build_playback.py <run folder> \
-    --run-id <run id> --run-start 2026-10-20T07:45:00+03:00 --duration-s 5400 \
-    --warm-up-s 900 --clearance-s 900
+python simulation/scene_3d/build_playback.py simulation/outputs/baseline_runs/<run id>
 ```
 
-`build_playback.py` turns one simulation run into the vehicles and signal indications. The run
-folder holds the SUMO outputs `fcd.xml` (written with `--fcd-output.geo`, `--fcd-output.signals`
-and `--device.fcd.period 0.4`) and `tls_states.xml` (the `SaveTLSStates` timed event), and the
-manifest and demand files of the SUMO demand generation. `--run-start` is the real time of SUMO
-second 0 (analysis start minus warm-up), `--duration-s` the length of the run, and `--warm-up-s`
-and `--clearance-s` the parts before and after the analysis period, all in whole 15-minute
-intervals (the window of the SUMO demand generation).
+`build_playback.py` turns one simulation run into the vehicles and signal indications. For a
+baseline run (`simulation/scripts/run_baseline.py`) it only needs the run folder: it reads
+`demand/` (the manifest and demand files), `run/raw/fcd.xml`, `run/raw/tls_states.xml` and
+`summary.json`, which gives the run ID, its times and whether it completed. The runner writes the
+FCD with geo positions and signals, and the signal states with `SaveTLSSwitchStates`.
+
+Another run folder (such as the one `build_test_run.py` makes) holds the same four files in one
+place, and the run is described with options: `--run-id`, `--run-start` (the real time of SUMO
+second 0, analysis start minus warm-up), `--duration-s`, and `--warm-up-s` and `--clearance-s`
+(900 unless given), all in whole 15-minute intervals.
 
 ## Inputs
 
@@ -101,7 +102,8 @@ Each script can also be run on its own; its usage is at the top of the file.
 - The committed `baseline/` files come from a test run (`TEST_SUMO_DEMAND_CHECK`), built with
   `python simulation/scene_3d/build_test_run.py`: made-up demand of 20 vehicles per movement and
   15-minute interval, planned with the SUMO demand generation and simulated with SUMO. Replace them
-  with `build_playback.py` from the baseline run once it exists.
+  with `build_playback.py <baseline run folder>`. A baseline run from the detector data has no
+  tunnel traffic, because no detector counts the tunnel movements.
 - The committed `baseline/kpis.json` is test data too (`build_test_kpis.py`): made-up values, built
   with the `KpiResult` model so the file has the real shape. It is replaced by the KPI engine's
   results for the baseline run.
