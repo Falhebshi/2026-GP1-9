@@ -40,6 +40,7 @@ from jaadah.models.kpis import (
     KpiResult,
     KpiStatus,
     KpiUnit,
+    LevelOfServiceGrade,
     UncontrolledMovements,
 )
 from jaadah.models.network import ApproachLane, Movement
@@ -279,10 +280,17 @@ def single_result(
     value: float | None,
     reason: str | None = None,
     run_ids: list[str] | None = None,
+    los_grade: LevelOfServiceGrade | None = None,
 ) -> KpiResult:
-    """A result that needs no combining, e.g. an HCM value (no runs)."""
+    """
+    A result that needs no combining, e.g. an HCM value (no runs). A
+    level of service has its grade in los_grade and no value.
+    """
 
-    return _result(spec, status, value=value, reason=reason, run_ids=run_ids or [])
+    return _result(
+        spec, status, value=value, reason=reason, run_ids=run_ids or [],
+        los_grade=los_grade,
+    )
 
 
 def _result(
