@@ -64,11 +64,15 @@ def build_run_index(
     duration_s: int,
     warm_up_s: int,
     clearance_s: int,
+    is_test: bool = False,
 ) -> dict:
     """
     Return the table of contents of a run's playback files. The view
     shows only the analysis period, between the warm-up (the network
     filling up) and the clearance (the last vehicles finishing).
+
+    A test run (made-up demand) is marked with is_test, so the page can
+    say that what it shows is test data.
     """
 
     analysis_end_s = duration_s - clearance_s
@@ -85,7 +89,7 @@ def build_run_index(
             "that leave an analysis period"
         )
 
-    return {
+    index = {
         "run_id": run_id,
         "intersection_id": intersection_id,
         "scenario": scenario,
@@ -102,6 +106,11 @@ def build_run_index(
         ),
         "signals_file": "signals.json",
     }
+
+    if is_test:
+        index["is_test"] = True
+
+    return index
 
 
 def build_failed_run_index(

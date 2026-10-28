@@ -14,6 +14,7 @@
 //                                        intervals). start: the start of the analysis period (ISO
 //                                        time); duration and intervalSeconds in seconds
 //     hasKpis: false when the run has no KPI results yet (no kpis.json, or one of another run)
+//     isTest: true when the run or its KPIs are test data ("is_test" in run.json or kpis.json)
 //     intervals: [{                      one per 15 minutes of the analysis period, oldest first
 //       start, end,                      ISO times
 //       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
@@ -237,6 +238,7 @@ export async function getCurrentTraffic() {
         start: run.run_start,
       },
       hasKpis: false,
+      isTest: Boolean(run?.is_test),
       intervals: [],
       timeline: [],
     }
@@ -259,6 +261,7 @@ export async function getCurrentTraffic() {
       intervalSeconds: run.interval_s,
     },
     hasKpis: results !== null,
+    isTest: Boolean(run.is_test || (results && kpis.is_test)),
     intervals,
     timeline: intervals.map(timelineBar),
   }

@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
 import KpiSummary from '../components/KpiSummary'
 import LocationSummary from '../components/LocationSummary'
+import Notice from '../components/Notice'
 import SimulationViewport from '../components/SimulationViewport'
 import TrafficScene3D from '../components/TrafficScene3D'
 import useFullScreen from '../hooks/useFullScreen'
@@ -69,7 +70,7 @@ function CurrentTraffic() {
     return <EmptyState>Loading current traffic…</EmptyState>
   }
 
-  const { intersection, run, hasKpis, intervals, timeline, alerts } = data
+  const { intersection, run, hasKpis, isTest, intervals, timeline, alerts } = data
   // Why there is nothing to play, if so: no run yet, or the run failed
   const runProblem = !run
     ? 'No simulated run is available yet.'
@@ -120,6 +121,13 @@ function CurrentTraffic() {
 
   return (
     <div className="current-traffic">
+      {/* Test files are marked "is_test"; a real run has no mark, so this goes away by itself */}
+      {isTest && (
+        <Notice variant="warning">
+          Test data: the vehicles and KPIs come from a test run with made-up demand, not from the
+          baseline simulation. The alerts are samples.
+        </Notice>
+      )}
       {!fullScreen && timeBar}
 
       <div className="current-traffic-layout">

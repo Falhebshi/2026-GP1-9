@@ -417,8 +417,12 @@ def build_playback(
     warm_up_s: int,
     clearance_s: int,
     scenario: str,
+    is_test: bool = False,
 ) -> Path:
-    """Convert one run folder into the 3D view's playback files."""
+    """
+    Convert one run folder into the 3D view's playback files. is_test
+    marks a test run (made-up demand) in run.json.
+    """
 
     config = load_network_mappings(MAPPING_PATH)
     intersection_id = config.intersection_mapping.intersection_id
@@ -438,6 +442,7 @@ def build_playback(
         duration_s=duration_s,
         warm_up_s=warm_up_s,
         clearance_s=clearance_s,
+        is_test=is_test,
     )
     underpass = UnderpassHeight()
     vehicle_payloads = pack_vehicle_intervals(

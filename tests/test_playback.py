@@ -338,3 +338,28 @@ def test_failed_run_writes_only_run_json(
         encoding="utf-8",
     ) as file:
         assert json.load(file) == index
+
+
+def test_only_a_test_run_is_marked_as_test() -> None:
+    real = build_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        duration_s=5400,
+        warm_up_s=900,
+        clearance_s=900,
+    )
+    test = build_run_index(
+        run_id="RUN_TEST",
+        intersection_id="INT_001",
+        scenario="baseline",
+        run_start=RUN_START,
+        duration_s=5400,
+        warm_up_s=900,
+        clearance_s=900,
+        is_test=True,
+    )
+
+    assert "is_test" not in real
+    assert test["is_test"] is True

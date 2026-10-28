@@ -177,6 +177,11 @@ def test_shared_lane_movements_show_the_lane_queue() -> None:
     }
 
 
+def test_test_files_say_they_are_test_data() -> None:
+    assert study_kpis()["is_test"] is True
+    assert load_run()["is_test"] is True
+
+
 def test_frontend_copy_is_up_to_date() -> None:
     with (RUN_DIR / "kpis.json").open(
         encoding="utf-8",

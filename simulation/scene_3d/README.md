@@ -104,6 +104,11 @@ Each script can also be run on its own; its usage is at the top of the file.
   15-minute interval, planned with the SUMO demand generation and simulated with SUMO. Replace them
   with `build_playback.py <baseline run folder>`. A baseline run from the detector data has no
   tunnel traffic, because no detector counts the tunnel movements.
+- Test files are marked `"is_test": true` (in `run.json` from `build_test_run.py`, and in
+  `kpis.json` from `build_test_kpis.py`). While they are, Current Traffic says that it shows test
+  data. A real run has no mark, so the notice goes away by itself.
+- A failed run writes only `run.json` (status `failed` and its reason). The vehicle and signal files
+  of an earlier run may stay in the folder; the view ignores them, because `run.json` lists none.
 - The committed `baseline/kpis.json` is test data too (`build_test_kpis.py`): made-up values, built
   with the `KpiResult` model so the file has the real shape. It is replaced by the KPI engine's
   results for the baseline run.

@@ -9,9 +9,10 @@ The values are made up: the sample values the pages used before, a
 little higher or lower in each 15-minute interval so the page can be
 seen to follow the time. They are not calculated from the test run.
 Every result is a KpiResult, so the file has the same shape and follows
-the same rules as the KPI engine's results. It is written next to the
-test run's run.json and is replaced by the real file once the baseline
-run's KPIs are calculated.
+the same rules as the KPI engine's results. The file is marked
+"is_test": true, so the page says that the values are test data. It is
+written next to the test run's run.json and is replaced by the real file
+once the baseline run's KPIs are calculated.
 """
 
 import json
@@ -511,6 +512,7 @@ def build_test_kpis(
 
     return {
         "run_id": run["run_id"],
+        "is_test": True,
         "scenario_id": SCENARIO_ID,
         "intersection_id": intersection_id,
         "results": [
