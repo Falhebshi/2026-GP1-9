@@ -73,9 +73,12 @@ class BaselineNotStarted(Exception):
 def sumo_version(sumo_bin: str = "sumo") -> str:
     """Return the version reported by SUMO, such as 1.27.1."""
 
-    output = subprocess.run(
-        [sumo_bin, "--version"], capture_output=True, text=True, check=True
-    ).stdout
+    try:
+        output = subprocess.run(
+            [sumo_bin, "--version"], capture_output=True, text=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise BaselineNotStarted([f"SUMO could not be run ({sumo_bin}): {exc}"]) from exc
     first_line = output.splitlines()[0] if output else ""
     # The first line reads "Eclipse SUMO sumo 1.27.1"
     return first_line.split()[-1] if first_line else "unknown"
@@ -103,6 +106,21 @@ def _demand_problems(errors) -> list[str]:
     return problems
 
 
+def _kept_files(output_dir: Path) -> list[str]:
+    if not output_dir.exists():
+        return []
+    return [
+        f"The files written so far were kept for diagnosis in {output_dir}; "
+        "use a new --out or --run-id, or delete that folder, to run again."
+    ]
+
+
+def default_run_id(analysis_start: datetime, analysis_end: datetime, seed: int) -> str:
+    """RUN_BASELINE_<date>T<start>-<end>_S<seed>, e.g. RUN_BASELINE_20261027T0800-0900_S42."""
+
+    return f"RUN_BASELINE_{analysis_start:%Y%m%dT%H%M}-{analysis_end:%H%M}_S{seed}"
+
+
 def run_baseline(
     analysis_start: datetime,
     analysis_end: datetime,
@@ -124,10 +142,12 @@ def run_baseline(
     output_dir = Path(output_dir).expanduser().resolve()
     if output_dir.exists():
         raise BaselineNotStarted([f"Output folder already exists: {output_dir}"])
+    # SUMO is checked first, so a missing installation is reported before any work.
+    version = sumo_version(sumo_bin)
 
     mapping = load_network_mappings(mapping_path, network_path=network_path)
     scenario = Scenario(
-        scenario_id=f"SCN_BASELINE_{analysis_start:%Y%m%dT%H%M}",
+        scenario_id=f"SCN_BASELINE_{analysis_start:%Y%m%dT%H%M}-{analysis_end:%H%M}",
         intersection_id=mapping.intersection_mapping.intersection_id,
         time_context=TimeContext.HISTORICAL,
         control_mode=ControlMode.BASELINE,
@@ -173,10 +193,11 @@ def run_baseline(
         scenario_id=scenario.scenario_id,
         random_seed=seed,
         network_version=mapping.network.version,
-        sumo_version=sumo_version(sumo_bin),
+        sumo_version=version,
         step_length_s=step_length_s,
         status=SimulationRunStatus.PENDING,
     )
+    # Start of step 4: includes demand generation as well as the SUMO run.
     started_at = datetime.now(RIYADH)
     try:
         result = generate_and_execute_scenario(
@@ -186,7 +207,10 @@ def run_baseline(
             sumo_bin=sumo_bin,
         )
     except (DemandPlanningError, DemandWritingError, DemandCheckError) as exc:
-        raise BaselineNotStarted(["Generated SUMO demand is not valid:"] + exc.problems) from exc
+        problems = ["Generated SUMO demand is not valid:"] + exc.problems
+        raise BaselineNotStarted(problems + _kept_files(output_dir)) from exc
+    except (ValueError, FileExistsError) as exc:
+        raise BaselineNotStarted([str(exc)] + _kept_files(output_dir)) from exc
 
     generated = result["generated_demand"]
     execution = result["scenario_execution"]
@@ -251,7 +275,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--step-length", type=float, default=0.4)
-    parser.add_argument("--run-id", help="Default: RUN_BASELINE_<analysis start>_S<seed>")
+    parser.add_argument("--run-id", help="Default: RUN_BASELINE_<date>T<start>-<end>_S<seed>")
     parser.add_argument("--out", type=Path,
                         help="Default: simulation/outputs/baseline_runs/<run-id>")
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
@@ -262,7 +286,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    run_id = args.run_id or f"RUN_BASELINE_{args.analysis_start:%Y%m%dT%H%M}_S{args.seed}"
+    run_id = args.run_id or default_run_id(args.analysis_start, args.analysis_end, args.seed)
     output_dir = args.out or DEFAULT_OUTPUT_ROOT / run_id
 
     try:

@@ -9,7 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.ingestion.client import SyntheticTrafficClient
-from simulation.scripts.run_baseline import BaselineNotStarted, run_baseline
+from jaadah.sumo_demand.checks import DemandCheckError
+from simulation.scripts import run_baseline as baseline
+from simulation.scripts.run_baseline import BaselineNotStarted, default_run_id, run_baseline
 from test_demand_ingestion_integration import TIMEZONE, artificial_profiles
 from traffic_source.synthetic.config import SyntheticSourceConfig
 from traffic_source.synthetic.generator import SyntheticTrafficGenerator
@@ -73,7 +75,45 @@ def source(tmp_path, monkeypatch):
         api.__exit__(None, None, None)
 
 
-def test_run_does_not_start_before_the_source_holds_the_whole_window(source, tmp_path) -> None:
+@pytest.fixture
+def sumo_found(monkeypatch):
+    """Report a SUMO version without running SUMO, for tests that stop before SUMO runs."""
+
+    monkeypatch.setattr(baseline, "sumo_version", lambda sumo_bin="sumo": "1.27.1")
+
+
+class UnusedSource:
+    """A source that fails the test if it is read."""
+
+    base_url = "http://synthetic-source"
+
+    def fetch_latest_available_timestamp(self):
+        raise AssertionError("the source must not be read")
+
+    def fetch_observations(self, start, end):
+        raise AssertionError("the source must not be read")
+
+
+def test_default_run_id_includes_the_analysis_end() -> None:
+    assert default_run_id(ANALYSIS_START, ANALYSIS_END, 42) == "RUN_BASELINE_20261018T0800-0900_S42"
+
+
+def test_run_does_not_start_without_sumo(tmp_path) -> None:
+    output_dir = tmp_path / "baseline"
+
+    with pytest.raises(BaselineNotStarted) as stopped:
+        run_baseline(
+            ANALYSIS_START, ANALYSIS_END,
+            client=UnusedSource(), output_dir=output_dir, run_id="RUN_TEST",
+            sumo_bin="sumo-not-installed",
+        )
+
+    assert len(stopped.value.problems) == 1
+    assert stopped.value.problems[0].startswith("SUMO could not be run (sumo-not-installed): ")
+    assert not output_dir.exists()
+
+
+def test_run_does_not_start_before_the_source_holds_the_whole_window(source, sumo_found, tmp_path) -> None:
     client = source(stored_through=ANALYSIS_END)
     output_dir = tmp_path / "baseline"
 
@@ -91,7 +131,7 @@ def test_run_does_not_start_before_the_source_holds_the_whole_window(source, tmp
     assert not output_dir.exists()
 
 
-def test_run_does_not_start_when_a_detector_is_missing(source, tmp_path) -> None:
+def test_run_does_not_start_when_a_detector_is_missing(source, sumo_found, tmp_path) -> None:
     client = source(stored_through=RUN_END, without_detectors={6})
     output_dir = tmp_path / "baseline"
 
@@ -108,6 +148,31 @@ def test_run_does_not_start_when_a_detector_is_missing(source, tmp_path) -> None
         for end in interval_ends
     ]
     assert not output_dir.exists()
+
+
+def test_failed_demand_check_keeps_the_files_and_says_where(source, sumo_found, tmp_path, monkeypatch) -> None:
+    client = source(stored_through=RUN_END)
+    output_dir = tmp_path / "baseline"
+
+    def write_then_fail_check(*args, demand_dir, **kwargs):
+        demand_dir.mkdir(parents=True)
+        raise DemandCheckError(["demand_manifest.json: file not found"])
+
+    monkeypatch.setattr(baseline, "generate_and_execute_scenario", write_then_fail_check)
+
+    with pytest.raises(BaselineNotStarted) as stopped:
+        run_baseline(
+            ANALYSIS_START, ANALYSIS_END,
+            client=client, output_dir=output_dir, run_id="RUN_TEST",
+        )
+
+    assert stopped.value.problems == [
+        "Generated SUMO demand is not valid:",
+        "demand_manifest.json: file not found",
+        f"The files written so far were kept for diagnosis in {output_dir}; "
+        "use a new --out or --run-id, or delete that folder, to run again.",
+    ]
+    assert (output_dir / "demand").is_dir()
 
 
 @pytest.mark.skipif(shutil.which("sumo") is None, reason="SUMO is not installed")

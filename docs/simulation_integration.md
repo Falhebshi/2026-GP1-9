@@ -191,13 +191,13 @@ python simulation/scripts/run_baseline.py --analysis-start 2026-10-27T08:00+03:0
 | `--analysis-start`, `--analysis-end` | Required. Analysis period in Riyadh time (`+03:00`). |
 | `--source-url` | Synthetic source; default `http://127.0.0.1:8000`. |
 | `--seed`, `--step-length` | Default 42 and 0.4 s. |
-| `--run-id` | Default `RUN_BASELINE_<analysis start>_S<seed>`. |
+| `--run-id` | Default `RUN_BASELINE_<date>T<start>-<end>_S<seed>`, e.g. `RUN_BASELINE_20261027T0800-0900_S42`. |
 | `--out` | Fresh output folder; default `simulation/outputs/baseline_runs/<run-id>/`. |
 | `--mapping`, `--net`, `--sumo-bin` | Default to the study-area mapping, network and `sumo`. |
 
 The run window is the analysis period plus 900 s warm-up and 900 s clearance:
 07:45–09:15 for an 08:00–09:00 analysis, one continuous 5400 s SUMO run. The
-script:
+script first checks that SUMO can be run, then:
 
 1. reads `latest_available_timestamp` from the source's `/health`, and stops
    unless it is at or after the end of the run window (records are labelled by
@@ -210,7 +210,9 @@ script:
    calls `generate_and_execute_scenario()`.
 
 Every stop lists all the problems found. Nothing is written before step 4, so a
-run that stops early leaves no route file. Exit codes: 0 completed, 1 SUMO run
+run that stops early leaves no route file. If step 4 stops before SUMO runs (for
+example, the generated demand fails its check), the files already written are
+kept for diagnosis and the message names their folder. Exit codes: 0 completed, 1 SUMO run
 failed, 2 the run did not start (including an existing output folder or an
 unreachable source).
 
@@ -221,6 +223,8 @@ counts, demand file paths and fingerprints, raw outputs, the execution summary,
 and the `SimulationRun` record after the run (`completed` or `failed`, with
 `started_at`, `mapping_version`, `demand_sha256` and `route_file_sha256`). The
 record is saved only in `summary.json`; it is not persisted elsewhere.
+`started_at` is the start of step 4, so it includes demand generation as well as
+the SUMO run.
 
 Known limits:
 
@@ -287,9 +291,10 @@ Run `python -m pytest tests/test_scenario_execution.py` for the adapter's
 scenario, window, artifact, provenance, and no-launch-on-invalid-input checks.
 
 Run `python -m pytest tests/test_baseline_run.py` for the baseline run from an
-in-process synthetic source with artificial profiles: it stops when the source
-is behind or a detector is missing, and a 15-minute analysis reaches the raw
-SUMO outputs (skipped when SUMO is not installed).
+in-process synthetic source with artificial profiles: it stops when SUMO cannot
+be run, the source is behind or a detector is missing, keeps the files of a
+failed demand check, and a 15-minute analysis reaches the raw SUMO outputs
+(skipped when SUMO is not installed).
 
 Live acceptance should cover execution through empty periods to the deadline,
 stopping with vehicles still expected, repeatability with a fixed seed, and
