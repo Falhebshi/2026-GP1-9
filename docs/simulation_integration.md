@@ -217,7 +217,8 @@ failed, 2 the run did not start (including an existing output folder or an
 unreachable source).
 
 The output folder contains `demand/` (route file, manifest and demand records),
-`run/` (`scenario.sumocfg` and `raw/fcd.xml`, `raw/tripinfo.xml`) and
+`run/` (`scenario.sumocfg`, `tls_states.add.xml` and `raw/fcd.xml`,
+`raw/tripinfo.xml`, `raw/tls_states.xml`) and
 `summary.json`. The summary holds the run window, source timestamp, record
 counts, demand file paths and fingerprints, raw outputs, the execution summary,
 and the `SimulationRun` record after the run (`completed` or `failed`, with
@@ -234,22 +235,42 @@ Known limits:
 - The source needs the private profile files in
   `../jaadah-private-data/processed/rcrc_sample/` (see
   `synthetic_traffic_source.md`).
-- `raw/fcd.xml` is large: about 880 MB for a 5400 s run with 100 vehicles per
+- `raw/fcd.xml` is large: about 1.1 GB for a 5400 s run with 100 vehicles per
   detector per interval. `simulation/outputs/baseline*/` is ignored by Git.
 
 ## Simulation Output Processing Integration
 
-Each fresh run directory contains `raw/fcd.xml` and `raw/tripinfo.xml` beside
-`scenario.sumocfg`. FCD records vehicle positions, speed, lane identity and
-lane position at every simulation step; there is no separate FCD sampling period.
-SUMO 1.27.1 microsimulation emits `lane` but no `edge` field in FCD even when
-requested. Output Processing must derive the edge from the lane and network.
+Each fresh run directory contains `raw/fcd.xml`, `raw/tripinfo.xml` and
+`raw/tls_states.xml` beside `scenario.sumocfg` and `tls_states.add.xml`. All
+outputs are written with 3 decimals (`--precision 3`).
+
+FCD is written at every simulation step, so its spacing is
+`SimulationRun.step_length_s`; there is no separate FCD sampling period. Each
+row has `id`, `x`, `y`, `angle`, `type`, `speed`, `lane`, `pos`, `odometer` and
+`signals`:
+
+| Field | Meaning | Used by |
+| --- | --- | --- |
+| `x`, `y` | WGS84 longitude and latitude (`--fcd-output.geo true`) | 3D playback |
+| `angle` | Heading, 0° = north, clockwise | 3D playback |
+| `lane`, `pos` | SUMO lane and distance along it | KPI measurements |
+| `odometer` | Distance driven since insertion | KPI measurements |
+| `speed` | Speed in m/s | KPI measurements |
+| `signals` | SUMO signal bitset (indicators, brake lights) | 3D playback |
+
+FCD has no `edge` field; the edge is derived from the lane and network.
+
+`tls_states.add.xml` declares one `SaveTLSSwitchStates` event, so SUMO writes a
+`<tlsState>` line to `raw/tls_states.xml` each time a traffic light switches,
+with the time, program, phase and signal state string. A 5400 s run with the
+120 s cycle gives about 540 lines.
 TripInfo records actual departures, arrivals and departure delays, including
 vehicles unfinished or waiting to depart at the deadline. The retained demand
 manifest supplies planned departures and vehicle identities for reconciliation.
 Whole-trip waiting time and time loss are not measurement-zone delay records.
 
-`execute_scenario()` returns a `raw_outputs` entry for each file with its
+`execute_scenario()` returns a `raw_outputs` entry (`fcd`, `tripinfo`,
+`tls_states`) for each file with its
 configured absolute `path`, whether the file `exists`, and whether it is
 `potentially_partial` because execution failed. Files are retained after a
 failure. Even a present file from a completed execution has not yet been parsed
