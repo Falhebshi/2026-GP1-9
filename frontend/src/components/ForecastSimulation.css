@@ -1,23 +1,3 @@
-/* predicted time above the map */
-.forecast-sim-time {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-  font-size: var(--text-sm);
-}
-
-.forecast-sim-time-value {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.forecast-sim-ahead {
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
 /* "Acceleration rate" sits just above its x5 / x10 / x20 buttons. The label is lifted out of the
    row, so the buttons stay on the same line as Play and the slider. */
 .forecast-sim .playback-bar .segmented-field {

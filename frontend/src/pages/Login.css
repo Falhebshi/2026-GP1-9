@@ -1,0 +1,209 @@
+/* Login page ("/login"). Every color and size comes from index.css.
+   Only the login form, in a white card in the middle of the page. */
+
+/* The whole page: the card centered, the footer at the bottom */
+.login {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--space-xl) * 1.5) var(--page-padding) var(--space-lg);
+  background: var(--color-bg);
+}
+
+.login-panel {
+  width: 100%;
+  max-width: calc(var(--content-narrow) + var(--space-xl) * 2);
+  margin: auto 0;
+  padding: var(--space-xl);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xl);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.login-brand:hover {
+  color: var(--color-text);
+}
+
+.login-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.login-subtitle {
+  margin-top: var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.login-label {
+  font-weight: 500;
+}
+
+.login-input {
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.login-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Focus: a blue border and soft ring. The transparent outline stays so
+   Windows high-contrast mode, which hides box-shadows, can still show
+   where the focus is. */
+.login-input:focus {
+  outline: 2px solid transparent;
+  border-color: var(--color-action);
+  box-shadow: 0 0 0 var(--space-xs) color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+/* A field with a problem: red outline, and a short message under it.
+   It stays red while focused, so the problem is still visible. */
+.login-input-invalid,
+.login-input-invalid:focus {
+  border-color: var(--color-danger);
+}
+
+.login-input-invalid:focus {
+  box-shadow: 0 0 0 var(--space-xs) color-mix(in srgb, var(--color-danger) 18%, transparent);
+}
+
+/* While logging in the fields cannot be edited, and look it */
+.login-input:disabled {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.login-field-error {
+  font-size: var(--text-xs);
+  color: var(--color-danger-text);
+}
+
+/* A message from the login service, above the form */
+.login-error {
+  margin-top: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+/* Password box with the Show button inside it, on the right */
+.login-password {
+  position: relative;
+}
+
+.login-password .login-input {
+  padding-right: calc(var(--space-xl) * 2);
+}
+
+.login-show {
+  position: absolute;
+  top: 50%;
+  right: var(--space-sm);
+  transform: translateY(-50%);
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.login-show:hover:not(:disabled) {
+  color: var(--color-action);
+}
+
+.login-show:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The Log in button fills the form's width */
+.login-submit.btn {
+  width: 100%;
+  height: var(--control-height);
+  margin-top: var(--space-sm);
+}
+
+.login-footer {
+  width: 100%;
+  max-width: var(--content-narrow);
+  margin-top: var(--space-lg);
+  font-size: var(--text-xs);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.login-footer p + p {
+  margin-top: var(--space-xs);
+}
+
+/* The team's email, after a small envelope: opens the visitor's email app */
+.login-footer-email {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.login-footer-email:hover {
+  color: var(--color-action);
+}
+
+.login-footer-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+/* ---- Narrow windows: the card fills the width ----------------------------- */
+
+@media (max-width: 480px) {
+  .login {
+    padding-left: var(--space-md);
+    padding-right: var(--space-md);
+  }
+
+  .login-panel {
+    padding: var(--space-lg);
+  }
+}

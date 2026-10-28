@@ -1,4 +1,4 @@
-/* Approach chips along the bottom of the 3D scene, and the card that opens above them */
+/* Approach chips along the bottom of the 3D scene, and the selected approach next to it */
 .approach-panel {
   display: flex;
   flex-direction: column;
@@ -56,38 +56,43 @@
   font-variant-numeric: tabular-nums;
 }
 
-.approach-card {
-  max-height: 100%;
-  overflow-y: auto;
+/* The selected approach, in the column next to the scene */
+.approach-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-float);
+  font-size: var(--text-sm);
+  color: var(--color-text);
 }
 
-.approach-card-head {
+.approach-details-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-md);
-  padding: 10px 12px 6px;
 }
 
-.approach-card-title {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: 600;
+.approach-details-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+  font-size: var(--text-md);
 }
 
-.approach-card-road {
-  font-size: 11px;
+.approach-details-road {
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 
 .approach-close {
   border: 0;
   background: none;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -97,109 +102,116 @@
   color: var(--color-text);
 }
 
-.approach-table {
-  width: 100%;
-  border-collapse: collapse;
+/* the whole approach: four numbers in two columns, name above value */
+.approach-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: var(--space-sm);
+  background: var(--color-bg);
+  border-radius: var(--radius);
 }
 
-.approach-table th,
-.approach-table td {
-  padding: 6px 7px;
-  text-align: right;
+.approach-summary dt,
+.approach-movement-details dt {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.approach-summary dd,
+.approach-movement-details dd {
+  margin: 0;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.approach-movements-title {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.approach-movements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* one movement: arrow, name and LOS on the first line, its numbers on the second */
+.approach-movement {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.approach-movement-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.approach-movement-arrow {
+  width: 22px;
+  font-size: 18px;
+  line-height: 1;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.approach-movement-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.approach-movement-numbers {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: 4px 0 0 30px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.approach-movement-numbers > span {
   white-space: nowrap;
 }
 
-.approach-table thead th {
-  font-weight: 500;
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.approach-table thead small {
-  font-size: 10px;
-}
-
-.approach-table tbody th {
-  text-align: left;
-  font-weight: 500;
-}
-
-.approach-movement-row th {
-  padding-left: 14px;
-  color: var(--color-text-muted);
-}
-
-.approach-movement-row td {
-  color: var(--color-text);
-}
-
-.approach-movement-row {
-  cursor: pointer;
-}
-
-.approach-movement-row:hover {
-  background: var(--color-selected-bg);
-}
-
-/* the movement name, as a button so it can be reached with the keyboard */
-.approach-movement-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.approach-movement-more {
+  margin-left: auto;
   padding: 0;
   border: 0;
   background: none;
   font: inherit;
-  color: inherit;
+  color: var(--color-selected);
   cursor: pointer;
 }
 
-.approach-arrow {
-  display: inline-block;
-  width: 8px;
-  transition: transform 0.15s;
+.approach-movement-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px var(--space-md);
+  margin: var(--space-sm) 0 0 30px;
 }
 
-.approach-movement-open .approach-arrow {
-  transform: rotate(90deg);
-}
-
-.approach-movement-details td {
-  padding: 2px 8px 10px 36px;
-  text-align: left;
-  white-space: normal;
-}
-
-/* the four extra KPIs side by side, name above value */
-.approach-movement-details dl {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-  margin: 0;
-}
-
-.approach-movement-details dt {
-  color: var(--color-text-muted);
-  font-size: 10.5px;
-}
-
-.approach-movement-details dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-/* the shared-lane sentence under the table */
+/* the shared-lane sentence under the movements */
 .approach-note {
   margin: 0;
-  padding: 6px 12px 10px;
   color: var(--color-text-muted);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
 }
 
 .approach-kpi-missing {
   color: var(--color-text-muted);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
+  font-weight: 400;
 }
 
 .approach-kpi-over {
@@ -207,19 +219,9 @@
   font-weight: 600;
 }
 
-/* LosBadge, a little smaller to fit the table rows and chips */
+/* LosBadge, a little smaller to fit the chips and rows */
 .approach-los {
-  width: 18px;
-  height: 18px;
-  font-size: 10.5px;
-}
-
-.approach-total th,
-.approach-total td {
-  font-weight: 600;
-  border-top: 1px solid var(--color-border);
-}
-
-.approach-total + .approach-movement-row {
-  border-top: 1px solid var(--color-border);
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
 }

@@ -1,0 +1,78 @@
+{
+  "intersection_id": "INT_001",
+  "approaches": [
+    {
+      "approach_id": "APP_E",
+      "side": "east",
+      "road": "Imam Saud Rd",
+      "movements": [
+        {
+          "movement_id": "MOV_E_S",
+          "movement_type": "left",
+          "control": "signalized"
+        },
+        {
+          "movement_id": "MOV_E_W",
+          "movement_type": "through",
+          "control": "signalized"
+        }
+      ]
+    },
+    {
+      "approach_id": "APP_N",
+      "side": "north",
+      "road": "Prince Turki Rd, service road",
+      "movements": [
+        {
+          "movement_id": "MOV_N_E",
+          "movement_type": "left",
+          "control": "signalized"
+        },
+        {
+          "movement_id": "MOV_N_W_SLIP",
+          "movement_type": "right",
+          "control": "uncontrolled"
+        }
+      ]
+    },
+    {
+      "approach_id": "APP_S",
+      "side": "south",
+      "road": "Prince Turki Rd, service road",
+      "movements": [
+        {
+          "movement_id": "MOV_S_W",
+          "movement_type": "left",
+          "control": "signalized"
+        },
+        {
+          "movement_id": "MOV_S_E_BYPASS",
+          "movement_type": "right",
+          "control": "uncontrolled"
+        }
+      ]
+    },
+    {
+      "approach_id": "APP_W",
+      "side": "west",
+      "road": "Imam Saud Rd",
+      "movements": [
+        {
+          "movement_id": "MOV_W_N",
+          "movement_type": "left",
+          "control": "signalized"
+        },
+        {
+          "movement_id": "MOV_W_E",
+          "movement_type": "through",
+          "control": "signalized"
+        },
+        {
+          "movement_id": "MOV_W_S_SLIP",
+          "movement_type": "right",
+          "control": "uncontrolled"
+        }
+      ]
+    }
+  ]
+}

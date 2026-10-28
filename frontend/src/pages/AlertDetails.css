@@ -1,0 +1,871 @@
+/* Alert Details page. Colors and sizes come from index.css. */
+
+.alert-details-notice {
+  margin-bottom: var(--space-lg);
+}
+
+.alert-details-muted {
+  color: var(--color-text-muted);
+}
+
+.alert-details-unit {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.alert-details-value-over {
+  color: var(--color-danger-text);
+}
+
+/* Read by screen readers, not shown */
+.alert-details-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- First half: Alert details and the baseline -------------------------- */
+
+/* "Alert details", "Delay over time", "Baseline conditions" */
+.alert-details-section-title {
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* The alert as a record: facts down a tinted sidebar, what happened beside */
+.alert-details-record {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+/* The sidebar takes a soft tint of the alert type's color */
+.alert-details-record-side {
+  display: grid;
+  align-content: start;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: color-mix(in srgb, var(--alert-current) 8%, var(--color-surface));
+}
+
+.alert-details-record-side-forecast {
+  background: color-mix(in srgb, var(--alert-forecast) 8%, var(--color-surface));
+}
+
+.alert-details-record-side-pattern {
+  background: color-mix(in srgb, var(--alert-pattern) 8%, var(--color-surface));
+}
+
+.alert-details-record-side .alert-details-type {
+  justify-self: start;
+}
+
+/* The facts (the team's InfoList) on the tinted sidebar */
+.alert-details-record-facts {
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+/* The sidebar is narrow, so each label sits above its value */
+.alert-details-record-facts .info-row {
+  display: grid;
+  gap: 2px;
+}
+
+.alert-details-record-facts .info-label {
+  font-size: var(--text-xs);
+}
+
+.alert-details-record-facts .info-value {
+  text-align: left;
+}
+
+.alert-details-record-note {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.alert-details-record-main {
+  padding: var(--space-lg);
+}
+
+.alert-details-record-heading {
+  margin-bottom: var(--space-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.alert-details-record-description {
+  margin-bottom: var(--space-lg);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+/* What it was flagged for: a checklist */
+.alert-details-checklist {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-details-checklist li {
+  position: relative;
+  padding-left: var(--space-lg);
+}
+
+.alert-details-checklist li::before {
+  content: '';
+  position: absolute;
+  top: 0.55em;
+  left: 0.15rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+/* The alert record beside how it developed, each with its own heading */
+.alert-details-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.alert-details-overview-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.alert-details-overview-col > :last-child {
+  flex: 1;
+}
+
+/* A section heading with the chart key at its right */
+.alert-details-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-md);
+}
+
+/* Baseline groups, tinted like the Alert details sidebar */
+.alert-details-baseline {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-md);
+}
+
+.alert-details-baseline .alert-details-stat-group {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--alert-current) 8%, var(--color-surface));
+}
+
+.alert-details-baseline-forecast .alert-details-stat-group {
+  background: color-mix(in srgb, var(--alert-forecast) 8%, var(--color-surface));
+}
+
+.alert-details-baseline-pattern .alert-details-stat-group {
+  background: color-mix(in srgb, var(--alert-pattern) 8%, var(--color-surface));
+}
+
+.alert-details-baseline .alert-details-stat-tiles {
+  flex: 1;
+}
+
+.alert-details-baseline > :first-child .alert-details-stat-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* "Flagged" sits in the tile's tag spot, top right, in red; no empty footer */
+.alert-details-baseline .kpi-footer:empty {
+  display: none;
+}
+
+.alert-details-tile-flagged .kpi-tag {
+  background: var(--color-danger-bg);
+  font-weight: 600;
+  color: var(--color-danger-text);
+}
+
+/* A heading with a short explanation on hover or focus */
+.alert-details-hint {
+  position: relative;
+  cursor: help;
+}
+
+.alert-details-hint::after {
+  content: attr(data-hint);
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  display: none;
+}
+
+.alert-details-hint:hover::after,
+.alert-details-hint:focus::after {
+  display: block;
+}
+
+.alert-details-hint:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* "Current alert", in the same colors as the tags on the Alerts page */
+.alert-details-type {
+  display: inline-block;
+  padding: calc(var(--space-xs) / 2) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.alert-details-type-current {
+  background: var(--alert-current-bg);
+  color: var(--alert-current-text);
+}
+
+.alert-details-type-forecast {
+  background: var(--alert-forecast-bg);
+  color: var(--alert-forecast-text);
+}
+
+.alert-details-type-pattern {
+  background: var(--alert-pattern-bg);
+  color: var(--alert-pattern-text);
+}
+
+.alert-details-stat-group-title {
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* The team's KPI tiles, two to a row (four for the approach, above) */
+.alert-details-stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+/* The forecast sentence, under the chart */
+.alert-details-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.alert-details-forecast-label {
+  font-weight: 600;
+}
+
+/* A recurring alert's recent weekdays */
+.alert-details-recur-note {
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-recur {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: var(--space-xs);
+  margin: calc(var(--space-xs) * -1);
+  table-layout: fixed;
+}
+
+.alert-details-recur th {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-align: left;
+}
+
+.alert-details-recur thead th:first-child,
+.alert-details-recur tbody th {
+  width: 3.5rem;
+}
+
+.alert-details-recur td {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  vertical-align: top;
+}
+
+.alert-details-recur td > * {
+  display: block;
+}
+
+.alert-details-recur td .los-badge {
+  display: inline-flex;
+  margin-top: calc(var(--space-xs) / 2);
+}
+
+.alert-details-recur-date {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-recur-value {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alert-details-recur-hit,
+.alert-details-recur-swatch {
+  border-color: var(--alert-pattern) !important;
+  background: var(--alert-pattern-bg) !important;
+}
+
+.alert-details-recur-swatch {
+  display: inline-block;
+  width: var(--space-md);
+  height: var(--space-sm);
+  border: 1px solid;
+  border-radius: calc(var(--radius-sm) / 2);
+  vertical-align: middle;
+}
+
+.alert-details-recur td.alert-details-recur-empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+/* ---- The chart ------------------------------------------------------------------- */
+
+.alert-details-chart-key {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-key-line {
+  display: inline-block;
+  width: var(--space-md);
+  border-top: 2px solid var(--chart-1);
+}
+
+.alert-details-key-item {
+  white-space: nowrap;
+}
+
+.alert-details-key-forecast {
+  border-top-style: dashed;
+}
+
+.alert-details-chart {
+  position: relative;
+  outline-offset: var(--space-xs);
+}
+
+.alert-details-chart svg {
+  display: block;
+}
+
+.alert-details-chart-grid {
+  stroke: var(--chart-grid);
+}
+
+.alert-details-chart-axis,
+.alert-details-chart-note {
+  fill: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.alert-details-chart-window {
+  fill: var(--chart-fill);
+}
+
+.alert-details-chart-limit {
+  stroke: var(--color-danger);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.alert-details-chart-limit-label {
+  fill: var(--color-danger-text);
+  font-size: var(--text-xs);
+}
+
+.alert-details-chart-missing {
+  fill: var(--color-surface-muted);
+  opacity: 0.6;
+}
+
+.alert-details-chart-line {
+  fill: none;
+  stroke: var(--chart-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.alert-details-chart-forecast {
+  stroke-dasharray: 5 5;
+}
+
+.alert-details-chart-crosshair {
+  stroke: var(--color-border-strong);
+}
+
+.alert-details-chart-dot {
+  fill: var(--chart-1);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.alert-details-chart-tooltip {
+  position: absolute;
+  top: var(--space-lg);
+  display: grid;
+  gap: 2px;
+  padding: 6px var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.alert-details-chart-tooltip strong {
+  font-size: var(--text-sm);
+}
+
+.alert-details-chart-reason {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.alert-details-chart-flag {
+  color: var(--color-danger-text);
+  font-weight: 600;
+}
+
+/* ---- Second half: the ranked interventions -------------------------------- */
+
+.alert-details-options {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.alert-details-options-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.alert-details-options-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.alert-details-options-text {
+  margin: var(--space-xs) 0 var(--space-md);
+  color: var(--color-text-muted);
+}
+
+.alert-details-list {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One row: rank, name, KPI preview, "View details". The whole row is a link. */
+.alert-details-row {
+  display: grid;
+  grid-template-columns: var(--space-xl) minmax(0, 1.2fr) minmax(0, 1.6fr) auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.alert-details-row:hover {
+  border-color: var(--color-action);
+  color: var(--color-text);
+}
+
+.alert-details-row-top {
+  border-color: var(--color-selected);
+}
+
+.alert-details-row-unavailable {
+  border-style: dashed;
+  background: var(--color-bg);
+}
+
+.alert-details-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-xl);
+  height: var(--space-xl);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+}
+
+.alert-details-rank-top {
+  border-color: var(--color-selected);
+  background: var(--color-selected);
+  color: var(--color-text-on-dark);
+}
+
+.alert-details-row-name {
+  display: grid;
+  gap: calc(var(--space-xs) / 2);
+}
+
+.alert-details-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.alert-details-row-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-row-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin: 0;
+}
+
+.alert-details-row-kpi dt {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-row-kpi dd {
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alert-details-row-reason {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.alert-details-row-open {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-action);
+  white-space: nowrap;
+}
+
+.alert-details-change {
+  font-size: var(--text-xs);
+}
+
+.alert-details-change-good {
+  color: var(--color-success-text);
+}
+
+.alert-details-change-bad {
+  color: var(--color-danger-text);
+}
+
+.alert-details-change-neutral {
+  color: var(--color-text-muted);
+}
+
+/* ---- Compare all options -------------------------------------------------- */
+
+.alert-details-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.alert-details-compare > div {
+  width: 100%;
+}
+
+/* The table's card runs the table edge to edge */
+.alert-details-compare-box.card {
+  overflow: hidden;
+  padding: 0;
+}
+
+/* "B" for the baseline, in grey */
+.alert-details-rank-base {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.alert-details-rank-sm {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: var(--text-xs);
+}
+
+.alert-details-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.alert-details-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.alert-details-table th,
+.alert-details-table td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+/* Column heads: rank circle, then name and cycle */
+.alert-details-table thead th {
+  vertical-align: bottom;
+  padding-top: var(--space-md);
+  font-weight: 400;
+}
+
+.alert-details-col-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  min-width: 10rem;
+}
+
+.alert-details-col-name {
+  display: block;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.alert-details-col-link {
+  text-decoration: none;
+}
+
+.alert-details-col-link:hover {
+  color: var(--color-action);
+  text-decoration: underline;
+}
+
+.alert-details-col-meta {
+  display: block;
+  margin-top: calc(var(--space-xs) / 2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* The baseline column: the reference, on light grey */
+.alert-details-table .alert-details-col-base {
+  background: var(--color-bg);
+}
+
+/* Group rows, styled like the approach rows on the Trends page */
+.alert-details-table tr.alert-details-table-group > th {
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  background: var(--color-bg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Row labels: the KPI with its unit, and a hint under it */
+.alert-details-table tbody th {
+  min-width: 11rem;
+  font-weight: 500;
+}
+
+.alert-details-row-label {
+  white-space: nowrap;
+}
+
+.alert-details-row-hint {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.alert-details-table-value {
+  font-size: var(--text-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alert-details-table-change {
+  display: block;
+  margin-top: calc(var(--space-xs) / 2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A light highlight on the row under the pointer, to follow it across */
+.alert-details-table tbody tr:not(.alert-details-table-group):hover > * {
+  background: color-mix(in srgb, var(--color-action) 4%, var(--color-surface));
+}
+
+/* The KPI names stay in view while the table scrolls sideways */
+.alert-details-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+
+/* ---- Narrow windows ----------------------------------------------------------- */
+
+@media (max-width: 1000px) {
+  /* The KPIs move under the name */
+  .alert-details-row {
+    grid-template-columns: var(--space-xl) minmax(0, 1fr) auto;
+  }
+
+  .alert-details-row-kpis,
+  .alert-details-row-reason {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 1100px) {
+  .alert-details-overview {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  /* The panels one under the other, two tiles to a row */
+  .alert-details-baseline {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-details-baseline > :first-child .alert-details-stat-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .alert-details-record {
+    grid-template-columns: 1fr;
+  }
+
+}
+
+@media (max-width: 640px) {
+  /* Calendar: hide the week column and unit, tighter cells */
+  .alert-details-recur {
+    border-spacing: 3px;
+  }
+
+  .alert-details-recur thead th:first-child,
+  .alert-details-recur tbody th,
+  .alert-details-recur-unit {
+    display: none;
+  }
+
+  .alert-details-recur td {
+    padding: var(--space-xs);
+  }
+
+  /* The comparison table: narrower label and option columns */
+  .alert-details-table th,
+  .alert-details-table td {
+    padding: var(--space-sm);
+  }
+
+  .alert-details-table tbody th {
+    min-width: 7.5rem;
+  }
+
+  .alert-details-row-label {
+    white-space: normal;
+  }
+
+  .alert-details-col-head {
+    min-width: 8rem;
+  }
+
+  .alert-details-recur-missing {
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+  }
+
+  .alert-details-record-side,
+  .alert-details-record-main {
+    padding: var(--space-md);
+  }
+
+  .alert-details-row {
+    grid-template-columns: var(--space-xl) minmax(0, 1fr);
+  }
+
+  .alert-details-row-open {
+    grid-column: 2;
+  }
+
+  .alert-details-row-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -60,6 +60,7 @@ def build_static_layers(network_dir: Path) -> None:
 
     run("build_streetscape.py", NET, surface, underpass, streetscape)
     run("build_signal_heads.py", network_dir / "signal_heads.json")
+    run("build_approaches.py", network_dir / "approaches.json")
     run("build_context.py", OSM, NET, surface, network_dir / "context.geojson")
     run(
         "build_surface_detail.py",

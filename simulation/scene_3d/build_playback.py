@@ -2,18 +2,28 @@
 Build the 3D view's playback files from one SUMO run.
 
 Usage (from the repository root):
+    python simulation/scene_3d/build_playback.py <baseline run folder>
+
     python simulation/scene_3d/build_playback.py <run folder> \
         --run-id RUN_TEST --run-start 2026-10-20T07:45:00+03:00 \
         --duration-s 5400 --warm-up-s 900 --clearance-s 900
 
-The run folder holds the SUMO outputs fcd.xml (written with
---fcd-output.geo and --fcd-output.signals) and tls_states.xml
-(SaveTLSStates), and the manifest and demand files of the SUMO demand
-generation. The files are written to
+A baseline run folder is the one run_baseline.py writes: demand/ (the
+manifest and demand files of the SUMO demand generation), run/raw/
+(fcd.xml and tls_states.xml) and summary.json, which gives the run ID,
+its times and its status, so no option is needed. Any other run folder
+holds the same four files in one place and needs the options. FCD must
+be written with geo positions and signals, and the signal states with
+SaveTLSSwitchStates (or SaveTLSStates). The files are written to
 frontend/public/data/<intersection>/<scenario>/.
+
+A run that did not complete (status in summary.json, or the file given
+with --run-result) gets only run.json, with status "failed" and the
+runner's error, so the view shows the failure instead of a partial run.
 """
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -28,9 +38,11 @@ REPO_ROOT = SCRIPTS_DIR.parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from backend.outputs.playback import (  # noqa: E402
+    build_failed_run_index,
     build_run_index,
     pack_signal_changes,
     pack_vehicle_intervals,
+    write_failed_run,
     write_playback,
 )
 from backend.outputs.signals import (  # noqa: E402
@@ -280,6 +292,123 @@ class UnderpassHeight:
                         )
 
 
+def only_file(
+    folder: Path,
+    pattern: str,
+) -> Path:
+    """Return the one file in folder that matches pattern."""
+
+    matches = sorted(folder.glob(pattern))
+
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"expected one {pattern} in {folder}, found {len(matches)}"
+        )
+
+    return matches[0]
+
+
+def find_run_files(
+    run_dir: Path,
+) -> dict[str, Path]:
+    """
+    Return the SUMO outputs and the demand files of a run: from a
+    baseline run folder (demand/ and run/raw/) or from one folder.
+    """
+
+    raw_dir = run_dir / "run" / "raw"
+    demand_dir = run_dir / "demand"
+
+    if not raw_dir.is_dir():
+        raw_dir = run_dir
+        demand_dir = run_dir
+
+    return {
+        "fcd": raw_dir / "fcd.xml",
+        "tls_states": raw_dir / "tls_states.xml",
+        "manifest": only_file(
+            folder=demand_dir,
+            pattern="*manifest.json",
+        ),
+        "demand": only_file(
+            folder=demand_dir,
+            pattern="*demand.json",
+        ),
+    }
+
+
+def read_run_window(
+    summary_path: Path,
+) -> dict:
+    """
+    Return the run ID and the times of a baseline run from its
+    summary.json: its start, length, warm-up and clearance.
+    """
+
+    with summary_path.open(
+        encoding="utf-8",
+    ) as file:
+        summary = json.load(file)
+
+    window = summary["run_window"]
+    start = datetime.fromisoformat(window["start"])
+    analysis_start = datetime.fromisoformat(window["analysis_start"])
+    analysis_end = datetime.fromisoformat(window["analysis_end"])
+    end = datetime.fromisoformat(window["end"])
+
+    return {
+        "run_id": summary["run_id"],
+        "run_start": start,
+        "duration_s": int(window["duration_s"]),
+        "warm_up_s": int((analysis_start - start).total_seconds()),
+        "clearance_s": int((end - analysis_end).total_seconds()),
+    }
+
+
+def read_run_result(
+    path: Path,
+) -> tuple[str, str | None]:
+    """
+    Return the status ("completed" or "failed") and the error of a run
+    from the result the scenario runner saved (its "execution" part).
+    """
+
+    with path.open(
+        encoding="utf-8",
+    ) as file:
+        execution = json.load(file)["execution"]
+
+    return execution["status"], execution.get("error")
+
+
+def write_failed_playback(
+    run_id: str,
+    run_start: datetime,
+    scenario: str,
+    failure_reason: str,
+) -> Path:
+    """Write run.json of a failed run, so the view shows the failure."""
+
+    config = load_network_mappings(MAPPING_PATH)
+    intersection_id = config.intersection_mapping.intersection_id
+    output_dir = FRONTEND_DATA_DIR / intersection_id / scenario
+
+    write_failed_run(
+        output_dir=output_dir,
+        run_index=build_failed_run_index(
+            run_id=run_id,
+            intersection_id=intersection_id,
+            scenario=scenario,
+            run_start=run_start,
+            failure_reason=failure_reason,
+        ),
+    )
+
+    print(f"run.json: {run_id} failed: {failure_reason}")
+
+    return output_dir
+
+
 def build_playback(
     run_dir: Path,
     run_id: str,
@@ -288,15 +417,22 @@ def build_playback(
     warm_up_s: int,
     clearance_s: int,
     scenario: str,
+    is_test: bool = False,
 ) -> Path:
-    """Convert one run folder into the 3D view's playback files."""
+    """
+    Convert one run folder into the 3D view's playback files. is_test
+    marks a test run (made-up demand) in run.json.
+    """
 
     config = load_network_mappings(MAPPING_PATH)
     intersection_id = config.intersection_mapping.intersection_id
 
+    files = find_run_files(
+        run_dir=run_dir,
+    )
     vehicle_movements = load_vehicle_movements(
-        manifest_path=next(run_dir.glob("*manifest.json")),
-        demand_path=next(run_dir.glob("*demand.json")),
+        manifest_path=files["manifest"],
+        demand_path=files["demand"],
     )
     run_index = build_run_index(
         run_id=run_id,
@@ -306,11 +442,12 @@ def build_playback(
         duration_s=duration_s,
         warm_up_s=warm_up_s,
         clearance_s=clearance_s,
+        is_test=is_test,
     )
     underpass = UnderpassHeight()
     vehicle_payloads = pack_vehicle_intervals(
         states=read_vehicle_states(
-            fcd_path=run_dir / "fcd.xml",
+            fcd_path=files["fcd"],
             run_id=run_id,
             run_start=run_start,
             vehicle_movements=vehicle_movements,
@@ -321,7 +458,7 @@ def build_playback(
     )
     underpass.refine_hidden_spans(vehicle_payloads)
     signal_changes = read_signal_changes(
-        tls_path=run_dir / "tls_states.xml",
+        tls_path=files["tls_states"],
         tls_id=config.intersection_mapping.sumo_tls_id,
         run_start=run_start,
         signal_links=find_signal_links(config),
@@ -371,44 +508,105 @@ def main() -> None:
     )
     parser.add_argument(
         "--run-id",
-        required=True,
+        help="default: from the run folder's summary.json",
     )
     parser.add_argument(
         "--run-start",
-        required=True,
         type=datetime.fromisoformat,
-        help="real time of SUMO second 0, e.g. 2026-10-20T07:45:00+03:00",
+        help="real time of SUMO second 0, e.g. 2026-10-20T07:45:00+03:00; "
+        "default: from summary.json",
     )
     parser.add_argument(
         "--duration-s",
-        required=True,
         type=int,
+        help="default: from summary.json",
     )
     parser.add_argument(
         "--warm-up-s",
         type=int,
-        default=900,
-        help="seconds before the analysis period; not shown in the view",
+        help="seconds before the analysis period; not shown in the view "
+        "(default: from summary.json, else 900)",
     )
     parser.add_argument(
         "--clearance-s",
         type=int,
-        default=900,
-        help="seconds after the analysis period; not shown in the view",
+        help="seconds after the analysis period; not shown in the view "
+        "(default: from summary.json, else 900)",
     )
     parser.add_argument(
         "--scenario",
         default="baseline",
     )
+    parser.add_argument(
+        "--run-result",
+        type=Path,
+        help="the result the scenario runner saved; default: the run "
+        "folder's summary.json",
+    )
     args = parser.parse_args()
+
+    summary_path = args.run_dir / "summary.json"
+    run = {
+        "warm_up_s": 900,
+        "clearance_s": 900,
+    }
+
+    if summary_path.is_file():
+        run.update(
+            read_run_window(
+                summary_path=summary_path,
+            )
+        )
+
+        if args.run_result is None:
+            args.run_result = summary_path
+
+    given = (
+        "run_id",
+        "run_start",
+        "duration_s",
+        "warm_up_s",
+        "clearance_s",
+    )
+
+    for name in given:
+        if getattr(args, name) is not None:
+            run[name] = getattr(args, name)
+
+    missing = [
+        name
+        for name in ("run_id", "run_start", "duration_s")
+        if name not in run
+    ]
+
+    if missing:
+        parser.error(
+            "the run folder has no summary.json, so give "
+            + ", ".join(f"--{name.replace('_', '-')}" for name in missing)
+        )
+
+    if args.run_result is not None:
+        status, error = read_run_result(
+            path=args.run_result,
+        )
+
+        if status != "completed":
+            output_dir = write_failed_playback(
+                run_id=run["run_id"],
+                run_start=run["run_start"],
+                scenario=args.scenario,
+                failure_reason=error or "The simulation did not finish.",
+            )
+            print(f"Done: {output_dir.relative_to(REPO_ROOT)}")
+            return
 
     output_dir = build_playback(
         run_dir=args.run_dir,
-        run_id=args.run_id,
-        run_start=args.run_start,
-        duration_s=args.duration_s,
-        warm_up_s=args.warm_up_s,
-        clearance_s=args.clearance_s,
+        run_id=run["run_id"],
+        run_start=run["run_start"],
+        duration_s=run["duration_s"],
+        warm_up_s=run["warm_up_s"],
+        clearance_s=run["clearance_s"],
         scenario=args.scenario,
     )
 

@@ -1,0 +1,27 @@
+/* A teal-to-indigo square with a white square in the middle */
+.brand-mark {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-brand);
+}
+
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 30%;
+  border-radius: 1px;
+  background: var(--color-text-on-dark);
+}
+
+.brand-mark-sm {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.brand-mark-md {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  border-radius: var(--radius);
+}

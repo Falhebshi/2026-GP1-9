@@ -12,18 +12,20 @@ From the repository root:
 pip install -r requirements.txt
 python simulation/scene_3d/build_all.py                   # roads, buildings, background, signal heads
 python simulation/scene_3d/build_test_run.py              # the test run shown until the baseline run exists
-python simulation/scene_3d/build_playback.py <run folder> \
-    --run-id <run id> --run-start 2026-10-20T07:45:00+03:00 --duration-s 5400 \
-    --warm-up-s 900 --clearance-s 900
+python simulation/scene_3d/build_test_kpis.py             # its test KPI results, until the KPI engine writes them
+python simulation/scene_3d/build_playback.py simulation/outputs/baseline_runs/<run id>
 ```
 
-`build_playback.py` turns one simulation run into the vehicles and signal indications. The run
-folder holds the SUMO outputs `fcd.xml` (written with `--fcd-output.geo`, `--fcd-output.signals`
-and `--device.fcd.period 0.4`) and `tls_states.xml` (the `SaveTLSStates` timed event), and the
-manifest and demand files of the SUMO demand generation. `--run-start` is the real time of SUMO
-second 0 (analysis start minus warm-up), `--duration-s` the length of the run, and `--warm-up-s`
-and `--clearance-s` the parts before and after the analysis period, all in whole 15-minute
-intervals (the window of the SUMO demand generation).
+`build_playback.py` turns one simulation run into the vehicles and signal indications. For a
+baseline run (`simulation/scripts/run_baseline.py`) it only needs the run folder: it reads
+`demand/` (the manifest and demand files), `run/raw/fcd.xml`, `run/raw/tls_states.xml` and
+`summary.json`, which gives the run ID, its times and whether it completed. The runner writes the
+FCD with geo positions and signals, and the signal states with `SaveTLSSwitchStates`.
+
+Another run folder (such as the one `build_test_run.py` makes) holds the same four files in one
+place, and the run is described with options: `--run-id`, `--run-start` (the real time of SUMO
+second 0, analysis start minus warm-up), `--duration-s`, and `--warm-up-s` and `--clearance-s`
+(900 unless given), all in whole 15-minute intervals.
 
 ## Inputs
 
@@ -52,6 +54,7 @@ intervals (the window of the SUMO demand generation).
 | `buildings.geojson` | `extract_buildings.py`, `merge_buildings.py` | Building footprints with heights |
 | `surface_detail.geojson` | `build_surface_detail.py` | Lane centre lines and paved aprons around buildings |
 | `signal_heads.json` | `build_signal_heads.py` | The signal heads of every approach, one per lane at the stop line, and the approach's movements |
+| `approaches.json` | `build_approaches.py` | The approaches with their road and the movements that have KPIs (type and control), for the approach chips and details |
 
 `frontend/public/data/INT_001/<scenario>/` (`build_playback.py`)
 
@@ -60,6 +63,7 @@ intervals (the window of the SUMO demand generation).
 | `run.json` | The run: ID, real start time, length, analysis period and its 15-minute vehicle files |
 | `vehicles_HHMM.json` | The vehicles of one 15-minute interval, named by the interval end (`vehicles_0815.json` = 08:00–08:15). A sample on a boundary is in both files |
 | `signals.json` | The indication (green, yellow, red) of every signal-controlled movement each time one changes |
+| `kpis.json` | The run's KPI results (`KpiResult`) for every 15-minute analysis interval, at intersection, approach and movement level |
 
 The vehicle records and signal changes are produced by `backend/outputs/vehicles.py` and
 `backend/outputs/signals.py` (M10-B) and are checked against the `VehicleState` and
@@ -78,12 +82,18 @@ roads through the underpass its depth below street level.
 2. `build_network_layers.py`
 3. `build_underpass.py` (needs the road surface from step 2)
 4. `build_network_layers.py` again, so the edge lines stay off the underpass ramps
-5. `build_streetscape.py`, `build_signal_heads.py`, `build_context.py`, `build_surface_detail.py`
+5. `build_streetscape.py`, `build_signal_heads.py`, `build_approaches.py`, `build_context.py`, `build_surface_detail.py`
 
 Each script can also be run on its own; its usage is at the top of the file.
 
 ## Notes
 
+- SUMO IDs in the frontend: the traffic files (`run.json`, the vehicle files, `signals.json`,
+  `kpis.json`, `approaches.json`) use only Jaadah IDs. The road drawing (`network/*.geojson` and
+  `signal_heads.json`) is the agreed exception: its drawn lanes and roads are tagged with their SUMO
+  lane and edge IDs (`edge`, `id`, `lane`, `lane_id`) so the view can connect lanes, arrows and
+  signal heads. It is display-only and carries no traffic data. `tests/test_frontend_data_ids.py`
+  checks both.
 - The data is for display only. No KPI is calculated from it.
 - Building heights: OSM rarely has them in Riyadh, so most heights are estimated (see
   `extract_buildings.py`). Each building records whether its height is from OSM or estimated.
@@ -92,7 +102,16 @@ Each script can also be run on its own; its usage is at the top of the file.
 - The committed `baseline/` files come from a test run (`TEST_SUMO_DEMAND_CHECK`), built with
   `python simulation/scene_3d/build_test_run.py`: made-up demand of 20 vehicles per movement and
   15-minute interval, planned with the SUMO demand generation and simulated with SUMO. Replace them
-  with `build_playback.py` from the baseline run once it exists.
+  with `build_playback.py <baseline run folder>`. A baseline run from the detector data has no
+  tunnel traffic, because no detector counts the tunnel movements.
+- Test files are marked `"is_test": true` (in `run.json` from `build_test_run.py`, and in
+  `kpis.json` from `build_test_kpis.py`). While they are, Current Traffic says that it shows test
+  data. A real run has no mark, so the notice goes away by itself.
+- A failed run writes only `run.json` (status `failed` and its reason). The vehicle and signal files
+  of an earlier run may stay in the folder; the view ignores them, because `run.json` lists none.
+- The committed `baseline/kpis.json` is test data too (`build_test_kpis.py`): made-up values, built
+  with the `KpiResult` model so the file has the real shape. It is replaced by the KPI engine's
+  results for the baseline run.
 - No detector counts the tunnel movements (`MOV_N_S_TUNNEL`, `MOV_S_N_TUNNEL`,
   `MOV_TUNNEL_ONRAMP`), so the detector demand leaves the underpass empty. The test run gives them
   the same made-up demand as every other movement, for display only. They pass under the junction

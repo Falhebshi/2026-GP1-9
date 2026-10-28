@@ -16,6 +16,8 @@ import './NetworkMap.css'
 //   selectedId     the intersection to highlight and fly to (or '' for none)
 //   onSelect       called with an intersection id when its dot is clicked
 //   onArrive       called with the id once the map has finished flying to it
+//   padding        { top, right, bottom, left } in pixels: the space the page's floating cards
+//                  take, so the map fits the study area (and its dots) into the part you can see
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
@@ -75,6 +77,7 @@ function NetworkMap({
   selectedId,
   onSelect,
   onArrive,
+  padding,
 }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
@@ -215,6 +218,13 @@ function NetworkMap({
           'circle-stroke-width': 2,
         },
       })
+      // a larger invisible circle around each dot, so it is easy to click and hover
+      map.addLayer({
+        id: 'intersections-hit',
+        type: 'circle',
+        source: 'intersections',
+        paint: { 'circle-radius': 16, 'circle-opacity': 0 },
+      })
       const pulse = (now) => {
         const t = (now % 1600) / 1600 // one pulse every 1.6 s
         map.setPaintProperty('intersections-pulse', 'circle-radius', 7 + 16 * t)
@@ -232,7 +242,7 @@ function NetworkMap({
       // mousemove rather than mouseenter, so moving straight from one dot to the next updates it
       // after a click the map zooms in; the card stays hidden until the zoom has finished
       let zooming = false
-      map.on('click', 'intersections', (event) => {
+      map.on('click', 'intersections-hit', (event) => {
         const props = event.features?.[0]?.properties
         if (!props?.active) return
         hoverCard.remove()
@@ -242,7 +252,7 @@ function NetworkMap({
         })
         onSelectRef.current?.(props.id)
       })
-      map.on('mousemove', 'intersections', (event) => {
+      map.on('mousemove', 'intersections-hit', (event) => {
         const feature = event.features?.[0]
         if (!feature || zooming) return
         const { name, area, active } = feature.properties
@@ -252,7 +262,7 @@ function NetworkMap({
           .setDOMContent(hoverContent(name, area, active))
           .addTo(map)
       })
-      map.on('mouseleave', 'intersections', () => {
+      map.on('mouseleave', 'intersections-hit', () => {
         map.getCanvas().style.cursor = ''
         hoverCard.remove()
       })
@@ -282,6 +292,22 @@ function NetworkMap({
     map.setLayoutProperty('segments', 'visibility', view === 'segments' ? 'visible' : 'none')
     map.setLayoutProperty('heat', 'visibility', view === 'heatmap' ? 'visible' : 'none')
   }, [ready, view])
+
+  // Fit the study area into the part of the map the floating cards leave free, again whenever
+  // they change size (a smaller window makes the timeline card taller). Not while an
+  // intersection is selected, so it doesn't undo the zoom to it.
+  const paddingKey = padding
+    ? `${padding.top},${padding.right},${padding.bottom},${padding.left}`
+    : ''
+  useEffect(() => {
+    if (!ready || !padding || selectedId) return
+    const map = mapRef.current
+    const { width, height } = map.getContainer().getBoundingClientRect()
+    // when the cards leave almost no room, use what is left rather than failing to fit
+    const fits =
+      width - padding.left - padding.right > 80 && height - padding.top - padding.bottom > 80
+    map.fitBounds(bounds, { padding: fits ? padding : 20, duration: 0 })
+  }, [ready, paddingKey, bounds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // intersection dots, and fly to the selected one
   useEffect(() => {

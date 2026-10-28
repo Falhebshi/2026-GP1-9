@@ -57,11 +57,30 @@ export const OVER_LIMIT = {
   queue_storage_ratio: { limit: 1, inclusive: true, label: 'queue fills its storage' },
 }
 
+// The KPIs reported for the whole intersection (kpi_engine.md, section
+// 11.1), in the order pages show them. Capacity and saturation flow are
+// not on this list: they are reported per approach and movement only.
+export const INTERSECTION_KPIS = [
+  'level_of_service',
+  'control_delay',
+  'queue_length',
+  'queue_duration',
+  'queue_storage_ratio',
+  'throughput',
+  'volume_to_capacity_ratio',
+]
+
 // True when a result is at or above its standard limit (see inclusive)
 export function isOverLimit(result) {
   const rule = OVER_LIMIT[result?.kpi]
   if (!rule || !hasValue(result)) return false
   return rule.inclusive ? result.value >= rule.limit : result.value > rule.limit
+}
+
+// The words for a result over its standard limit, e.g. "over capacity",
+// or empty text when it is within the limit
+export function limitWarning(result) {
+  return isOverLimit(result) ? OVER_LIMIT[result.kpi].label : ''
 }
 
 // The unit as shown next to a value. A ratio or a grade has none.
@@ -143,6 +162,76 @@ export function kpiTileProps(current, previous, note) {
     status: current?.status,
     reason: current?.reason,
     tag: METHOD_LABELS[current?.method],
+    warning: limitWarning(current),
     ...kpiComparison(current, previous, note),
   }
+}
+
+// ---- Baseline and intervention ---------------------------------------------
+// Added for the Alert Details and Recommendation Details pages.
+//
+// When an intervention is compared with its baseline, the KPI engine works
+// out the change itself from matched runs (kpi_engine.md, section 12.4) and
+// sends a KpiComparison. The frontend shows those numbers and never
+// subtracts two results: that would lose the paired spread, and could
+// disagree with the engine when some pairs were left out.
+//
+// KpiComparison fields used here (names proposed in alertDetailsService.js):
+//   kpi, unit, status, reason, change, change_standard_deviation,
+//   percent_change, baseline_grade, intervention_grade,
+//   used_pairs, pair_count, is_partial_sample
+
+// The same props as kpiComparison(), from a KpiComparison:
+//   { change, changeUnit, changeTone, changeNote }
+// or an empty object when there is nothing to show (a grade, or no value)
+export function comparisonProps(comparison, note = '') {
+  const definition = KPI_DEFINITIONS[comparison?.kpi]
+  if (!definition || definition.changeAs === 'none' || comparison.status !== 'ok') return {}
+
+  let change
+  let changeUnit
+  if (definition.changeAs === 'percent') {
+    if (comparison.percent_change == null) return {}
+    change = Math.round(comparison.percent_change)
+    changeUnit = '%'
+  } else {
+    if (comparison.change == null) return {}
+    const factor = 10 ** definition.decimals
+    change = Math.round(comparison.change * factor) / factor
+    changeUnit = ''
+  }
+
+  let changeTone = 'neutral'
+  let word = 'no change'
+  if (change !== 0) {
+    const better = change > 0 === definition.higherIsBetter
+    changeTone = better ? 'good' : 'bad'
+    word = better ? 'better' : 'worse'
+  }
+  return { change, changeUnit, changeTone, changeNote: [note, word].filter(Boolean).join(' · ') }
+}
+
+// The change in the KPI's own unit, with its spread across the matched
+// pairs when there is one: "−35 s/veh ± 4.2", "−0.39 ± 0.05". HCM results
+// have no runs, so no spread. Empty text when there is no change to show.
+export function formatChangeAmount(comparison) {
+  if (comparison?.status !== 'ok' || comparison.change == null) return ''
+  const decimals = KPI_DEFINITIONS[comparison.kpi]?.decimals ?? 0
+  const format = (n, digits) =>
+    Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  const sign = comparison.change > 0 ? '+' : comparison.change < 0 ? '−' : ''
+  const unit = displayUnit(comparison.unit)
+
+  let text = `${sign}${format(comparison.change, decimals)}${unit ? ` ${unit}` : ''}`
+  if (comparison.change_standard_deviation != null) {
+    text += ` ± ${format(comparison.change_standard_deviation, Math.max(1, decimals))}`
+  }
+  return text
+}
+
+// The engine's tag for a comparison that left some pairs out
+// (kpi_engine.md 12.4, "Partial sample"); empty text otherwise
+export function partialSampleNote(comparison) {
+  if (!comparison?.is_partial_sample) return ''
+  return `Based on ${comparison.used_pairs?.length ?? 0} of ${comparison.pair_count} matched runs: may differ from the scenario's own values`
 }
