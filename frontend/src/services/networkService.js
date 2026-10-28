@@ -31,8 +31,9 @@ const NETWORK_BOUNDS = [
 ]
 
 // The other intersections in the "Intersections by area" list. Positions are where the two roads
-// cross in OpenStreetMap. Districts checked on Google Maps (25 Oct): Imam Saud × Takhassusi and
-// Prince Turki × Al Urubah; King Abdullah × King Fahd is not checked yet. They are listed but not
+// cross in OpenStreetMap. Districts checked on Google Maps (25 and 28 Oct). King Abdullah × King
+// Fahd sits where four districts meet (Ar Rahmaniyyah, Al Mohammadiyyah, Al Wurud and King Fahd);
+// it is listed under Ar Rahmaniyyah, the first one Google Maps gives. They are listed but not
 // active yet: only the study intersection, which comes from its record (getIntersection), has a
 // simulation.
 const OTHER_INTERSECTIONS = [
@@ -45,7 +46,7 @@ const OTHER_INTERSECTIONS = [
   {
     id: 'kingabdullah_kingfahd',
     name: 'King Abdullah Rd × King Fahd Rd',
-    area: 'Ar Rahmaniyah',
+    area: 'Ar Rahmaniyyah',
     center: [46.66386, 24.7276],
   },
   {

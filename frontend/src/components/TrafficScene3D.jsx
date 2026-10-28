@@ -108,16 +108,6 @@ const TOOLTIP_STYLE = {
 
 const CLIP = new ClipExtension()
 
-// How the selected approach is highlighted, while the team compares the two styles (see
-// simulation_3d/selection.js): ?highlight=colour, ?highlight=spotlight or ?highlight=both
-const HIGHLIGHT = (() => {
-  const choice = new URLSearchParams(window.location.search).get('highlight') ?? 'colour'
-  return {
-    colour: choice === 'colour' || choice === 'both',
-    spotlight: choice === 'spotlight' || choice === 'both',
-  }
-})()
-
 function TrafficScene3D({
   intersectionId,
   center,
@@ -299,10 +289,7 @@ function TrafficScene3D({
     const highlight = selected
       ? selectionLayers({
           lanes: selected.lanes,
-          centres: s.centres,
-          bounds,
           color: selected.color,
-          style: HIGHLIGHT,
           t: performance.now() / 1000,
           night: ENV.n,
         })
@@ -431,11 +418,6 @@ function TrafficScene3D({
           }),
         }
         sceneRef.current.approachLanes = approachLanes(sceneRef.current.laneIndex, sig)
-        sceneRef.current.centres = Object.fromEntries(
-          (d.detail?.features ?? [])
-            .filter((f) => f.properties.kind === 'lane_centre')
-            .map((f) => [f.properties.lane, f.geometry.coordinates]),
-        )
         sceneRef.current.veg = prepareVegetation({
           streetscape: sceneRef.current.ss,
           context: sceneRef.current.ctx,
@@ -493,6 +475,24 @@ function TrafficScene3D({
     tRef.current = startRef.current + time
     redraw(false)
   }, [time]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When the box changes size (e.g. full screen), keep showing the same ground across its smaller
+  // side, so a bigger box shows the junction bigger instead of the same view with empty sides
+  useEffect(() => {
+    const host = hostRef.current
+    let smaller = Math.min(host.clientWidth, host.clientHeight)
+    const observer = new ResizeObserver(() => {
+      const next = Math.min(host.clientWidth, host.clientHeight)
+      if (!deckRef.current || !vsRef.current || !smaller || !next || next === smaller) return
+      const v = vsRef.current
+      vsRef.current = fitView({ ...v, zoom: clamp(v.zoom + Math.log2(next / smaller), [16, 21]) })
+      smaller = next
+      deckRef.current.setProps({ initialViewState: vsRef.current })
+      setViewState(vsRef.current)
+    })
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A jump from the page while the scene loops by itself, e.g. a click on the timeline
   useEffect(() => {
