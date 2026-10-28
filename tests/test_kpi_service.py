@@ -123,10 +123,28 @@ def test_baseline_run_gives_every_kpi_for_every_element(source, tmp_path):  # no
     assert all(r.reason for r in results if r.status != KpiStatus.OK)
     assert any(r.status == KpiStatus.OK for r in results)
 
-    # The file names the run and holds no SUMO identifiers
-    path = write_kpis(results, tmp_path / "kpis.json", files.run)
-    text = path.read_text(encoding="utf-8")
-    saved = json.loads(text)
-    assert saved["run_id"] == "RUN_TEST"
-    assert len(saved["results"]) == len(results)
-    assert "#" not in text and "cluster" not in text
+    # kpis_all.json holds every result; kpis.json what the page shows.
+    # Both name the run and hold no SUMO identifiers.
+    page_path, all_path = write_kpis(results, tmp_path / "frontend", files.run)
+    assert (page_path.name, all_path.name) == ("kpis.json", "kpis_all.json")
+    page, every = (json.loads(p.read_text(encoding="utf-8")) for p in (page_path, all_path))
+    assert page["run_id"] == every["run_id"] == "RUN_TEST"
+    assert len(every["results"]) == len(results)
+    for path in (page_path, all_path):
+        text = path.read_text(encoding="utf-8")
+        assert "#" not in text and "cluster" not in text
+
+    # The page keeps one result per KPI, element and interval (it looks
+    # results up by KPI name and interval start)
+    keys = [
+        (r["kpi"], r["level"], r[f"{r['level']}_id"], r["interval_start"])
+        for r in page["results"]
+    ]
+    assert len(keys) == len(set(keys))
+    assert {(start, end) for start, end in (
+        (r["interval_start"], r["interval_end"]) for r in page["results"]
+    )} == {(ANALYSIS_START.isoformat(), middle.isoformat()), (middle.isoformat(), analysis_end.isoformat())}
+    measured = {"control_delay", "level_of_service"}
+    assert all(r["method"] == "simulation" for r in page["results"] if r["kpi"] in measured)
+    assert all(r["unit"] == "m" for r in page["results"] if r["kpi"] == "queue_length")
+    assert {r["level"] for r in page["results"]} == {"movement", "approach", "intersection"}

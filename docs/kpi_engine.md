@@ -716,7 +716,7 @@ python -m backend.analytics.service simulation/outputs/baseline_runs/<run-id>
 | Option | Meaning |
 | --- | --- |
 | `--scenario` | Folder name of the scenario in the frontend data; default `baseline`, as for the playback files |
-| `--out` | Where to write the results; default `frontend/public/data/<intersection>/<scenario>/kpis.json`, next to the run's playback files (`run.json`) |
+| `--out` | The folder to write the results to; default `frontend/public/data/<intersection>/<scenario>/`, next to the run's playback files (`run.json`) |
 
 ## 16.1 Inputs
 
@@ -756,7 +756,14 @@ One `KpiResult` per KPI, element and 15-minute interval of the analysis period, 
 
 ## 16.4 Output
 
-`kpis.json` holds the run it belongs to and its results in the dashboard form (`data_models.md` section 6.8, with the computed fields):
+Two files, each holding the run it belongs to and results in the dashboard form (`data_models.md` section 6.8, with the computed fields):
+
+| File | Results |
+| --- | --- |
+| `kpis.json` | What the current-traffic page shows: one result per KPI, element and 15-minute interval, for movements, approaches and the intersection. Control delay and level of service are the measured ones; queue length is in metres |
+| `kpis_all.json` | Every result of section 16.3, including the HCM delay and level of service, queues in vehicles, lane results and whole-period queues |
+
+The page looks results up by KPI name and interval start, so `kpis.json` must not hold two results with the same KPI, element and interval start: the HCM delay would replace the measured one, a queue in vehicles one in metres, and a whole-period queue the first interval's.
 
 ```json
 {

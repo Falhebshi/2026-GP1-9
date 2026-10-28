@@ -19,10 +19,13 @@ Only a completed run gives KPIs. The engine itself reads no files; this
 module does the reading and writing around it.
 
 Usage (from the repository root):
-    python -m backend.analytics.service <run folder> [--scenario baseline] [--out kpis.json]
+    python -m backend.analytics.service <run folder> [--scenario baseline] [--out <folder>]
 
-The results are written to frontend/public/data/<intersection>/<scenario>/kpis.json,
-next to the run's playback files, unless --out is given.
+Two files are written to frontend/public/data/<intersection>/<scenario>/,
+next to the run's playback files, unless --out names another folder:
+- kpis.json: the results the current-traffic page shows, one per KPI,
+  element and 15-minute interval (page_results);
+- kpis_all.json: every result.
 """
 
 import argparse
@@ -495,39 +498,72 @@ def _element_id(result: KpiResult) -> str:
 # WRITING
 # ============================================================
 
-def write_kpis(results: list[KpiResult], path: str | Path, run: SimulationRun) -> Path:
+PAGE_FILE = "kpis.json"
+ALL_FILE = "kpis_all.json"
+PAGE_LEVELS = {KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION}
+MEASURED_ONLY = {KpiName.CONTROL_DELAY, KpiName.LEVEL_OF_SERVICE}
+
+
+def page_results(results: list[KpiResult]) -> list[KpiResult]:
     """
-    Write the results as JSON in the dashboard form (data_models.md
-    section 6.8: with the computed fields), with the run they belong to.
+    The results the current-traffic page shows: one per KPI, element and
+    15-minute interval, for movements, approaches and the intersection.
+    Control delay and level of service are the measured ones and queue
+    length is in metres; HCM delay and level of service, queues in
+    vehicles, lane results and whole-period queues are left out.
     """
 
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "run_id": run.run_id,
-        "scenario_id": run.scenario_id,
-        "results": [r.model_dump(mode="json") for r in results],
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    return path
+    return [
+        r for r in results
+        if r.level in PAGE_LEVELS
+        and not (r.kpi in MEASURED_ONLY and r.method == KpiMethod.HCM)
+        and not (r.kpi == KpiName.QUEUE_LENGTH and r.unit == VEH)
+        and (r.interval_end - r.interval_start).total_seconds() == ANALYSIS_INTERVAL_S
+    ]
+
+
+def write_kpis(results: list[KpiResult], folder: str | Path, run: SimulationRun) -> list[Path]:
+    """
+    Write kpis.json (page_results) and kpis_all.json (every result) into
+    folder, as JSON in the dashboard form (data_models.md section 6.8:
+    with the computed fields), each with the run they belong to.
+    """
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = []
+
+    for name, selected in ((PAGE_FILE, page_results(results)), (ALL_FILE, results)):
+        payload = {
+            "run_id": run.run_id,
+            "scenario_id": run.scenario_id,
+            "results": [r.model_dump(mode="json") for r in selected],
+        }
+        path = folder / name
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        paths.append(path)
+
+    return paths
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--scenario", default="baseline")
-    parser.add_argument("--out", type=Path, help="default: frontend/public/data/<intersection>/<scenario>/kpis.json")
+    parser.add_argument("--out", type=Path, help="folder; default: frontend/public/data/<intersection>/<scenario>/")
     args = parser.parse_args()
 
     files = load_run(args.run_dir)
     results = calculate_run_kpis(files)
     intersection_id = next(r.intersection_id for r in results if r.intersection_id)
-    out = args.out or FRONTEND_DATA_DIR / intersection_id / args.scenario / "kpis.json"
-    write_kpis(results, out, files.run)
+    out = args.out or FRONTEND_DATA_DIR / intersection_id / args.scenario
+    paths = write_kpis(results, out, files.run)
 
     counts = {status: sum(r.status == status for r in results) for status in KpiStatus}
     print(f"{len(results)} results: " + ", ".join(f"{s.value} {n}" for s, n in counts.items()))
-    print(f"Written: {out}")
+    print(f"{len(page_results(results))} of them shown on the current-traffic page")
+    for path in paths:
+        print(f"Written: {path}")
 
 
 if __name__ == "__main__":
