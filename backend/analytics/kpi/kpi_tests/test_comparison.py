@@ -188,6 +188,22 @@ def test_hcm_result_has_no_runs():
     assert result.value == 41.2
 
 
+def test_hcm_level_of_service_has_its_grade_and_no_value():
+    spec = delay_spec(
+        kpi=KpiName.LEVEL_OF_SERVICE,
+        unit=KpiUnit.GRADE,
+        method=KpiMethod.HCM,
+        level=KpiLevel.LANE_GROUP,
+        element_id="APP_E_T",
+        input_origins=[InputOrigin.MODELLED_ASSUMPTION],
+    )
+
+    result = single_result(spec, OK, None, los_grade="D")
+
+    assert result.los_grade == "D"
+    assert result.value is None
+
+
 # ============================================================
 # QUEUES: LANES FIRST (question 9)
 # ============================================================

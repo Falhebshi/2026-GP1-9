@@ -37,8 +37,10 @@ Rules applied, and why:
   entered its zone during the run is recorded; the engine uses those
   that arrived in the analysis period.
 - Never inserted: SUMO leaves a vehicle it could not insert before the
-  run ended out of tripinfo. A planned vehicle due to depart during the
-  run with no tripinfo entry gives an UninsertedVehicle, with the time
+  run ended out of tripinfo, or writes it with depart -1 when
+  --tripinfo-output.write-undeparted is set. A planned vehicle due to
+  depart during the run that is not in tripinfo as departed gives an
+  UninsertedVehicle, with the time
   it was planned to reach the stop line (planned departure plus the
   movement's free-flow time to the stop line, as the demand planner
   aims it).
@@ -212,10 +214,15 @@ def planned_departures(manifest_path: str | Path) -> list[dict]:
 
 
 def speed_factors(tripinfo_path: str | Path) -> dict[str, float]:
-    """Each vehicle's speed factor, from tripinfo (written with unfinished vehicles)."""
+    """
+    The speed factor of each vehicle that entered the network, from
+    tripinfo (written with unfinished vehicles). Vehicles that never
+    departed (depart -1, written with write-undeparted) are left out.
+    """
 
     return {item.get("id"): float(item.get("speedFactor"))
-            for item in ET.parse(tripinfo_path).getroot().iter("tripinfo")}
+            for item in ET.parse(tripinfo_path).getroot().iter("tripinfo")
+            if float(item.get("depart", "0")) >= 0}
 
 
 def read_fcd(fcd_path: str | Path, vehicle_ids: set[str]) -> dict[str, list[Row]]:

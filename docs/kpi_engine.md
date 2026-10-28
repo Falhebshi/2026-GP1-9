@@ -25,6 +25,7 @@ backend/
 ├── __init__.py
 └── analytics/
     ├── __init__.py
+    ├── service.py          the KPIs of one finished run, written to kpis.json (section 16)
     └── kpi/
         ├── __init__.py
         ├── parameters.py   constants and the level-of-service function
@@ -52,7 +53,7 @@ backend/
             └── test_study_area_inputs.py
 ```
 
-Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`. `test_study_area_inputs.py` runs the engine on the study area's real network inputs and signal program, prepared by `jaadah/kpi_inputs/` ([KPI measurements](kpi_measurements.md)).
+Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`. `service.py` sits outside the engine because it reads and writes files; its tests are in `tests/test_kpi_service.py`. `test_study_area_inputs.py` runs the engine on the study area's real network inputs and signal program, prepared by `jaadah/kpi_inputs/` ([KPI measurements](kpi_measurements.md)).
 
 ---
 
@@ -699,3 +700,77 @@ The decisions that were hardest to make, what made each difficult, and what was 
 | Queue measurement area | Lane sections are 85–395 m long (85–119 m except on East), the zones 388–500 m; a lane's queue cannot be followed beyond the point where lanes merge | Full-zone queue per approach, per-lane queues on the chains (section 13.1) |
 | Queues longer than measured | A value known to be too low could be shown as a minimum, but a minimum looks like a result and is easily compared as one | Every result is valid or `unavailable` with its reason; no minimum values (sections 6.8 and 13.7) |
 | Vehicles waiting to enter | Their waiting is real but happens outside the model and is not control delay | Not added to delay; the approach is `unavailable` when its queue reaches the zone end or vehicles never entered (section 13.7) |
+
+---
+
+# 16. The KPIs of One Run
+
+Implemented in `backend/analytics/service.py`, outside the engine: it reads the files of one finished run, calls `jaadah/kpi_inputs/` and the engine, and writes the results.
+
+From the repository root, after a run of `simulation/scripts/run_baseline.py`:
+
+```bash
+python -m backend.analytics.service simulation/outputs/baseline_runs/<run-id>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--scenario` | Folder name of the scenario in the frontend data; default `baseline`, as for the playback files |
+| `--out` | The folder to write the results to; default `frontend/public/data/<intersection>/<scenario>/`, next to the run's playback files (`run.json`) |
+
+## 16.1 Inputs
+
+The run folder written by `run_baseline.py` ([Simulation integration](simulation_integration.md)):
+
+| File | Used for |
+| --- | --- |
+| `summary.json` | the `SimulationRun` (run, scenario, seed, step length, mapping version, status) and the run window |
+| `run/raw/fcd.xml`, `run/raw/tripinfo.xml` | the measurement records ([KPI measurements](kpi_measurements.md)) |
+| `demand/demand_manifest.json`, `demand/demand_demand.json` | each vehicle's movement, and the demand of the HCM results |
+
+The network and its mapping are the repository's (`data/processed/road_network/`). The FCD spacing given to the measurements is the run's `step_length_s`, because the runner writes FCD at every simulation step.
+
+## 16.2 Checks
+
+- Only a run with status `completed` gives KPIs. A failed run gives none, and the error says so, so a failed run is never shown with values.
+- The run's `mapping_version` must equal the repository mapping's: zones, lanes and routes must be the ones the run was made with.
+
+## 16.3 Results
+
+One `KpiResult` per KPI, element and 15-minute interval of the analysis period, and the queue length and storage ratio also over the whole analysis period (the 95th-percentile cycle queue, section 6.4):
+
+| Method | KPI | Levels |
+| --- | --- | --- |
+| Simulation | control delay, level of service, queue duration, throughput | movement, approach, intersection |
+| Simulation | queue length (m and veh), queue storage ratio | lane, movement, approach, intersection |
+| HCM | control delay, level of service, volume-to-capacity ratio | movement, approach, intersection (Xc for the intersection) |
+| HCM | capacity | movement, approach |
+| HCM | saturation flow rate | movement |
+
+- **Whole-period results** have the whole analysis period as their interval (for example 08:00–09:00), so a view of 15-minute values must select results by their interval. When the analysis period is a single interval, the whole-period values are not reported separately: that interval's results already cover it.
+- The blocked approaches of section 13.7 are built from the run's records and passed to delay, throughput and queues; over the whole period, an approach blocked in any interval is blocked.
+- The HCM delay chain starts at the start of the warm-up (section 13.4); only the analysis intervals are reported.
+- The uncontrolled slips have no HCM results: their HCM KPIs are `not_applicable`.
+- A movement value taken from a shared lane or lane group names it (`measured_on_lane_id`, `measured_on_lane_group_id`).
+- The results of one run are combined as a set of one run (section 12.1): `run_ids` lists the run for simulation results and is empty for HCM results.
+
+## 16.4 Output
+
+Two files, each holding the run it belongs to and results in the dashboard form (`data_models.md` section 6.8, with the computed fields):
+
+| File | Results |
+| --- | --- |
+| `kpis.json` | What the current-traffic page shows: one result per KPI, element and 15-minute interval, for movements, approaches and the intersection. Control delay and level of service are the measured ones; queue length is in metres |
+| `kpis_all.json` | Every result of section 16.3, including the HCM delay and level of service, queues in vehicles, lane results and whole-period queues |
+
+The page looks results up by KPI name and interval start, so `kpis.json` must not hold two results with the same KPI, element and interval start: the HCM delay would replace the measured one, a queue in vehicles one in metres, and a whole-period queue the first interval's.
+
+```json
+{
+  "run_id": "RUN_BASELINE_20261027T0800-0900_S42",
+  "scenario_id": "SCN_BASELINE_20261027T0800",
+  "results": [ { "kpi": "control_delay", "level": "movement", "movement_id": "MOV_S_W", "...": "..." } ]
+}
+```
+
+`run_id` matches the `run_id` of `run.json` in the same folder, so the frontend can check that the KPIs and the playback belong to the same run. Results use canonical identifiers only (`INT_001`, `APP_S`, `MOV_S_W`, `LANE_S_1`), never SUMO lane or edge IDs.

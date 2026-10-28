@@ -136,9 +136,9 @@ Every vehicle that entered its zone during the run is recorded, including those 
 
 ## 2.7 Vehicles that never entered the network
 
-SUMO inserts a vehicle only when there is a safe gap at the start of its route; a vehicle still waiting when the run ends never enters and is left out of the tripinfo output. Each vehicle of an analysed movement in the demand manifest that was due to depart before the run ended and has no tripinfo entry gives an `UninsertedVehicle`, with the time it was planned to reach the stop line: its planned departure plus the movement's free-flow time to the stop line, as the demand planner aims it. The KPI engine then reports its approach as `unavailable` in that interval (KPI engine section 13.7).
+SUMO inserts a vehicle only when there is a safe gap at the start of its route; a vehicle still waiting when the run ends never enters. It is left out of the tripinfo output, or written with `depart="-1"` when `--tripinfo-output.write-undeparted true` is set. Each vehicle of an analysed movement in the demand manifest that was due to depart before the run ended and is not in tripinfo as departed gives an `UninsertedVehicle`, with the time it was planned to reach the stop line: its planned departure plus the movement's free-flow time to the stop line, as the demand planner aims it. The KPI engine then reports its approach as `unavailable` in that interval (KPI engine section 13.7).
 
-The count matches SUMO's own: at 1,600 veh/h per movement, 5,907 vehicles were recorded, the number SUMO reports as still waiting at the end of the run (section 6).
+The count matches SUMO's own: at 1,600 veh/h per movement, 4,689 vehicles were recorded, the number SUMO reports as still waiting at the end of the run (section 6).
 
 ---
 
