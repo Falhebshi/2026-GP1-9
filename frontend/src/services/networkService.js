@@ -3,7 +3,8 @@
 // For now it returns SAMPLE data. When the backend is ready, only the inside of these functions
 // changes; the page stays the same as long as the data keeps these shapes:
 //
-//   getNetwork()           { isSample, bounds: [[west, south], [east, north]],
+//   getNetwork()           { isSample, bounds: [[west, south], [east, north]] the map opens on,
+//                            maxBounds: the same shape, how far the map can be moved and zoomed out,
 //                            intersections: [{ id, name, area, center, simulation }] }
 //   getNetworkTimeline(t)  { isSample, bars: [{ time, value, level }] }, 24 hours ending at t
 //   getSegments(time)      GeoJSON road segments, or null while not connected (see below)
@@ -24,10 +25,20 @@ export async function getSegments() {
   return null
 }
 
-// The area the map shows: north Riyadh around King Fahd Rd and the Northern Ring Rd.
+// The area the map opens on: 9 km x 4.5 km centred on the study intersection. It holds the 2 km
+// square requested from RCRC with room around it, and is twice as wide as tall, the shape of the
+// map area the floating cards leave free.
 const NETWORK_BOUNDS = [
-  [46.585, 24.69],
-  [46.73, 24.8],
+  [46.5891, 24.715],
+  [46.6781, 24.7556],
+]
+
+// How far the map can be moved and zoomed out: the whole city, since the network view covers
+// all of Riyadh. Approximate extent of the built-up area; replace it with the box of the city
+// boundary once the road extract is made from OpenStreetMap.
+const CITY_BOUNDS = [
+  [46.45, 24.45],
+  [47.0, 25.05],
 ]
 
 // The other intersections in the "Intersections by area" list. Positions are where the two roads
@@ -64,7 +75,8 @@ export async function getNetwork() {
   // FOR TESTING ONLY: ?demo=empty or ?demo=error in the page address
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === 'error') throw new Error('The network service is not responding.')
-  if (demo === 'empty') return { isSample: true, bounds: NETWORK_BOUNDS, intersections: [] }
+  if (demo === 'empty')
+    return { isSample: true, bounds: NETWORK_BOUNDS, maxBounds: CITY_BOUNDS, intersections: [] }
 
   const study = await getIntersection()
   const intersections = [
@@ -77,7 +89,7 @@ export async function getNetwork() {
     },
     ...OTHER_INTERSECTIONS,
   ]
-  return { isSample: true, bounds: NETWORK_BOUNDS, intersections }
+  return { isSample: true, bounds: NETWORK_BOUNDS, maxBounds: CITY_BOUNDS, intersections }
 }
 
 // 24 hours of 15-minute congestion bars ending at `end` (a time in ms; now if left out)

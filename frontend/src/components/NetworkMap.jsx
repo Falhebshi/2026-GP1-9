@@ -9,6 +9,8 @@ import './NetworkMap.css'
 // top, or a heatmap of the same data.
 //
 //   bounds         [[west, south], [east, north]] the map opens on
+//   maxBounds      the same shape: how far the map can be moved and zoomed out (optional; a
+//                  margin around bounds if left out)
 //   segments       GeoJSON road segments (see services/networkService.js), or null for none yet
 //   view           'segments' or 'heatmap'
 //   intersections  [{ id, name, area, center: [lon, lat], simulation }] shown as dots; the ones
@@ -71,6 +73,7 @@ function hoverContent(name, area, active) {
 
 function NetworkMap({
   bounds,
+  maxBounds,
   segments,
   view = 'segments',
   intersections = [],
@@ -101,7 +104,7 @@ function NetworkMap({
       // leave room at the bottom for the timeline card that sits over the map
       fitBoundsOptions: { padding: { top: 20, right: 20, left: 20, bottom: 200 } },
       minZoom: 10,
-      maxBounds: [
+      maxBounds: maxBounds ?? [
         [bounds[0][0] - 0.12, bounds[0][1] - 0.1],
         [bounds[1][0] + 0.12, bounds[1][1] + 0.1],
       ],
@@ -275,7 +278,7 @@ function NetworkMap({
       mapRef.current = null
       setReady(false) // a new map (after a hot reload) has to load its layers again
     }
-  }, [bounds])
+  }, [bounds, maxBounds])
 
   // segment data
   useEffect(() => {
