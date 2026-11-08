@@ -67,6 +67,7 @@ function NetworkOverview() {
   const [error, setError] = useState(null) // the error message, if loading failed
   const [bars, setBars] = useState([])
   const [segments, setSegments] = useState(null)
+  const [timelineOpen, setTimelineOpen] = useState(false) // closed, so the map gets the room
   const timelineRef = useRef(null)
   const sideRef = useRef(null)
   const [timelineHeight, setTimelineHeight] = useState(0)
@@ -162,12 +163,13 @@ function NetworkOverview() {
     return <EmptyState>Loading the network…</EmptyState>
   }
 
-  const { bounds, intersections } = network
+  const { bounds, maxBounds, intersections } = network
 
   return (
     <div className="network-overview" style={{ '--map-bottom-inset': `${timelineHeight + 32}px` }}>
       <NetworkMap
         bounds={bounds}
+        maxBounds={maxBounds}
         segments={segments}
         view={view}
         intersections={intersections}
@@ -217,46 +219,70 @@ function NetworkOverview() {
         />
       </div>
 
-      <div className="network-overview-timeline" ref={timelineRef}>
-        <HistoricalTimeline
-          title="Traffic Timeline"
-          bars={bars}
-          value={time}
-          onChange={(value) => {
-            // the Latest button (or the newest bar) goes back to today's live data
-            if (value === null) {
-              setDay('')
-              setTime(null)
-            } else setTime(value)
-          }}
-          className="card-floating"
+      <div
+        className={`network-overview-timeline${timelineOpen ? '' : ' network-overview-timeline-closed'}`}
+        ref={timelineRef}
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          className="network-overview-timeline-toggle"
+          aria-expanded={timelineOpen}
+          onClick={() => setTimelineOpen((open) => !open)}
         >
-          <Select
-            label="Past time"
-            size="sm"
-            options={dayOptions(now)}
-            value={day}
-            onChange={changeDay}
-          />
-          <Select
-            ariaLabel="Hour"
-            size="sm"
-            options={hourOptions}
-            value={String(shown.getHours())}
-            onChange={(h) => goToHour(Number(h))}
-          />
-          <span className="network-overview-divider" />
-          {PEAKS.map((peak) => (
-            <Button
-              key={peak.id}
+          <svg
+            className="network-overview-chevron"
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            aria-hidden="true"
+          >
+            <path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          {timelineOpen ? 'Hide timeline' : 'Traffic timeline'}
+        </Button>
+
+        {timelineOpen && (
+          <HistoricalTimeline
+            title="Traffic Timeline"
+            bars={bars}
+            value={time}
+            onChange={(value) => {
+              // the Latest button (or the newest bar) goes back to today's live data
+              if (value === null) {
+                setDay('')
+                setTime(null)
+              } else setTime(value)
+            }}
+            className="card-floating"
+          >
+            <Select
+              label="Past time"
               size="sm"
-              variant={activePeak === peak ? 'primary' : 'secondary'}
-              onClick={() => goToHour(peak.from)}
-            >
-              {peak.label} · {hourLabel(peak.from)}–{hourLabel(peak.to)}
-            </Button>
-          ))}
-        </HistoricalTimeline>
+              options={dayOptions(now)}
+              value={day}
+              onChange={changeDay}
+            />
+            <Select
+              ariaLabel="Hour"
+              size="sm"
+              options={hourOptions}
+              value={String(shown.getHours())}
+              onChange={(h) => goToHour(Number(h))}
+            />
+            <span className="network-overview-divider" />
+            {PEAKS.map((peak) => (
+              <Button
+                key={peak.id}
+                size="sm"
+                variant={activePeak === peak ? 'primary' : 'secondary'}
+                onClick={() => goToHour(peak.from)}
+              >
+                {peak.label} · {hourLabel(peak.from)}–{hourLabel(peak.to)}
+              </Button>
+            ))}
+          </HistoricalTimeline>
+        )}
       </div>
     </div>
   )
