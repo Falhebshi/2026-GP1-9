@@ -10,10 +10,11 @@ from backend.analytics.service import (
     DEFAULT_MAPPING_PATH,
     calculate_run_kpis,
     load_run,
+    page_results,
     write_kpis,
 )
 from jaadah.mapping.loader import load_network_mappings
-from jaadah.models.kpis import KpiLevel, KpiName, KpiStatus
+from jaadah.models.kpis import KpiLevel, KpiName, KpiResult, KpiStatus
 from simulation.scripts.run_baseline import run_baseline
 from test_baseline_run import ANALYSIS_START, source  # noqa: F401  (source is a fixture)
 
@@ -75,6 +76,56 @@ def test_run_with_another_mapping_version_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="used mapping 0.0-old"):
         calculate_run_kpis(files)
+
+
+# ============================================================
+# WHAT THE CURRENT-TRAFFIC PAGE SHOWS
+# ============================================================
+
+INTERVAL = {
+    "interval_start": "2026-10-27T08:00:00+03:00",
+    "interval_end": "2026-10-27T08:15:00+03:00",
+    "scenario_id": "SCN_TEST",
+}
+
+
+def storage_ratio(level, element_id, **changes):
+    """A queue storage ratio result, as the engine writes it for a lane with no storage length."""
+
+    fields = {
+        "kpi": "queue_storage_ratio", "level": level, f"{level}_id": element_id,
+        "value": None, "unit": "ratio", "status": "unavailable",
+        "reason": "the lane has no storage length; unavailable in 1 of 1 runs",
+        "method": "simulation", "run_ids": ["RUN_TEST"], **INTERVAL,
+    }
+    fields.update(changes)
+    return KpiResult(**fields)
+
+
+def test_page_leaves_out_queue_storage_ratio_but_keeps_the_other_kpis():
+    """
+    Storage ratio stays in kpis_all.json (for analysis and comparisons)
+    but is not shown on the current-traffic page, at any level and
+    whether or not it has a value.
+    """
+
+    capacity = KpiResult(
+        kpi="capacity", level="movement", movement_id="MOV_S_W",
+        value=439.26, unit="veh/h", status="ok", method="hcm",
+        input_origins=["modelled_assumption"], **INTERVAL,
+    )
+    ratios = [
+        storage_ratio("movement", "MOV_N_E"),
+        storage_ratio("approach", "APP_N"),
+        storage_ratio("intersection", "INT_001"),
+        # A short lane once its storage length is known: 43.8 m / 86.3 m
+        storage_ratio(
+            "movement", "MOV_S_W", value=0.51, status="ok", reason=None,
+            input_origins=["modelled_assumption", "simulated"],
+        ),
+    ]
+
+    assert page_results([capacity, *ratios]) == [capacity]
 
 
 # ============================================================
@@ -148,3 +199,5 @@ def test_baseline_run_gives_every_kpi_for_every_element(source, tmp_path):  # no
     assert all(r["method"] == "simulation" for r in page["results"] if r["kpi"] in measured)
     assert all(r["unit"] == "m" for r in page["results"] if r["kpi"] == "queue_length")
     assert {r["level"] for r in page["results"]} == {"movement", "approach", "intersection"}
+    assert "queue_storage_ratio" not in {r["kpi"] for r in page["results"]}
+    assert "queue_storage_ratio" in {r["kpi"] for r in every["results"]}
