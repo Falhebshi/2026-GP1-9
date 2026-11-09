@@ -1,6 +1,8 @@
 # Jaadah | جادّة
 
-Jaadah (جادّة) is a King Saud University graduation project. We are building a traffic digital twin for a study intersection in Riyadh so traffic engineers can examine traffic conditions and test possible changes in simulation before applying them on the road.
+Jaadah (جادّة) is a graduation project developed by students at King Saud University. The project aims to develop a web-based traffic digital twin platform that helps traffic engineers and urban planners better understand and analyze traffic conditions in Riyadh. By combining traffic data, microscopic traffic simulation, and traffic engineering methods, Jaadah provides an interactive environment for examining congestion, identifying potential traffic problems, and evaluating possible solutions.
+
+The system provides both a broader overview of traffic conditions across the road network and a detailed simulation of a selected intersection in Riyadh. Using SUMO (Simulation of Urban MObility), Jaadah simulates vehicle movements and evaluates traffic performance through indicators such as delay, queue length, throughput, and level of service. The project also aims to incorporate artificial intelligence for traffic forecasting and anomaly detection, alongside recommendations for potential improvements. These improvements can then be tested and compared against the original traffic conditions through simulation, helping engineers make more informed decisions before implementing changes on real roads.
 
 This repository has a React dashboard, a synthetic traffic source, traffic ingestion and demand code, SUMO simulation scripts, and KPI calculations. The dashboard still uses sample data on several pages. Connecting simulation results and live KPIs to the dashboard, forecasting, and intervention comparisons is planned work.
 
