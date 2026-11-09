@@ -271,6 +271,8 @@ The traffic and control context being represented: what should be simulated, not
 
 Fields: `scenario_id`, `intersection_id`, `time_context`, `control_mode`, `start_time`, optional `end_time`, optional `reference_scenario_id`.
 
+`start_time` and `end_time` mark the **analysis period**, the time window the user looks at and KPIs are reported for (for example, an AM peak of 08:00–09:00). The warm-up (`SimulationConfig.warmup_duration_s`) runs before `start_time` and the clearance (`SimulationConfig.clearance_duration_s`) after `end_time`; with 15 minutes each, the simulation covers 07:45–09:15. The analysis period, warm-up and clearance are whole numbers of 15-minute intervals.
+
 | Enum | Values |
 | --- | --- |
 | `TimeContext` | `historical`, `current`, `forecast` |
