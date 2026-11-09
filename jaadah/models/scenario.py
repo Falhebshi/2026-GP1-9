@@ -49,6 +49,10 @@ class Scenario(BaseModel):
     A Scenario defines what period and control condition are being
     represented. Concrete SUMO executions of the scenario are stored
     separately as SimulationRun objects.
+
+    start_time and end_time mark the analysis period, the window KPIs
+    are reported for. The warm-up runs before start_time and the
+    clearance after end_time (SimulationConfig).
     """
 
     model_config = ConfigDict(
