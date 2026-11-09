@@ -34,11 +34,12 @@ const NETWORK_BOUNDS = [
 ]
 
 // How far the map can be moved and zoomed out: the whole city, since the network view covers
-// all of Riyadh. Approximate extent of the built-up area; replace it with the box of the city
-// boundary once the road extract is made from OpenStreetMap.
+// all of Riyadh. Drawn by the team around Riyadh's built-up area, reaching north to the newer
+// districts. OpenStreetMap has no city boundary for Riyadh. CITY_BOX in
+// jaadah/network_congestion/segments.py uses the same box.
 const CITY_BOUNDS = [
-  [46.45, 24.45],
-  [47.0, 25.05],
+  [46.51, 24.51],
+  [46.94, 25.0],
 ]
 
 // The other intersections in the "Intersections by area" list. Positions are where the two roads

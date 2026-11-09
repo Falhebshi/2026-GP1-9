@@ -32,3 +32,6 @@ Thumbs.db
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db
 /data/synthetic_traffic/*.db-*
+
+# OpenStreetMap download for the network map (rebuild with the Overpass query)
+/data/raw/network/
