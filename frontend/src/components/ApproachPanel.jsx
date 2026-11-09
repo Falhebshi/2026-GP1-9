@@ -26,14 +26,14 @@ const SUMMARY = [
   { kpi: 'throughput', label: 'Flow' },
 ]
 
-// the other KPIs of a movement, under "More"
+// the other KPIs of a movement, under "More". Queue storage ratio is not shown: the backend
+// leaves it out of kpis.json (kpi_engine.md, section 6.5).
 const DETAILS = [
   { kpi: 'volume_to_capacity_ratio', label: 'Demand / capacity' },
   { kpi: 'throughput', label: 'Flow' },
   { kpi: 'capacity', label: 'Capacity' },
   { kpi: 'saturation_flow_rate', label: 'Saturation flow' },
   { kpi: 'queue_duration', label: 'Queue time' },
-  { kpi: 'queue_storage_ratio', label: 'Storage used' },
 ]
 
 // How a movement is named and drawn: its label in the data ('Left', 'Through',
