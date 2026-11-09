@@ -24,7 +24,8 @@ Usage (from the repository root):
 Two files are written to frontend/public/data/<intersection>/<scenario>/,
 next to the run's playback files, unless --out names another folder:
 - kpis.json: the results the current-traffic page shows, one per KPI,
-  element and 15-minute interval (page_results);
+  element and 15-minute interval (page_results; queue storage ratio is
+  left out);
 - kpis_all.json: every result.
 """
 
@@ -502,6 +503,12 @@ PAGE_FILE = "kpis.json"
 ALL_FILE = "kpis_all.json"
 PAGE_LEVELS = {KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION}
 MEASURED_ONLY = {KpiName.CONTROL_DELAY, KpiName.LEVEL_OF_SERVICE}
+# KPIs calculated but not shown on the current-traffic page. Queue
+# storage ratio needs a storage length, which only lanes that really end
+# near the stop line have (turn bays, lane splits, slip roads); every
+# approach also has continuous lanes, so approaches and the intersection
+# would never have a value (docs/kpi_engine.md, section 6.5).
+ANALYSIS_ONLY = {KpiName.QUEUE_STORAGE_RATIO}
 
 
 def page_results(results: list[KpiResult]) -> list[KpiResult]:
@@ -510,12 +517,14 @@ def page_results(results: list[KpiResult]) -> list[KpiResult]:
     15-minute interval, for movements, approaches and the intersection.
     Control delay and level of service are the measured ones and queue
     length is in metres; HCM delay and level of service, queues in
-    vehicles, lane results and whole-period queues are left out.
+    vehicles, queue storage ratio, lane results and whole-period queues
+    are left out. Every result stays in kpis_all.json.
     """
 
     return [
         r for r in results
         if r.level in PAGE_LEVELS
+        and r.kpi not in ANALYSIS_ONLY
         and not (r.kpi in MEASURED_ONLY and r.method == KpiMethod.HCM)
         and not (r.kpi == KpiName.QUEUE_LENGTH and r.unit == VEH)
         and (r.interval_end - r.interval_start).total_seconds() == ANALYSIS_INTERVAL_S
