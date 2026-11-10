@@ -17,8 +17,8 @@ Rules applied, and why:
   runs between two decision points.
 - Direction: oneway=yes gives one segment along the road, oneway=-1 one
   against it, and anything else two segments, one per direction.
-  Motorways are one-way unless tagged otherwise, as OpenStreetMap
-  assumes.
+  Motorways and roundabouts are one-way unless tagged otherwise, as
+  OpenStreetMap assumes.
 - Lanes per direction: lanes on a one-way road, lanes:forward or
   lanes:backward on a two-way road, otherwise half of lanes. When
   nothing is tagged, the median of the same road class in this
@@ -138,7 +138,11 @@ def directions(tags: dict) -> list[str]:
     if oneway == "-1":
         return ["backward"]
 
-    if oneway is None and tags.get("highway") == "motorway":
+    # motorways and roundabouts are one-way unless tagged otherwise
+    if oneway is None and (
+        tags.get("highway") == "motorway"
+        or tags.get("junction") in ("roundabout", "circular")
+    ):
         return ["forward"]
 
     return ["forward", "backward"]

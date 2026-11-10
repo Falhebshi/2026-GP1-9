@@ -66,11 +66,17 @@ def test_lanes_and_speed_are_read_from_tags():
     assert parse_speed("none") is None
 
 
-def test_directions_follow_oneway_and_motorway_rule():
+def test_directions_follow_oneway_motorway_and_roundabout_rules():
     assert directions({"oneway": "yes"}) == ["forward"]
     assert directions({"oneway": "-1"}) == ["backward"]
     assert directions({"highway": "motorway"}) == ["forward"]
     assert directions({"highway": "primary"}) == ["forward", "backward"]
+    assert directions(
+        {"highway": "primary", "junction": "roundabout"}
+    ) == ["forward"]
+    assert directions(
+        {"highway": "primary", "junction": "roundabout", "oneway": "no"}
+    ) == ["forward", "backward"]
 
 
 def test_road_is_cut_at_cut_points_only():
