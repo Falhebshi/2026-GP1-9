@@ -30,7 +30,7 @@ def test_mapping_hash(tmp_path):
       <connection from="A" to="B" fromLane="0" toLane="0"/>
     </net>''')
     data = {
-        "schema_version": "2.0", "mapping_version": "test",
+        "schema_version": "2.1", "mapping_version": "test",
         "network": {"version": "test", "path": str(net), "sha256": hashlib.sha256(net.read_bytes()).hexdigest()},
         "intersection_mapping": {"intersection_id": "TEST_INTERSECTION"},
         "movement_mappings": [

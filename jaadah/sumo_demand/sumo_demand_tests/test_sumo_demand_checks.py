@@ -55,7 +55,7 @@ def mapping_for(network, bypass_edges=("s_in", "e_out")):
     detector = {"source": "synthetic", "site_id": "9", "intersection_id": "INT_001",
                 "mapping_status": "usable"}
     return NetworkMappingConfig.model_validate({
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "mapping_version": "test",
         "network": {"version": "small", "path": network.name, "sha256": sha256},
         "intersection_mapping": {"intersection_id": "INT_001"},

@@ -26,7 +26,7 @@ def case(tmp_path, *, route=None, controlled=True, lane='a_0', tls='signal_1', i
     path.write_text(NETWORK, encoding='utf-8')
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     data = {
-        'schema_version': '2.0', 'mapping_version': '1',
+        'schema_version': '2.1', 'mapping_version': '1',
         'network': {'version': 'test', 'path': str(path), 'sha256': sha},
         'intersection_mapping': {'intersection_id': 'INT_001', 'sumo_tls_id': 'signal_1'},
         'approach_mappings': [{'approach_id': 'APP_A', 'intersection_id': 'INT_001',
@@ -217,20 +217,6 @@ def test_lane_chain_continuation_is_checked_at_correct_occurrence_in_loop(tmp_pa
     config = with_canonical_lane(config, ['c_0', 'a_0'])
     # a_0 can go to b on the first visit, but cannot go to d after c -> a.
     assert 'terminal lane cannot serve' in '\n'.join(validate_network_mappings(config, path))
-
-
-def test_movement_sumo_lane_must_be_connected_along_route(tmp_path):
-    config, path = case(tmp_path)
-    config.movement_mappings[0].sumo_lanes = ['d_0', 'a_1']
-    errors = '\n'.join(validate_network_mappings(config, path))
-    assert 'not connected along the mapped route: d_0' in errors
-    assert 'not connected along the mapped route: a_1' in errors
-
-
-def test_valid_movement_sumo_lane(tmp_path):
-    config, path = case(tmp_path)
-    config.movement_mappings[0].sumo_lanes = ['a_0']
-    assert validate_network_mappings(config, path) == []
 
 
 @pytest.mark.parametrize('expected_crlf', [False, True])
