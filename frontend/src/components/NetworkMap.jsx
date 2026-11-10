@@ -23,27 +23,13 @@ import './NetworkMap.css'
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
-// Heatmap view. Every road adds its speed to a grid over the map area and the grid is blurred
-// (Gaussian), giving a speed for every point of the city. Three looks are being compared; add
-// ?heat=smooth, ?heat=fine or ?heat=hex to the page address to pick one:
-//   smooth  a soft surface over the whole map (150 m grid, 600 m blur)
-//   fine    a detailed surface (75 m grid, 150 m blur), clear where there is little road
-//   hex     hexagon tiles of about 350 m in four colors (LOS A-B, C, D, E-F), only near roads
-// Colors use the same level limits as the roads. It is for reading the city at a glance, not a
-// measurement.
-const HEAT_STYLES = {
-  smooth: { cellLat: 0.00135, cellLon: 0.0015, sigma: 4, floor: 0.25, opacity: 0.75 },
-  fine: { cellLat: 0.000675, cellLon: 0.00075, sigma: 2, floor: 0, opacity: 0.8 },
-  hex: { cellLat: 0.00135, cellLon: 0.0015, sigma: 2 },
-}
+// Heatmap view: hexagon tiles of about 350 m over the city, in four colors by the speed of the
+// roads around them (HCM urban street level of service: A-B green, C yellow, D orange, E-F red).
+// Every road adds its speed to a grid of about 150 m, the grid is blurred (Gaussian, about
+// 300 m), and each tile takes the speed at its center; tiles with little road nearby are left
+// out. It is for reading the city at a glance, not a measurement.
+const HEAT_GRID = { cellLat: 0.00135, cellLon: 0.0015, sigma: 2 }
 const HEX_RADIUS_M = 350
-const TRANSPARENT =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-
-function heatStyle() {
-  const name = new URLSearchParams(window.location.search).get('heat')
-  return HEAT_STYLES[name] ? name : 'smooth'
-}
 
 // [r, g, b] of a CSS color
 function rgbOf(color) {
@@ -54,16 +40,6 @@ function rgbOf(color) {
 }
 
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
-
-// color of a speed (percent of free flow): green, yellow, orange, red, dark red
-function heatColor(speed, stops) {
-  for (let i = 1; i < stops.length; i++) {
-    const [s0, c0] = stops[i - 1]
-    const [s1, c1] = stops[i]
-    if (speed >= s1) return mix(c0, c1, (s0 - speed) / (s0 - s1))
-  }
-  return stops.at(-1)[1]
-}
 
 // one-dimensional Gaussian blur of a grid (width x height), along rows or columns
 function blur(values, width, height, sigma, alongRows) {
@@ -126,44 +102,11 @@ function speedField(segments, extent, style) {
   return { width, height, roads, speeds, full, west, north, cellLat, cellLon }
 }
 
-// The smooth or fine surface, as a PNG data URL
-function heatImage(segments, extent, colors, styleName) {
-  const limits = segments?.limits
-  if (!limits) return TRANSPARENT
-  const style = HEAT_STYLES[styleName]
-  const field = speedField(segments, extent, style)
-  const { width, height, roads, speeds, full } = field
-  const { low, moderate, high } = colors
-  const stops = [
-    [100, low],
-    [limits.lowAboveSpeed, mix(low, moderate, 0.5)],
-    [(limits.lowAboveSpeed + limits.moderateAboveSpeed) / 2, moderate],
-    [limits.moderateAboveSpeed, high],
-    [20, mix(high, [40, 0, 30], 0.5)],
-  ]
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  const image = context.createImageData(width, height)
-  for (let i = 0; i < width * height; i++) {
-    const speed = roads[i] > 1e-3 ? speeds[i] / roads[i] : 100
-    const [r, g, b] = heatColor(speed, stops)
-    // faint (or clear) where there is little road, full where there is a lot
-    const strength = Math.min(roads[i] / full, 1)
-    const alpha = style.floor + (1 - style.floor) * Math.sqrt(strength)
-    image.data.set([r, g, b, Math.round(255 * alpha)], i * 4)
-  }
-  context.putImageData(image, 0, 0)
-  return canvas.toDataURL()
-}
-
 // The hexagon tiles: four classes by speed (LOS A-B, C, D, E-F), only where there is road nearby
 function hexagons(segments, extent) {
   const limits = segments?.limits
   if (!limits) return EMPTY
-  const field = speedField(segments, extent, HEAT_STYLES.hex)
+  const field = speedField(segments, extent, HEAT_GRID)
   const { width, height, roads, speeds, full, west, north, cellLat, cellLon } = field
   const [[, south], [east]] = extent
   const rLon = HEX_RADIUS_M / 101000
@@ -257,7 +200,6 @@ function NetworkMap({
   ]
   const extentRef = useRef(extent)
   extentRef.current = extent
-  const colorsRef = useRef(null)
 
   // create the map once
   useEffect(() => {
@@ -303,20 +245,8 @@ function NetworkMap({
       const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
 
       map.addSource('segments', { type: 'geojson', data: EMPTY })
-      colorsRef.current = { low: rgbOf(low), moderate: rgbOf(moderate), high: rgbOf(high) }
       const yellow = `rgb(${mix(rgbOf(moderate), [255, 221, 87], 0.6).join(',')})`
-      map.addSource('heat-hex', { type: 'geojson', data: EMPTY })
-      const [[w, s], [e, n]] = extentRef.current
-      map.addSource('heat', {
-        type: 'image',
-        url: TRANSPARENT,
-        coordinates: [
-          [w, n],
-          [e, n],
-          [e, s],
-          [w, s],
-        ],
-      })
+      map.addSource('heat', { type: 'geojson', data: EMPTY })
       map.addSource('intersections', { type: 'geojson', data: EMPTY })
 
       map.addLayer(
@@ -346,22 +276,8 @@ function NetworkMap({
       map.addLayer(
         {
           id: 'heat',
-          type: 'raster',
-          source: 'heat',
-          layout: { visibility: 'none' },
-          paint: {
-            'raster-opacity': HEAT_STYLES[heatStyle()].opacity ?? 0.75,
-            'raster-resampling': 'linear', // smooth between the grid's pixels
-            'raster-fade-duration': 0,
-          },
-        },
-        firstLabel,
-      )
-      map.addLayer(
-        {
-          id: 'heat-hex',
           type: 'fill',
-          source: 'heat-hex',
+          source: 'heat',
           layout: { visibility: 'none' },
           paint: {
             'fill-color': [
@@ -469,20 +385,7 @@ function NetworkMap({
     if (!ready) return
     const map = mapRef.current
     map.getSource('segments').setData(segments ?? EMPTY)
-    const [[w, s], [e, n]] = extentRef.current
-    if (heatStyle() === 'hex') {
-      map.getSource('heat-hex').setData(hexagons(segments, extentRef.current))
-      return
-    }
-    map.getSource('heat').updateImage({
-      url: heatImage(segments, extentRef.current, colorsRef.current, heatStyle()),
-      coordinates: [
-        [w, n],
-        [e, n],
-        [e, s],
-        [w, s],
-      ],
-    })
+    map.getSource('heat').setData(hexagons(segments, extentRef.current))
   }, [ready, segments])
 
   // segments or heatmap
@@ -490,10 +393,7 @@ function NetworkMap({
     if (!ready) return
     const map = mapRef.current
     map.setLayoutProperty('segments', 'visibility', view === 'segments' ? 'visible' : 'none')
-    const hex = heatStyle() === 'hex'
-    const shown = (on) => (view === 'heatmap' && on ? 'visible' : 'none')
-    map.setLayoutProperty('heat', 'visibility', shown(!hex))
-    map.setLayoutProperty('heat-hex', 'visibility', shown(hex))
+    map.setLayoutProperty('heat', 'visibility', view === 'heatmap' ? 'visible' : 'none')
   }, [ready, view])
 
   // Fit the study area into the part of the map the floating cards leave free, again whenever
