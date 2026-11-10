@@ -8,11 +8,15 @@ import pytest
 
 from backend.analytics.service import (
     DEFAULT_MAPPING_PATH,
+    RunMeasurements,
+    calculate_kpis,
     calculate_run_kpis,
     load_run,
     page_results,
     write_kpis,
 )
+from jaadah.kpi_inputs.cycle_queues import CycleQueues
+from jaadah.kpi_inputs.vehicle_passages import VehiclePassages
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.kpis import KpiLevel, KpiName, KpiResult, KpiStatus
 from simulation.scripts.run_baseline import run_baseline
@@ -76,6 +80,21 @@ def test_run_with_another_mapping_version_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="used mapping 0.0-old"):
         calculate_run_kpis(files)
+
+
+def test_stored_measurements_with_another_mapping_version_are_refused(tmp_path):
+    """
+    Measurements kept after the FCD is deleted may meet a newer mapping
+    later; the KPIs are then refused, as for a run folder.
+    """
+
+    files = load_run(run_folder(tmp_path, mapping_version="0.0-old"))
+    measurements = RunMeasurements(
+        files.run, files.window, VehiclePassages([], [], []), CycleQueues([], []), [],
+    )
+
+    with pytest.raises(ValueError, match="used mapping 0.0-old"):
+        calculate_kpis(measurements)
 
 
 # ============================================================
