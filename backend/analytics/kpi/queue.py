@@ -154,6 +154,36 @@ def zone_end_approaches(
 
 
 # ============================================================
+# SEVERAL RUNS (historical analysis)
+# ============================================================
+
+def cycles_by_interval(run_id, keys, intervals, cycle_records, key_field):
+    """
+    Group one run's cycle records by lane or approach (key_field
+    "lane_id" or "approach_id") and by the interval containing their
+    cycle_start, with the same checks as the summaries above. The
+    groups of several runs (one per day) can then be pooled with
+    pooled_percentile_queues.
+    """
+
+    return _cycles_by_key_and_interval(run_id, keys, intervals, cycle_records, key_field)
+
+
+def pooled_percentile_queues(keys, intervals, cycles, flag):
+    """
+    The 95th-percentile cycle queue of each lane or approach over
+    intervals that may come from several runs, with the same rule as
+    period_percentile_queues: None when a key has no cycle in one of the
+    intervals, reaches_end when the cycle at the percentile's rank was
+    cut off. cycles maps (key, interval) to that interval's records
+    (cycles_by_interval); flag is "reaches_section_end" for lanes and
+    "reaches_zone_end" for approaches.
+    """
+
+    return _period_summaries(keys, intervals, cycles, flag)
+
+
+# ============================================================
 # SHARED
 # ============================================================
 
