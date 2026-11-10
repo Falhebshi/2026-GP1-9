@@ -67,32 +67,94 @@ CITY_STREET_CAPACITY_VEH_H_LN = BASE_SATURATION_FLOW_VEH_H_LN
 
 
 # ============================================================
-# LEVELS (team choice, not an HCM table)
+# LEVELS
 # ============================================================
 
-# v/c from which a segment is moderate, and from which it is high
-MODERATE_FROM_VC = 0.60
-HIGH_FROM_VC = 0.85
+# v/c-based level of service bands for signalised intersections
+# (City of Roseville, CA): A up to 0.60, B to 0.70, C to 0.81, D to
+# 0.90, E to 1.00, F above. HCM grades intersections by delay, so it
+# has no such table. Kept for roads with measured counts (RCRC); the
+# map colours below use speed. Three groups:
+#   low       LOS A and B  v/c up to 0.70
+#   moderate  LOS C and D  above 0.70, up to 0.90
+#   high      LOS E and F  above 0.90 (near or over capacity)
+LOW_UP_TO_VC = 0.70
+MODERATE_UP_TO_VC = 0.90
+
+
+# Level by speed, used for the map colours: HCM urban street segment
+# level of service by travel speed as a share of free-flow speed (HCM
+# 2010, Urban Streets; to be checked against the HCM 7th edition
+# copy): A above 85 %, B 67-85, C 50-67, D 40-50, E 30-40, F 30 or
+# less. The same three groups as the v/c bands above:
+#   low       LOS A and B  speed above 67 % of free flow
+#   moderate  LOS C and D  above 40 %, up to 67 %
+#   high      LOS E and F  40 % or less
+LOW_ABOVE_SPEED_RATIO = 0.67
+MODERATE_ABOVE_SPEED_RATIO = 0.40
 
 
 # ============================================================
-# SYNTHETIC VOLUMES
+# CITY CONGESTION BY HOUR (TomTom Traffic Index)
 # ============================================================
 
-# v/c of a road at the busiest moment of the day, before its road
-# factor (site 1028: busiest 15 minutes per approach gave a median of
-# about 0.99, the 95th percentile a median of 0.81)
-PEAK_VC = 0.95
+# Average time for a 10 km drive in Riyadh (city area), 2025, by day
+# of the week and hour, from the public TomTom Traffic Index page
+# (tomtom.com/traffic-index/city/riyadh, read 10 Nov 2026). TomTom
+# measures it from drivers' trips over the whole road network. Values
+# in seconds at 00:00, 02:00, ... 22:00.
+TOMTOM_HOURS = (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
 
-# Every road is multiplied by a fixed factor in this range, so roads
-# do not all peak at the same level
-ROAD_FACTOR_RANGE = (0.7, 1.1)
 
-# Random variation of a 15-minute count around its expected value
-# (site 1028 workdays: standard deviation about 17 %), limited so a
-# single interval cannot swing too far
-NOISE_SD = 0.15
-NOISE_LIMIT = 0.4
+def _s(text: str) -> tuple[int, ...]:
+    """Turn "12:40 13:10 ..." (minutes:seconds) into seconds."""
+
+    return tuple(
+        int(m) * 60 + int(sec)
+        for m, sec in (value.split(":") for value in text.split())
+    )
+
+
+# Monday = 0 ... Sunday = 6, as date.weekday()
+TOMTOM_TRAVEL_TIME_10KM_S = {
+    0: _s("12:40 11:40 10:20 14:30 17:50 17:40 "
+          "17:10 20:30 24:10 21:50 17:20 15:30"),
+    1: _s("13:10 11:50 10:20 14:20 17:40 17:30 "
+          "17:10 20:20 23:20 21:40 17:40 15:40"),
+    2: _s("13:10 12:00 10:20 14:20 17:10 17:00 "
+          "17:10 20:10 23:20 21:50 17:50 16:00"),
+    3: _s("13:10 11:50 10:20 13:50 16:00 16:40 "
+          "17:20 20:40 23:40 21:10 18:50 18:20"),
+    4: _s("16:00 12:50 11:00 10:20 10:50 11:00 "
+          "12:00 12:40 14:10 15:20 17:10 17:00"),
+    5: _s("15:00 12:10 10:50 11:20 11:30 12:50 "
+          "13:20 14:20 16:50 17:10 17:00 15:30"),
+    6: _s("12:40 11:40 10:20 14:20 17:40 17:10 "
+          "16:50 20:00 23:20 21:30 16:30 15:00"),
+}
+
+# Free flow: the quickest time in the table (early morning), so the
+# extra time at any hour is the delay caused by traffic
+TOMTOM_FREE_FLOW_10KM_S = min(
+    min(values) for values in TOMTOM_TRAVEL_TIME_10KM_S.values()
+)
+
+
+# ============================================================
+# SYNTHETIC TRAFFIC
+# ============================================================
+
+# How the delay differs between roads, how much it varies and how much
+# of that carries into the next 15 minutes are not written here: they
+# are measured from the private RCRC profiles each time the generator
+# runs (synthetic.py, SampleMeasures), so no RCRC-derived value is
+# stored in the repository.
+
+# Morning trips go from homes to activities, evening trips back; the
+# road demand of the two directions is blended between these hours
+# (project assumption)
+MORNING_DEMAND_UNTIL_HOUR = 11
+EVENING_DEMAND_FROM_HOUR = 13
 
 # Same seed as the baseline run: the same seed, segment and time
 # always give the same value
@@ -135,10 +197,26 @@ def congestion_level(volume_to_capacity: float) -> CongestionLevel:
     if volume_to_capacity < 0:
         raise ValueError("v/c must not be negative")
 
-    if volume_to_capacity >= HIGH_FROM_VC:
+    if volume_to_capacity > MODERATE_UP_TO_VC:
         return CongestionLevel.HIGH
 
-    if volume_to_capacity >= MODERATE_FROM_VC:
+    if volume_to_capacity > LOW_UP_TO_VC:
         return CongestionLevel.MODERATE
 
     return CongestionLevel.LOW
+
+
+def speed_level(speed_ratio: float) -> CongestionLevel:
+    """Return the map level of a speed as a share of free flow."""
+
+    if speed_ratio < 0:
+        raise ValueError("speed ratio must not be negative")
+
+    if speed_ratio > LOW_ABOVE_SPEED_RATIO:
+        return CongestionLevel.LOW
+
+    if speed_ratio > MODERATE_ABOVE_SPEED_RATIO:
+        return CongestionLevel.MODERATE
+
+    return CongestionLevel.HIGH
+

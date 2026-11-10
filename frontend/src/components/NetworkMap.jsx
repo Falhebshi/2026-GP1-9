@@ -6,7 +6,7 @@ import './NetworkMap.css'
 
 // The city map on Network Traffic Overview: a light OpenFreeMap basemap (streets and district
 // names from OpenStreetMap) drawn by MapLibre, with our road segments colored by congestion on
-// top, or a heatmap of the same data.
+// top, or the same data as congestion by area (the Heatmap view).
 //
 //   bounds         [[west, south], [east, north]] the map opens on
 //   maxBounds      the same shape: how far the map can be moved and zoomed out (optional; a
@@ -23,30 +23,183 @@ import './NetworkMap.css'
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
+// Heatmap view. Every road adds its speed to a grid over the map area and the grid is blurred
+// (Gaussian), giving a speed for every point of the city. Three looks are being compared; add
+// ?heat=smooth, ?heat=fine or ?heat=hex to the page address to pick one:
+//   smooth  a soft surface over the whole map (150 m grid, 600 m blur)
+//   fine    a detailed surface (75 m grid, 150 m blur), clear where there is little road
+//   hex     hexagon tiles of about 350 m in four colors (LOS A-B, C, D, E-F), only near roads
+// Colors use the same level limits as the roads. It is for reading the city at a glance, not a
+// measurement.
+const HEAT_STYLES = {
+  smooth: { cellLat: 0.00135, cellLon: 0.0015, sigma: 4, floor: 0.25, opacity: 0.75 },
+  fine: { cellLat: 0.000675, cellLon: 0.00075, sigma: 2, floor: 0, opacity: 0.8 },
+  hex: { cellLat: 0.00135, cellLon: 0.0015, sigma: 2 },
+}
+const HEX_RADIUS_M = 350
+const TRANSPARENT =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
-// Points every ~40 m along the segments, carrying the segment's congestion, for the heatmap.
-function heatPoints(segments) {
-  const features = []
-  for (const f of segments?.features ?? []) {
-    const lines =
-      f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [f.geometry.coordinates]
-    for (const line of lines)
-      for (let i = 1; i < line.length; i++) {
-        const [a, b] = [line[i - 1], line[i]]
-        const metres = Math.hypot((b[0] - a[0]) * 101000, (b[1] - a[1]) * 111000)
-        const steps = Math.max(1, Math.round(metres / 40))
-        for (let k = 0; k < steps; k++) {
-          const t = k / steps
-          features.push({
-            type: 'Feature',
-            properties: { congestion: f.properties.congestion ?? 0 },
-            geometry: {
-              type: 'Point',
-              coordinates: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
-            },
-          })
-        }
+function heatStyle() {
+  const name = new URLSearchParams(window.location.search).get('heat')
+  return HEAT_STYLES[name] ? name : 'smooth'
+}
+
+// [r, g, b] of a CSS color
+function rgbOf(color) {
+  const context = document.createElement('canvas').getContext('2d')
+  context.fillStyle = color
+  const hex = context.fillStyle // the browser turns any color into #rrggbb
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+}
+
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
+
+// color of a speed (percent of free flow): green, yellow, orange, red, dark red
+function heatColor(speed, stops) {
+  for (let i = 1; i < stops.length; i++) {
+    const [s0, c0] = stops[i - 1]
+    const [s1, c1] = stops[i]
+    if (speed >= s1) return mix(c0, c1, (s0 - speed) / (s0 - s1))
+  }
+  return stops.at(-1)[1]
+}
+
+// one-dimensional Gaussian blur of a grid (width x height), along rows or columns
+function blur(values, width, height, sigma, alongRows) {
+  const radius = Math.ceil(sigma * 3)
+  const kernel = []
+  for (let k = -radius; k <= radius; k++) kernel.push(Math.exp(-(k * k) / (2 * sigma * sigma)))
+  const out = new Float32Array(values.length)
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let sum = 0
+      for (let k = -radius; k <= radius; k++) {
+        const [xx, yy] = alongRows ? [x + k, y] : [x, y + k]
+        if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue
+        sum += values[yy * width + xx] * kernel[k + radius]
       }
+      out[y * width + x] = sum
+    }
+  return out
+}
+
+// The blurred speed of every grid cell over extent [[west, south], [east, north]]
+function speedField(segments, extent, style) {
+  const { cellLat, cellLon, sigma } = style
+  const [[west, south], [east, north]] = extent
+  const width = Math.ceil((east - west) / cellLon)
+  const height = Math.ceil((north - south) / cellLat)
+  const length = new Float32Array(width * height)
+  const speedLength = new Float32Array(width * height)
+
+  for (const f of segments.features) {
+    const speed = f.properties.speed
+    if (speed === null || speed === undefined) continue
+    const line = f.geometry.coordinates
+    for (let i = 1; i < line.length; i++) {
+      const [a, b] = [line[i - 1], line[i]]
+      const metres = Math.hypot((b[0] - a[0]) * 101000, (b[1] - a[1]) * 111000)
+      const steps = Math.max(1, Math.round(metres / 20))
+      for (let k = 0; k < steps; k++) {
+        const t = (k + 0.5) / steps
+        const x = Math.floor((a[0] + (b[0] - a[0]) * t - west) / cellLon)
+        const y = Math.floor((north - (a[1] + (b[1] - a[1]) * t)) / cellLat)
+        if (x < 0 || y < 0 || x >= width || y >= height) continue
+        length[y * width + x] += metres / steps
+        speedLength[y * width + x] += speed * (metres / steps)
+      }
+    }
+  }
+
+  const blurred = (grid) =>
+    blur(blur(grid, width, height, sigma, true), width, height, sigma, false)
+  const roads = blurred(length)
+  const speeds = blurred(speedLength)
+
+  // how much road counts as "a lot": the busiest tenth of the covered cells
+  const covered = Array.from(roads)
+    .filter((v) => v > 0)
+    .sort((a, b) => a - b)
+  const full = covered[Math.floor(covered.length * 0.9)] || 1
+
+  return { width, height, roads, speeds, full, west, north, cellLat, cellLon }
+}
+
+// The smooth or fine surface, as a PNG data URL
+function heatImage(segments, extent, colors, styleName) {
+  const limits = segments?.limits
+  if (!limits) return TRANSPARENT
+  const style = HEAT_STYLES[styleName]
+  const field = speedField(segments, extent, style)
+  const { width, height, roads, speeds, full } = field
+  const { low, moderate, high } = colors
+  const stops = [
+    [100, low],
+    [limits.lowAboveSpeed, mix(low, moderate, 0.5)],
+    [(limits.lowAboveSpeed + limits.moderateAboveSpeed) / 2, moderate],
+    [limits.moderateAboveSpeed, high],
+    [20, mix(high, [40, 0, 30], 0.5)],
+  ]
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  const image = context.createImageData(width, height)
+  for (let i = 0; i < width * height; i++) {
+    const speed = roads[i] > 1e-3 ? speeds[i] / roads[i] : 100
+    const [r, g, b] = heatColor(speed, stops)
+    // faint (or clear) where there is little road, full where there is a lot
+    const strength = Math.min(roads[i] / full, 1)
+    const alpha = style.floor + (1 - style.floor) * Math.sqrt(strength)
+    image.data.set([r, g, b, Math.round(255 * alpha)], i * 4)
+  }
+  context.putImageData(image, 0, 0)
+  return canvas.toDataURL()
+}
+
+// The hexagon tiles: four classes by speed (LOS A-B, C, D, E-F), only where there is road nearby
+function hexagons(segments, extent) {
+  const limits = segments?.limits
+  if (!limits) return EMPTY
+  const field = speedField(segments, extent, HEAT_STYLES.hex)
+  const { width, height, roads, speeds, full, west, north, cellLat, cellLon } = field
+  const [[, south], [east]] = extent
+  const rLon = HEX_RADIUS_M / 101000
+  const rLat = HEX_RADIUS_M / 111000
+  const middle = (limits.lowAboveSpeed + limits.moderateAboveSpeed) / 2
+  const features = []
+
+  // pointy-top hexagons: rows 1.5 R apart, columns sqrt(3) R apart, every other row shifted
+  for (let row = 0, lat = north; lat > south; row++, lat -= 1.5 * rLat) {
+    const shift = row % 2 ? (Math.sqrt(3) * rLon) / 2 : 0
+    for (let lon = west + shift; lon < east; lon += Math.sqrt(3) * rLon) {
+      const x = Math.floor((lon - west) / cellLon)
+      const y = Math.floor((north - lat) / cellLat)
+      if (x < 0 || y < 0 || x >= width || y >= height) continue
+      const i = y * width + x
+      if (roads[i] < full * 0.08) continue
+      const speed = speeds[i] / roads[i]
+      const band =
+        speed > limits.lowAboveSpeed
+          ? 'low'
+          : speed > middle
+            ? 'fair'
+            : speed > limits.moderateAboveSpeed
+              ? 'moderate'
+              : 'high'
+      const ring = []
+      for (let k = 0; k <= 6; k++) {
+        const angle = (Math.PI / 180) * (60 * k - 30)
+        ring.push([lon + rLon * Math.cos(angle), lat + rLat * Math.sin(angle)])
+      }
+      features.push({
+        type: 'Feature',
+        properties: { band },
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      })
+    }
   }
   return { type: 'FeatureCollection', features }
 }
@@ -65,7 +218,9 @@ function hoverContent(name, area, active) {
   line('span', 'network-map-hover-area', area)
   line(
     'span',
-    active ? 'network-map-hover-status network-map-hover-status-active' : 'network-map-hover-status',
+    active
+      ? 'network-map-hover-status network-map-hover-status-active'
+      : 'network-map-hover-status',
     active ? 'Click to open the simulation' : 'Simulation not available yet',
   )
   return box
@@ -95,6 +250,15 @@ function NetworkMap({
     onArriveRef.current = onArrive
   }, [onSelect, onArrive])
 
+  // the area the map can show, which the heat image covers
+  const extent = maxBounds ?? [
+    [bounds[0][0] - 0.12, bounds[0][1] - 0.1],
+    [bounds[1][0] + 0.12, bounds[1][1] + 0.1],
+  ]
+  const extentRef = useRef(extent)
+  extentRef.current = extent
+  const colorsRef = useRef(null)
+
   // create the map once
   useEffect(() => {
     const map = new MapLibreMap({
@@ -104,10 +268,7 @@ function NetworkMap({
       // leave room at the bottom for the timeline card that sits over the map
       fitBoundsOptions: { padding: { top: 20, right: 20, left: 20, bottom: 200 } },
       minZoom: 10,
-      maxBounds: maxBounds ?? [
-        [bounds[0][0] - 0.12, bounds[0][1] - 0.1],
-        [bounds[1][0] + 0.12, bounds[1][1] + 0.1],
-      ],
+      maxBounds: extent,
       attributionControl: { compact: true },
       dragRotate: false,
       pitchWithRotate: false,
@@ -142,7 +303,20 @@ function NetworkMap({
       const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
 
       map.addSource('segments', { type: 'geojson', data: EMPTY })
-      map.addSource('heat', { type: 'geojson', data: EMPTY })
+      colorsRef.current = { low: rgbOf(low), moderate: rgbOf(moderate), high: rgbOf(high) }
+      const yellow = `rgb(${mix(rgbOf(moderate), [255, 221, 87], 0.6).join(',')})`
+      map.addSource('heat-hex', { type: 'geojson', data: EMPTY })
+      const [[w, s], [e, n]] = extentRef.current
+      map.addSource('heat', {
+        type: 'image',
+        url: TRANSPARENT,
+        coordinates: [
+          [w, n],
+          [e, n],
+          [e, s],
+          [w, s],
+        ],
+      })
       map.addSource('intersections', { type: 'geojson', data: EMPTY })
 
       map.addLayer(
@@ -172,27 +346,37 @@ function NetworkMap({
       map.addLayer(
         {
           id: 'heat',
-          type: 'heatmap',
+          type: 'raster',
           source: 'heat',
           layout: { visibility: 'none' },
           paint: {
-            'heatmap-weight': ['get', 'congestion'],
-            'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 11, 10, 15, 30],
-            'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 11, 0.6, 15, 1.4],
-            'heatmap-color': [
-              'interpolate',
-              ['linear'],
-              ['heatmap-density'],
-              0,
-              'rgba(0,0,0,0)',
-              0.2,
+            'raster-opacity': HEAT_STYLES[heatStyle()].opacity ?? 0.75,
+            'raster-resampling': 'linear', // smooth between the grid's pixels
+            'raster-fade-duration': 0,
+          },
+        },
+        firstLabel,
+      )
+      map.addLayer(
+        {
+          id: 'heat-hex',
+          type: 'fill',
+          source: 'heat-hex',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'band'],
+              'low',
               low,
-              0.5,
+              'fair',
+              yellow,
+              'moderate',
               moderate,
-              0.85,
               high,
             ],
-            'heatmap-opacity': 0.75,
+            'fill-opacity': 0.55,
+            'fill-outline-color': 'rgba(255,255,255,0.8)',
           },
         },
         firstLabel,
@@ -285,7 +469,20 @@ function NetworkMap({
     if (!ready) return
     const map = mapRef.current
     map.getSource('segments').setData(segments ?? EMPTY)
-    map.getSource('heat').setData(heatPoints(segments))
+    const [[w, s], [e, n]] = extentRef.current
+    if (heatStyle() === 'hex') {
+      map.getSource('heat-hex').setData(hexagons(segments, extentRef.current))
+      return
+    }
+    map.getSource('heat').updateImage({
+      url: heatImage(segments, extentRef.current, colorsRef.current, heatStyle()),
+      coordinates: [
+        [w, n],
+        [e, n],
+        [e, s],
+        [w, s],
+      ],
+    })
   }, [ready, segments])
 
   // segments or heatmap
@@ -293,7 +490,10 @@ function NetworkMap({
     if (!ready) return
     const map = mapRef.current
     map.setLayoutProperty('segments', 'visibility', view === 'segments' ? 'visible' : 'none')
-    map.setLayoutProperty('heat', 'visibility', view === 'heatmap' ? 'visible' : 'none')
+    const hex = heatStyle() === 'hex'
+    const shown = (on) => (view === 'heatmap' && on ? 'visible' : 'none')
+    map.setLayoutProperty('heat', 'visibility', shown(!hex))
+    map.setLayoutProperty('heat-hex', 'visibility', shown(hex))
   }, [ready, view])
 
   // Fit the study area into the part of the map the floating cards leave free, again whenever

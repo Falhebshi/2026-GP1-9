@@ -11,6 +11,7 @@ from jaadah.models.network_congestion import (
 )
 from jaadah.network_congestion.parameters import (
     congestion_level,
+    speed_level,
     segment_capacity,
 )
 from jaadah.network_congestion.segments import DEFAULT_OUTPUT_DIR
@@ -69,14 +70,29 @@ def test_city_street_without_a_signal_gets_the_base_flow():
 
 
 def test_levels_change_at_the_limits():
+    # LOS A and B up to 0.70, C and D up to 0.90, E and F above
     assert congestion_level(0.0) == CongestionLevel.LOW
-    assert congestion_level(0.59) == CongestionLevel.LOW
-    assert congestion_level(0.60) == CongestionLevel.MODERATE
-    assert congestion_level(0.85) == CongestionLevel.HIGH
+    assert congestion_level(0.70) == CongestionLevel.LOW
+    assert congestion_level(0.71) == CongestionLevel.MODERATE
+    assert congestion_level(0.90) == CongestionLevel.MODERATE
+    assert congestion_level(0.91) == CongestionLevel.HIGH
     assert congestion_level(1.4) == CongestionLevel.HIGH
 
     with pytest.raises(ValueError):
         congestion_level(-0.1)
+
+
+def test_speed_levels_follow_the_hcm_urban_street_bands():
+    # LOS A-B above 67 % of free flow, C-D above 40 %, E-F 40 % or less
+    assert speed_level(1.0) == CongestionLevel.LOW
+    assert speed_level(0.68) == CongestionLevel.LOW
+    assert speed_level(0.67) == CongestionLevel.MODERATE
+    assert speed_level(0.41) == CongestionLevel.MODERATE
+    assert speed_level(0.40) == CongestionLevel.HIGH
+    assert speed_level(0.1) == CongestionLevel.HIGH
+
+    with pytest.raises(ValueError):
+        speed_level(-0.1)
 
 
 def test_ok_result_needs_every_value():

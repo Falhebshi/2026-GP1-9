@@ -9,6 +9,7 @@ from jaadah.network_congestion.segments import (
     parse_lanes,
     parse_speed,
     read_osm,
+    road_class_of,
     split_way,
 )
 
@@ -129,15 +130,34 @@ def test_segments_outside_the_box_are_dropped(cross):
 
 def test_untagged_values_take_the_class_median(cross):
     ways, nodes = cross
+    nodes[8] = node(8, 46.53, 24.49)
+    nodes[9] = node(9, 46.53, 24.51)
+    # a tagged secondary road, so the untagged one is filled from it
+    ways[1]["tags"]["maxspeed"] = "70"
+    ways.append(
+        way(30, [8, 9], highway="secondary", oneway="yes", lanes="2",
+            maxspeed="50")
+    )
+    ways[0]["tags"]["maxspeed"] = "80"
 
     segments, _ = build_segments(ways, nodes, box=BOX)
     counts = fill_defaults(segments)
 
     secondary = [s for s in segments if s["road_class"] == "secondary"]
-    assert all(s["lane_count"] == 1 for s in secondary)
-    assert all(s["free_flow_speed_kmh"] == 60 for s in secondary)
+    # way 20 has no lanes: it takes the median of the tagged ones (2)
+    assert all(s["lane_count"] == 2 for s in secondary)
+    assert {s["free_flow_speed_kmh"] for s in secondary} == {70, 50}
     assert counts["lanes_filled"] == 2
-    assert counts["speed_filled"] == len(segments)
+    assert counts["speed_filled"] == 0
+
+
+def test_class_with_no_tagged_speed_is_reported(cross):
+    ways, nodes = cross
+
+    segments, _ = build_segments(ways, nodes, box=BOX)
+
+    with pytest.raises(ValueError, match="no primary road .* speed limit"):
+        fill_defaults(segments)
 
 
 def test_missing_points_are_reported(tmp_path):
@@ -159,3 +179,38 @@ def test_empty_download_is_reported(tmp_path):
 
     with pytest.raises(ValueError, match="no OpenStreetMap elements"):
         read_osm(path)
+
+
+def test_ramps_keep_their_road_class():
+    assert road_class_of("motorway") == ("motorway", False)
+    assert road_class_of("motorway_link") == ("motorway", True)
+    assert road_class_of("secondary_link") == ("secondary", True)
+    assert road_class_of("tertiary") == (None, False)
+    assert road_class_of("tertiary_link") == (None, False)
+    # a ramp follows its oneway tag only
+    assert directions({"highway": "motorway_link"}) == [
+        "forward", "backward",
+    ]
+    assert directions({"highway": "motorway_link", "oneway": "yes"}) == [
+        "forward",
+    ]
+
+
+def test_ramp_joins_roads_and_falls_back_on_its_main_road(cross):
+    ways, nodes = cross
+    nodes[8] = node(8, 46.53, 24.49)
+    ways[0]["tags"]["maxspeed"] = "80"
+    ways[1]["tags"].update(lanes="2", maxspeed="60")
+    # an untagged primary ramp from the signal (4) to point 8
+    ways.append(way(30, [4, 8], highway="primary_link", oneway="yes"))
+
+    segments, _ = build_segments(ways, nodes, box=BOX)
+    counts = fill_defaults(segments)
+    ramps = [s for s in segments if s["is_link"]]
+
+    assert len(ramps) == 1
+    assert ramps[0]["road_class"] == "primary"
+    # no tagged primary ramp: the primary road's medians are used
+    assert ramps[0]["lane_count"] == 2
+    assert ramps[0]["free_flow_speed_kmh"] == 80
+    assert counts["medians"][("primary", True)] == (2, 80)

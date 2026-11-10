@@ -78,6 +78,9 @@ class RoadSegment(BaseModel):
 
     road_class: RoadClass
 
+    # a ramp (motorway_link ...) of its road class
+    is_link: bool = False
+
     lane_count: int = Field(
         ge=1,
     )
@@ -130,6 +133,11 @@ class SegmentCongestion(BaseModel):
     An ok result has a volume, capacity, v/c, level and congestion
     weight. An unavailable result has none of them and a reason, so a
     segment without data is never shown with a level.
+
+    Not used by the synthetic generator yet: synthetic roads always
+    have a value, and its daily files keep only the volumes. It is
+    kept for the RCRC data, where a missing detector makes a segment
+    unavailable, and is checked against it when the data arrives.
     """
 
     model_config = ConfigDict(

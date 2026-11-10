@@ -7,8 +7,13 @@ both directions, so it is cut into segments: one direction of a road,
 from one intersection or signal to the next.
 
 Input: the Overpass download of motorway, trunk, primary and secondary
-roads in the city box, with their points (data/raw/network/, not
-committed; the query is in docs and the README).
+roads and their ramps (motorway_link ... secondary_link) in the city
+box, with their points (data/raw/network/, not committed).
+
+Ramps are kept because they are what joins motorways and trunk roads
+to the rest of the network; without them a route could hardly reach
+those roads. A ramp keeps the class of the road it belongs to
+(motorway_link is a motorway ramp) and is marked is_link.
 
 Rules applied, and why:
 
@@ -18,17 +23,20 @@ Rules applied, and why:
 - Direction: oneway=yes gives one segment along the road, oneway=-1 one
   against it, and anything else two segments, one per direction.
   Motorways and roundabouts are one-way unless tagged otherwise, as
-  OpenStreetMap assumes.
+  OpenStreetMap assumes. Ramps follow their oneway tag only:
+  OpenStreetMap's current guidance is that they imply nothing.
 - Lanes per direction: lanes on a one-way road, lanes:forward or
   lanes:backward on a two-way road, otherwise half of lanes. When
   nothing is tagged, the median of the same road class in this
-  download is used.
+  download is used (ramps and main roads separately; ramps of a class
+  with no tagged ramp use the class's main roads).
 - Names: name:en and name:ar, and name filled into whichever of the
   two it is written in. A road with no name keeps both empty; the
   website shows its road class instead.
 - Speed limit: maxspeed in km/h (mph converted). When it is missing,
-  the median of the same road class in this download is used, and
-  only if a class has none, a default per class.
+  the median of the same road class in this download is used. If a
+  class has no tagged speed at all, the script stops rather than
+  guess a value.
 - Signal at the end: true when a traffic signal lies on the last 50 m
   of the segment, in its driving direction.
 - Box: segments with no point inside the city box are dropped, and
@@ -59,17 +67,10 @@ DEFAULT_INPUT = REPO_ROOT / "data/raw/network/riyadh_roads.osm.json"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "data/processed/network"
 
 ROAD_CLASSES = ("motorway", "trunk", "primary", "secondary")
+LINK_SUFFIX = "_link"
 
 # The city box: west, south, east, north (CITY_BOUNDS in networkService.js)
 CITY_BOX = (46.51, 24.51, 46.94, 25.0)
-
-# Used only when no road of a class has a tagged speed limit
-DEFAULT_SPEED_KMH = {
-    "motorway": 120,
-    "trunk": 100,
-    "primary": 80,
-    "secondary": 60,
-}
 
 SIGNAL_DISTANCE_M = 50
 EARTH_RADIUS_M = 6_371_000
@@ -78,6 +79,21 @@ EARTH_RADIUS_M = 6_371_000
 # ============================================================
 # READING TAGS
 # ============================================================
+
+def road_class_of(highway: str | None) -> tuple[str | None, bool]:
+    """Return a highway tag's road class and whether it is a ramp."""
+
+    if highway in ROAD_CLASSES:
+        return highway, False
+
+    if highway and highway.endswith(LINK_SUFFIX):
+        main = highway[: -len(LINK_SUFFIX)]
+
+        if main in ROAD_CLASSES:
+            return main, True
+
+    return None, False
+
 
 def parse_lanes(value: str | None) -> int | None:
     """Return a lane count from an OSM lanes tag, or None."""
@@ -231,7 +247,7 @@ def read_osm(path: Path) -> tuple[list[dict], dict[int, dict]]:
         element
         for element in elements
         if element["type"] == "way"
-        and element.get("tags", {}).get("highway") in ROAD_CLASSES
+        and road_class_of(element.get("tags", {}).get("highway"))[0]
     ]
 
     missing = sum(
@@ -331,6 +347,7 @@ def build_segments(
         way_directions = directions(tags)
         one_way = len(way_directions) == 1
         name_en, name_ar = road_names(tags)
+        road_class, is_link = road_class_of(tags["highway"])
         speed = parse_speed(tags.get("maxspeed"))
 
         for position, piece in enumerate(split_way(way["nodes"], cuts)):
@@ -369,7 +386,8 @@ def build_segments(
                         "direction": direction,
                         "node_ids": node_ids,
                         "points": points,
-                        "road_class": tags["highway"],
+                        "road_class": road_class,
+                        "is_link": is_link,
                         "name_en": name_en,
                         "name_ar": name_ar,
                         "lane_count": lanes_in_direction(
@@ -398,6 +416,7 @@ def build_segments(
                 "name_en": draft["name_en"],
                 "name_ar": draft["name_ar"],
                 "road_class": draft["road_class"],
+                "is_link": draft["is_link"],
                 "lane_count": draft["lane_count"],
                 "free_flow_speed_kmh": draft["free_flow_speed_kmh"],
                 "signal_at_end": draft["signal_at_end"],
@@ -420,14 +439,22 @@ def build_segments(
     return segments, mappings
 
 
+def group_name(road_class: str, is_link: bool) -> str:
+    """Return a group's name for messages: "motorway" or "motorway ramp"."""
+
+    return f"{road_class} ramp" if is_link else road_class
+
+
 def fill_defaults(segments: list[dict]) -> dict:
     """
     Fill untagged lanes, speeds and names in place.
 
-    Lanes and speeds use the median of the same road class among the
-    tagged segments; a class with no tagged speed uses
-    DEFAULT_SPEED_KMH. Returns how many values were tagged and filled,
-    for the report.
+    Lanes and speeds use the median of the same group (road class, and
+    ramp or main road) among the tagged segments. Ramps of a class with
+    no tagged ramp use that class's main roads. A class whose main roads
+    have no tagged lanes or speed is reported as an error, since there
+    is nothing in the download to fill them from. Returns how many
+    values were tagged and filled, for the report.
     """
 
     counts = {
@@ -439,23 +466,49 @@ def fill_defaults(segments: list[dict]) -> dict:
     }
     medians = {}
 
-    for road_class in ROAD_CLASSES:
-        of_class = [s for s in segments if s["road_class"] == road_class]
-        lanes = [s["lane_count"] for s in of_class if s["lane_count"]]
-        speeds = [
-            s["free_flow_speed_kmh"]
-            for s in of_class
-            if s["free_flow_speed_kmh"]
-        ]
-        medians[road_class] = (
-            round(statistics.median(lanes)) if lanes else 1,
-            statistics.median(speeds)
-            if speeds
-            else DEFAULT_SPEED_KMH[road_class],
-        )
+    # main roads first, so their ramps can fall back on them
+    for is_link in (False, True):
+        for road_class in ROAD_CLASSES:
+            group = [
+                s for s in segments
+                if s["road_class"] == road_class and s["is_link"] == is_link
+            ]
+
+            if not group:
+                continue
+
+            lanes = [s["lane_count"] for s in group if s["lane_count"]]
+            speeds = [
+                s["free_flow_speed_kmh"]
+                for s in group
+                if s["free_flow_speed_kmh"]
+            ]
+            main = medians.get((road_class, False))
+
+            if is_link and main:
+                lane_median = (
+                    round(statistics.median(lanes)) if lanes else main[0]
+                )
+                speed_median = (
+                    statistics.median(speeds) if speeds else main[1]
+                )
+            elif lanes and speeds:
+                lane_median = round(statistics.median(lanes))
+                speed_median = statistics.median(speeds)
+            else:
+                missing = "lanes" if not lanes else "speed limit"
+                raise ValueError(
+                    f"no {group_name(road_class, is_link)} road in the "
+                    f"download has a tagged {missing}, so there is "
+                    "nothing to fill the others from"
+                )
+
+            medians[(road_class, is_link)] = (lane_median, speed_median)
 
     for segment in segments:
-        median_lanes, median_speed = medians[segment["road_class"]]
+        median_lanes, median_speed = medians[
+            (segment["road_class"], segment["is_link"])
+        ]
 
         if segment["lane_count"] is None:
             segment["lane_count"] = median_lanes
@@ -532,6 +585,9 @@ def report(segments: list[dict], counts: dict) -> str:
             f"   {length_km[road_class]:>8.1f} km"
         )
 
+    ramps = sum(1 for segment in segments if segment["is_link"])
+    lines.append(f"  of which ramps {ramps:>6}")
+
     lines += [
         "",
         f"Lanes:  {counts['lanes_tagged']} from OSM, "
@@ -545,8 +601,9 @@ def report(segments: list[dict], counts: dict) -> str:
         "Class medians used for filling (lanes, km/h):",
     ]
 
-    for road_class, (lanes, speed) in counts["medians"].items():
-        lines.append(f"  {road_class:<10} {lanes} lanes, {speed:g} km/h")
+    for (road_class, is_link), (lanes, speed) in counts["medians"].items():
+        name = group_name(road_class, is_link)
+        lines.append(f"  {name:<15} {lanes} lanes, {speed:g} km/h")
 
     lines += [
         "",
