@@ -11,7 +11,7 @@ from jaadah.models.mappings import NetworkMappingConfig
 @pytest.fixture
 def valid_config():
     return {
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "mapping_version": "1.0",
         "network": {
             "version": "test_network_v1",

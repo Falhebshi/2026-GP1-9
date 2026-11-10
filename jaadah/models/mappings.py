@@ -339,7 +339,6 @@ class MovementMapping(BaseModel):
     intersection_id: str
     approach_id: str | None = None
     sumo_route_edge_ids: list[str] = Field(min_length=2)
-    sumo_lanes: list[str] = Field(default_factory=list)
     signal_controlled: bool
     sumo_tls_id: str | None = None
     signal_crossings: list[SignalCrossingMapping] = Field(default_factory=list)
@@ -374,18 +373,6 @@ class MovementMapping(BaseModel):
         cleaned = [value.strip() for value in values]
         if any(not value for value in cleaned):
             raise ValueError("identifier must not be empty")
-        return cleaned
-
-    @field_validator("sumo_lanes")
-    @classmethod
-    def validate_lanes(cls, values: list[str]) -> list[str]:
-        """Reject blank or duplicate SUMO lane IDs."""
-
-        cleaned = [value.strip() for value in values]
-        if any(not value for value in cleaned):
-            raise ValueError("identifier must not be empty")
-        if len(cleaned) != len(set(cleaned)):
-            raise ValueError("lane IDs must be unique")
         return cleaned
 
     @model_validator(mode="after")
@@ -423,7 +410,7 @@ class NetworkMappingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["2.0"]
+    schema_version: Literal["2.1"]
     mapping_version: str
     network: NetworkMetadata
     intersection_mapping: IntersectionMapping

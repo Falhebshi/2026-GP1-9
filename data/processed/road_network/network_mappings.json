@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "mapping_version": "2.4-west-route-start",
   "network": {
     "version": "jaadah_network_v2",
@@ -559,7 +559,6 @@
         "133793732#2",
         "133793727#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -598,7 +597,6 @@
         "539502453#7",
         "539502453#8"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -634,7 +632,6 @@
         "133793732#2",
         "133793727#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -665,7 +662,6 @@
         "382508030#2.227",
         "382508030#2-AddedOffRampEdge"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -702,7 +698,6 @@
         "221413238#2",
         "221413238#3"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -733,7 +728,6 @@
         "382508030#2.227",
         "382508030#2-AddedOffRampEdge"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -764,7 +758,6 @@
         "382508031#3",
         "382508031#3.148"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -793,7 +786,6 @@
         "539502453#7",
         "539502453#8"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -818,7 +810,6 @@
         "133793732#2",
         "133793727#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -838,7 +829,6 @@
         "133793732#2",
         "133793727#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -863,7 +853,6 @@
         "382508030#2.227",
         "382508030#2-AddedOffRampEdge"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -909,7 +898,6 @@
         "539502453#7",
         "539502453#8"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -932,7 +920,6 @@
         "221413238#2",
         "221413238#3"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -957,7 +944,6 @@
         "133793732#2",
         "133793727#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -988,7 +974,6 @@
         "E0",
         "382508031#3.148"
       ],
-      "sumo_lanes": [],
       "signal_controlled": true,
       "sumo_tls_id": "clustercluster_448837014_5479208874_cluster_5479208872_5481716880",
       "signal_crossings": [
@@ -1015,7 +1000,6 @@
         "994922063#0.364",
         "994922063#0-AddedOffRampEdge"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -1030,7 +1014,6 @@
         "994922064#2-AddedOnRampEdge.48",
         "994922064#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []
@@ -1046,7 +1029,6 @@
         "994922064#2-AddedOnRampEdge.48",
         "994922064#2"
       ],
-      "sumo_lanes": [],
       "signal_controlled": false,
       "sumo_tls_id": null,
       "signal_crossings": []

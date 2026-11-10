@@ -61,7 +61,7 @@ def network(offset=0):
 
 
 CONFIG = NetworkMappingConfig.model_validate({
-    "schema_version": "2.0", "mapping_version": "test",
+    "schema_version": "2.1", "mapping_version": "test",
     "network": {"version": "test", "path": "test.net.xml", "sha256": "a" * 64},
     "intersection_mapping": {"intersection_id": "INT_001", "sumo_tls_id": "tls"},
     "approach_mappings": [{"approach_id": "APP_A", "intersection_id": "INT_001", "approach_side": "west",

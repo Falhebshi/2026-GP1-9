@@ -44,7 +44,7 @@ def case(tmp_path, plans=(("0", "static", PLAN),), *, a_links=(0,), checksum=Non
     path = tmp_path / "network.net.xml"
     path.write_text(network_xml(plans), encoding="utf-8")
     data = {
-        "schema_version": "2.0", "mapping_version": "test",
+        "schema_version": "2.1", "mapping_version": "test",
         "network": {"version": "test", "path": str(path),
                     "sha256": checksum or hashlib.sha256(path.read_bytes()).hexdigest()},
         "intersection_mapping": {"intersection_id": "INT_001", "sumo_tls_id": "tls"},
