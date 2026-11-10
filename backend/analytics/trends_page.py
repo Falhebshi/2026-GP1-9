@@ -39,10 +39,33 @@ Rules applied, and why (decisions of section 17):
   vehicles have no grade and are not counted.
 - Every value is a KpiResult combining days (run_combination "days"),
   belonging to the history scenario HISTORY_SCENARIO_ID.
+
+Usage (from the repository root, after run_history.py has stored days):
+    python -m backend.analytics.trends_page [--history-dir data/history] [--out <folder>]
+
+It writes one file per period and day type, trends_<days>d_<day type>.json
+(9 files, e.g. trends_30d_weekdays.json), to
+frontend/public/data/<intersection>/history/ unless --out names another
+folder. A period without enough days still gets its file, holding
+available false and the reason, so the page can say why.
+
+The files are compact (compact_trends), so their size does not grow
+with the number of days: the fields every result shares (scenario_id,
+run_combination, and run_ids, the runs of every day the period used)
+are written once, as resultDefaults; in each result a field is left out
+when it is null or equal to its default. A result is unpacked by
+starting from resultDefaults and laying its own fields on top
+(expand_result); a field still missing is null. Results with other runs
+(one day's trend point, a heatmap cell's weekdays, HCM results without
+runs) keep their own run_ids.
 """
 
+import argparse
+import json
 import math
+import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from backend.analytics.kpi.comparison import input_origins
 from backend.analytics.kpi.intervals import AnalysisInterval
@@ -51,6 +74,8 @@ from backend.analytics.kpi.parameters import (
     LOS_THRESHOLDS,
     VOLUME_TO_CAPACITY_LOS_F,
 )
+from backend.analytics.history import HISTORY_DIR, load_day, stored_days
+from backend.analytics.service import FRONTEND_DATA_DIR
 from backend.analytics.trends import (
     ALL_SLOTS,
     DELAY,
@@ -65,6 +90,7 @@ from backend.analytics.trends import (
     PeriodValue,
     hour_slots,
     period_values,
+    prepare_day,
 )
 from jaadah.models.kpis import (
     KpiLevel,
@@ -562,3 +588,127 @@ def _breakdown(window_id, label, slots, days, results, interval, model, approach
         ],
         "intersection": {"results": results_of(KpiLevel.INTERSECTION, model.intersection_id)},
     }
+
+
+# ============================================================
+# WRITING
+# ============================================================
+
+def trends_file_name(length: int, day_type: str) -> str:
+    """e.g. trends_30d_weekdays.json"""
+
+    return f"trends_{length}d_{day_type}.json"
+
+
+def is_result(item) -> bool:
+    """True for a dumped KpiResult inside the page's data."""
+
+    return isinstance(item, dict) and {"kpi", "status", "interval_start"} <= item.keys()
+
+
+def compact_trends(payload: dict) -> dict:
+    """
+    The compact form of build_trends' output (see the module notes):
+    resultDefaults once at the top; in each result, null fields and
+    fields equal to their default left out.
+    """
+
+    if not payload.get("available"):
+        return payload
+
+    days = payload["period"]
+    defaults = {
+        "scenario_id": HISTORY_SCENARIO_ID,
+        "run_combination": RunCombination.DAYS.value,
+        "run_ids": _period_run_ids(payload),
+    }
+
+    def pack(item):
+        if is_result(item):
+            return {
+                k: v for k, v in item.items()
+                if v is not None and not (k in defaults and v == defaults[k])
+            }
+        if isinstance(item, dict):
+            return {k: pack(v) for k, v in item.items()}
+        if isinstance(item, list):
+            return [pack(v) for v in item]
+        return item
+
+    packed = pack(payload)
+    packed["resultDefaults"] = defaults
+    packed["period"] = days
+    return packed
+
+
+def expand_result(packed: dict, defaults: dict) -> dict:
+    """A compact result back in full: defaults, then its own fields; anything missing is null."""
+
+    full = {**defaults, **packed}
+    return KpiResult.model_validate(
+        {k: v for k, v in full.items() if k not in _COMPUTED_FIELDS}
+    ).model_dump(mode="json")
+
+
+_COMPUTED_FIELDS = {"value_computation", "replication_count", "is_shared_value"}
+
+
+def _period_run_ids(payload: dict) -> list[str]:
+    """The run_ids of the summary's delay: every day the period used."""
+
+    return payload["views"][ALL_ELEMENTS]["summary"]["control_delay"]["current"]["run_ids"]
+
+
+def write_trends(stored: dict[date, DayParts], folder: str | Path) -> list[Path]:
+    """
+    Write the page's data for every period and day type (9 files) into
+    folder, as compact JSON, and return the files.
+    """
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = []
+
+    for length in PERIOD_LENGTHS:
+        for day_type in DAY_TYPES:
+            path = folder / trends_file_name(length, day_type)
+            payload = compact_trends(build_trends(stored, length, day_type))
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+            paths.append(path)
+
+    return paths
+
+
+def load_stored_days(history_dir: str | Path = HISTORY_DIR) -> dict[date, DayParts]:
+    """Every stored day, run through the engine once (a few seconds a day)."""
+
+    return {day: prepare_day(day, load_day(day, history_dir)) for day in stored_days(history_dir)}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Write the Trends page data from the stored days.")
+    parser.add_argument("--history-dir", type=Path, default=HISTORY_DIR)
+    parser.add_argument("--out", type=Path, help="folder; default: frontend/public/data/<intersection>/history/")
+    args = parser.parse_args()
+
+    started = time.monotonic()
+    stored = load_stored_days(args.history_dir)
+    if not stored:
+        raise SystemExit(f"No day is stored in {args.history_dir}; run simulation/scripts/run_history.py first.")
+    print(f"{len(stored)} stored days ({min(stored)} to {max(stored)}) loaded "
+          f"in {time.monotonic() - started:.0f} s")
+
+    intersection_id = next(iter(stored.values())).calculation.intersection_id
+    out = args.out or FRONTEND_DATA_DIR / intersection_id / "history"
+    for path in write_trends(stored, out):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        state = "ok" if payload["available"] else f"not enough data ({payload['reason']})"
+        print(f"Written: {path} ({path.stat().st_size / 1e6:.1f} MB, {state})")
+    print(f"Done in {time.monotonic() - started:.0f} s")
+
+
+if __name__ == "__main__":
+    main()
