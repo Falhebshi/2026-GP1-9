@@ -70,10 +70,10 @@ from backend.analytics.kpi.rollup import (
     throughput_rollup,
 )
 from backend.analytics.kpi.throughput import count_served_vehicles, movement_throughput
-from jaadah.kpi_inputs.cycle_queues import collect_cycle_queues
+from jaadah.kpi_inputs.cycle_queues import CycleQueues, collect_cycle_queues
 from jaadah.kpi_inputs.network_inputs import build_network_inputs
 from jaadah.kpi_inputs.signal_program import build_signal_program
-from jaadah.kpi_inputs.vehicle_passages import collect_vehicle_passages
+from jaadah.kpi_inputs.vehicle_passages import VehiclePassages, collect_vehicle_passages
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.kpis import (
     KpiLevel,
@@ -154,6 +154,21 @@ def load_run(run_dir: str | Path) -> RunFiles:
 # THE KPIS OF ONE RUN
 # ============================================================
 
+class RunMeasurements(NamedTuple):
+    """
+    What the engine needs from one run once its FCD has been read: the
+    run, its time window, the vehicle passages, the cycle queues and the
+    demand. The KPIs are calculated from these alone, so they can be kept
+    after the FCD is deleted (docs/kpi_engine.md, section 17).
+    """
+
+    run: SimulationRun
+    window: RunWindow
+    passages: VehiclePassages
+    queues: CycleQueues
+    demands: list[SimulationDemand]
+
+
 def calculate_run_kpis(
     files: RunFiles,
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
@@ -166,24 +181,31 @@ def calculate_run_kpis(
     with another version of the network mapping.
     """
 
+    measurements = collect_measurements(files, mapping_path, network_path)
+    return calculate_kpis(measurements, mapping_path, network_path)
+
+
+def collect_measurements(
+    files: RunFiles,
+    mapping_path: str | Path = DEFAULT_MAPPING_PATH,
+    network_path: str | Path = DEFAULT_NETWORK_PATH,
+) -> RunMeasurements:
+    """
+    Read one completed run's SUMO outputs into measurement records. This
+    is the slow step: it reads the whole FCD file.
+
+    Raises ValueError when the run did not complete, or when it was run
+    with another version of the network mapping.
+    """
+
     run = files.run
 
     if run.status != SimulationRunStatus.COMPLETED:
         raise ValueError(f"run {run.run_id} is {run.status.value}; only a completed run has KPIs")
 
-    config = load_network_mappings(mapping_path)
+    config = _mapping_of(run, mapping_path)
+    program = _program_of(run, config, network_path)
 
-    if config.mapping_version != run.mapping_version:
-        raise ValueError(
-            f"run {run.run_id} used mapping {run.mapping_version}, "
-            f"not {config.mapping_version}"
-        )
-
-    network = build_network_inputs(config)
-    program = build_signal_program(
-        config, network_path,
-        scenario_id=run.scenario_id, signal_program_id=f"SP_{run.run_id}",
-    )
     passages = collect_vehicle_passages(
         config, network_path, run_id=run.run_id, window=files.window,
         fcd_path=files.fcd_path, tripinfo_path=files.tripinfo_path,
@@ -199,7 +221,54 @@ def calculate_run_kpis(
         for record in json.loads(files.demand_path.read_text(encoding="utf-8"))
     ]
 
-    return _Calculation(run, files.window, network, program, passages, queues, demands).results()
+    return RunMeasurements(run, files.window, passages, queues, demands)
+
+
+def calculate_kpis(
+    measurements: RunMeasurements,
+    mapping_path: str | Path = DEFAULT_MAPPING_PATH,
+    network_path: str | Path = DEFAULT_NETWORK_PATH,
+) -> list[KpiResult]:
+    """
+    The KpiResults of one run from its measurement records. Fast: the
+    FCD is not read.
+
+    Raises ValueError when the run was measured with another version of
+    the network mapping.
+    """
+
+    run = measurements.run
+    config = _mapping_of(run, mapping_path)
+    network = build_network_inputs(config)
+    program = _program_of(run, config, network_path)
+
+    return _Calculation(
+        run, measurements.window, network, program,
+        measurements.passages, measurements.queues, measurements.demands,
+    ).results()
+
+
+def _mapping_of(run: SimulationRun, mapping_path: str | Path):
+    """The network mapping, checked to be the version the run used."""
+
+    config = load_network_mappings(mapping_path)
+
+    if config.mapping_version != run.mapping_version:
+        raise ValueError(
+            f"run {run.run_id} used mapping {run.mapping_version}, "
+            f"not {config.mapping_version}"
+        )
+
+    return config
+
+
+def _program_of(run: SimulationRun, config, network_path: str | Path):
+    """The run's signal program, read from the network."""
+
+    return build_signal_program(
+        config, network_path,
+        scenario_id=run.scenario_id, signal_program_id=f"SP_{run.run_id}",
+    )
 
 
 class _Calculation:
