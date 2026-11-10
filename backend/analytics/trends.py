@@ -37,7 +37,7 @@ Which days a selection may use (coverage), and how values become
 KpiResults for the page, are decided by the callers.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import NamedTuple
 
 from backend.analytics.kpi.delay import MovementDelay, blocks_over_period, merge_blocks
@@ -87,13 +87,15 @@ STORAGE = KpiName.QUEUE_STORAGE_RATIO
 VC = KpiName.VOLUME_TO_CAPACITY_RATIO
 
 ELEMENT_LEVELS = (KpiLevel.LANE, KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION)
+ALL_MEASURES = frozenset({"delay", "throughput", "queue", "volume_to_capacity"})
 
 
 class DayParts(NamedTuple):
     """
     One stored day, ready to combine: its engine calculation, its
     per-interval parts, its cycle records grouped by interval, and its
-    HCM volume-to-capacity results per (level, element_id, interval).
+    HCM volume-to-capacity and measured level-of-service results per
+    (level, element_id, interval).
     """
 
     day: date
@@ -102,6 +104,7 @@ class DayParts(NamedTuple):
     lane_cycles: dict
     approach_cycles: dict
     volume_to_capacity: dict
+    measured_los: dict
 
 
 class PeriodValue(NamedTuple):
@@ -141,12 +144,16 @@ def prepare_day(
     intervals = calculation.intervals
     signal_approaches = sorted({q.approach_id for q in calculation.queues.approaches})
 
-    volume_to_capacity = {
-        (r.level, getattr(r, f"{r.level.value}_id"), AnalysisInterval(r.interval_start, r.interval_end)): r
-        for r in calculation.results()
-        if r.kpi == VC and r.method == KpiMethod.HCM
-        and r.level in (KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION)
-    }
+    results = calculation.results()
+
+    def by_element(kpi, method):
+        return {
+            (r.level, getattr(r, f"{r.level.value}_id"), AnalysisInterval(r.interval_start, r.interval_end)): r
+            for r in results
+            if r.kpi == kpi and r.method == method
+            and r.level in (KpiLevel.MOVEMENT, KpiLevel.APPROACH, KpiLevel.INTERSECTION)
+            and r.interval_end - r.interval_start == timedelta(seconds=ANALYSIS_INTERVAL_S)
+        }
 
     return DayParts(
         day=day,
@@ -159,7 +166,8 @@ def prepare_day(
         approach_cycles=cycles_by_interval(
             run_id, signal_approaches, intervals, calculation.queues.approaches, "approach_id",
         ),
-        volume_to_capacity=volume_to_capacity,
+        volume_to_capacity=by_element(VC, KpiMethod.HCM),
+        measured_los=by_element(LOS, KpiMethod.SIMULATION),
     )
 
 
@@ -179,11 +187,17 @@ def hour_slots(hour: int) -> frozenset[int]:
     return frozenset(range(hour * per_hour, (hour + 1) * per_hour))
 
 
-def period_values(days: list[DayParts], slots: frozenset[int] = ALL_SLOTS) -> dict[Key, PeriodValue]:
+def period_values(
+    days: list[DayParts],
+    slots: frozenset[int] = ALL_SLOTS,
+    measures: frozenset[str] = ALL_MEASURES,
+) -> dict[Key, PeriodValue]:
     """
     Combine the selected 15-minute slots of the given days into one value
-    per KPI and element (see the module rules). Raises ValueError when no
-    day or no slot is given.
+    per KPI and element (see the module rules). measures limits the work
+    to some of "delay" (with level of service and queue duration),
+    "throughput", "queue" (with storage ratio) and "volume_to_capacity".
+    Raises ValueError when no day or no slot is given.
     """
 
     if not days:
@@ -201,10 +215,14 @@ def period_values(days: list[DayParts], slots: frozenset[int] = ALL_SLOTS) -> di
     model = days[0].calculation
 
     out: dict[Key, PeriodValue] = {}
-    _delays(out, days, selected, period, model)
-    _throughput(out, days, selected, period, model)
-    _queues(out, days, selected, every_interval, period, model)
-    _volume_to_capacity(out, days, selected)
+    if "delay" in measures:
+        _delays(out, days, selected, period, model)
+    if "throughput" in measures:
+        _throughput(out, days, selected, period, model)
+    if "queue" in measures:
+        _queues(out, days, selected, every_interval, period, model)
+    if "volume_to_capacity" in measures:
+        _volume_to_capacity(out, days, selected)
     return out
 
 
