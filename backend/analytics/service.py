@@ -237,15 +237,32 @@ def calculate_kpis(
     the network mapping.
     """
 
+    return prepare_calculation(measurements, mapping_path, network_path).results()
+
+
+def prepare_calculation(
+    measurements: RunMeasurements,
+    mapping_path: str | Path = DEFAULT_MAPPING_PATH,
+    network_path: str | Path = DEFAULT_NETWORK_PATH,
+) -> "RunCalculation":
+    """
+    The engine calls of one run, ready to give its results or its
+    per-interval parts (RunCalculation.parts, used by the historical
+    analysis).
+
+    Raises ValueError when the run was measured with another version of
+    the network mapping.
+    """
+
     run = measurements.run
     config = _mapping_of(run, mapping_path)
     network = build_network_inputs(config)
     program = _program_of(run, config, network_path)
 
-    return _Calculation(
+    return RunCalculation(
         run, measurements.window, network, program,
         measurements.passages, measurements.queues, measurements.demands,
-    ).results()
+    )
 
 
 def _mapping_of(run: SimulationRun, mapping_path: str | Path):
@@ -271,7 +288,35 @@ def _program_of(run: SimulationRun, config, network_path: str | Path):
     )
 
 
-class _Calculation:
+class IntervalParts(NamedTuple):
+    """
+    The measured building blocks of one run, per element and 15-minute
+    interval, before they become KpiResults:
+
+    - delays: MovementDelay per (movement_id, interval), with the number
+      of vehicles behind each mean (delay and queue duration);
+    - throughput: MovementThroughput per (movement_id, interval);
+    - throughput_blocks: (movement_id, interval) -> reason, where vehicles
+      could not enter the network;
+    - lane_queues / approach_queues: the interval's largest cycle queue
+      per (lane_id or approach_id, interval);
+    - uninserted: (approach_id, interval) -> reason, where vehicles could
+      not enter the network;
+    - blocked: (approach_id, interval) -> reason, where measured values are
+      unavailable (vehicles not entered, or the queue reached the end of
+      the measurement zone).
+    """
+
+    delays: dict
+    throughput: dict
+    throughput_blocks: dict
+    lane_queues: dict
+    approach_queues: dict
+    uninserted: dict
+    blocked: dict
+
+
+class RunCalculation:
     """The engine calls of one run, kept together for their shared inputs."""
 
     def __init__(self, run, window, network, program, passages, queues, demands):
@@ -300,6 +345,25 @@ class _Calculation:
         self.out: list[KpiResult] = []
 
     def results(self) -> list[KpiResult]:
+        parts = self.parts()
+        signal_approaches = sorted({q.approach_id for q in self.queues.approaches})
+        hcm = self._hcm()
+
+        for interval in self.intervals:
+            self._simulation(interval, parts.delays, parts.throughput, parts.throughput_blocks)
+            self._queues(interval, parts.lane_queues, parts.approach_queues, parts.blocked)
+            self._hcm_results(interval, *hcm[interval])
+
+        # With one interval, the period is that interval: its values are
+        # already reported, as the interval's largest cycle queue.
+        if len(self.intervals) > 1:
+            self._period_queues(signal_approaches, parts.uninserted)
+
+        return self.out
+
+    def parts(self) -> IntervalParts:
+        """The measured building blocks of every 15-minute interval (IntervalParts)."""
+
         run_id = self.run.run_id
 
         lane_queues = interval_queues(run_id, [l.lane_id for l in self.lanes], self.intervals, self.queues.lanes)
@@ -322,19 +386,10 @@ class _Calculation:
         )
         throughput_blocks = blocked_movements(self.movements, uninserted)
         throughput = movement_throughput(counts, throughput_blocks)
-        hcm = self._hcm()
 
-        for interval in self.intervals:
-            self._simulation(interval, delays, throughput, throughput_blocks)
-            self._queues(interval, lane_queues, approach_queues, blocked)
-            self._hcm_results(interval, *hcm[interval])
-
-        # With one interval, the period is that interval: its values are
-        # already reported, as the interval's largest cycle queue.
-        if len(self.intervals) > 1:
-            self._period_queues(signal_approaches, uninserted)
-
-        return self.out
+        return IntervalParts(
+            delays, throughput, throughput_blocks, lane_queues, approach_queues, uninserted, blocked,
+        )
 
     def _period_queues(self, signal_approaches, uninserted):
         """The 95th-percentile cycle queues over the whole analysis period (section 6.4)."""
