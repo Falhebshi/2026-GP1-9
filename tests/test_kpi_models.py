@@ -14,6 +14,7 @@ from jaadah.models.kpis import (
     KpiUnit,
     LevelOfServiceGrade,
     InputOrigin,
+    RunCombination,
     UncontrolledMovements,
     ValueComputation,
 )
@@ -494,6 +495,62 @@ def test_single_run_with_standard_deviation_rejected():
 def test_replicated_ok_result_requires_standard_deviation():
     with pytest.raises(ValidationError):
         KpiResult(**valid_kpi_data(run_ids=["RUN_1", "RUN_2"]))
+
+
+def test_runs_are_replications_by_default():
+    result = KpiResult(**valid_kpi_data(run_ids=["RUN_1", "RUN_2"], standard_deviation=1.5))
+
+    assert result.run_combination == RunCombination.REPLICATIONS
+    assert result.replication_count == 2
+
+
+def test_a_result_combining_days_needs_no_standard_deviation():
+    """
+    A 30-day delay from 30 day-runs: the spread between days is not
+    seed uncertainty, and each interval comes from one run.
+    """
+
+    day_runs = [f"RUN_HISTORY_202610{day:02d}_S42" for day in range(1, 31)]
+    result = KpiResult(**valid_kpi_data(
+        run_ids=day_runs,
+        run_combination="days",
+        interval_start=datetime(2026, 10, 1, 0, 0, tzinfo=RIYADH),
+        interval_end=datetime(2026, 10, 31, 0, 0, tzinfo=RIYADH),
+    ))
+
+    assert result.run_combination == RunCombination.DAYS
+    assert result.replication_count == 1
+    assert result.standard_deviation is None
+
+
+def test_a_result_combining_days_cannot_have_a_standard_deviation():
+    with pytest.raises(ValidationError, match="spread between days is not seed uncertainty"):
+        KpiResult(**valid_kpi_data(
+            run_ids=["RUN_HISTORY_20261027_S42", "RUN_HISTORY_20261028_S42"],
+            run_combination="days",
+            standard_deviation=4.0,
+        ))
+
+
+def test_an_hcm_result_combining_days_without_runs_has_no_run_per_interval():
+    result = KpiResult(**valid_kpi_data(
+        kpi="volume_to_capacity_ratio", unit="ratio", value=0.97,
+        method="hcm", input_origins=["modelled_assumption"], run_ids=[],
+        run_combination="days",
+    ))
+
+    assert result.replication_count == 0
+
+
+def test_run_combination_survives_the_storage_round_trip():
+    original = KpiResult(**valid_kpi_data(
+        run_ids=["RUN_HISTORY_20261027_S42", "RUN_HISTORY_20261028_S42"],
+        run_combination="days",
+    ))
+
+    reloaded = KpiResult(**original.model_dump(exclude=COMPUTED_FIELDS))
+
+    assert reloaded == original
 
 
 def test_replicated_unavailable_result_without_standard_deviation():
