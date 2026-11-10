@@ -26,6 +26,9 @@ backend/
 └── analytics/
     ├── __init__.py
     ├── service.py          the KPIs of one finished run, written to kpis.json (section 16)
+    ├── history.py          the stored days of the historical analysis (section 17)
+    ├── trends.py           KPI values over many stored days (section 17)
+    ├── trends_page.py      the Trends page's data files (section 17)
     └── kpi/
         ├── __init__.py
         ├── parameters.py   constants and the level-of-service function
@@ -53,7 +56,7 @@ backend/
             └── test_study_area_inputs.py
 ```
 
-Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`. `service.py` sits outside the engine because it reads and writes files; its tests are in `tests/test_kpi_service.py`. `test_study_area_inputs.py` runs the engine on the study area's real network inputs and signal program, prepared by `jaadah/kpi_inputs/` ([KPI measurements](kpi_measurements.md)).
+Each engine file's tests are kept with the engine, in `backend/analytics/kpi/kpi_tests/`. `service.py` sits outside the engine because it reads and writes files; its tests are in `tests/test_kpi_service.py`. The historical analysis (`history.py`, `trends.py`, `trends_page.py`, and the day runner `simulation/scripts/run_history.py`) is tested in `tests/test_history.py`, `tests/test_trends.py`, `tests/test_trends_page.py` and `tests/test_run_history.py`. `test_study_area_inputs.py` runs the engine on the study area's real network inputs and signal program, prepared by `jaadah/kpi_inputs/` ([KPI measurements](kpi_measurements.md)).
 
 ---
 
@@ -688,6 +691,7 @@ Stop-line counts count vehicles as they are served: in an overloaded interval fe
 - **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`. When storage lengths are added, only lanes that end near the stop line get one (section 6.5); approach and intersection storage ratios stay `unavailable`.
 - **Modelled signal timing:** the baseline signal program was built for the model, not taken from the controller (section 9.8).
 - **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
+- **Historical analysis** (section 17): public holidays count as ordinary days of their weekday; only the last 7, 30 or 90 days can be chosen, because the page reads files made in advance (a free date range would need the results calculated on request); all stored days are held in memory while the page files are built, which suits weeks of history but may need a leaner approach for a history of several months; anomaly days are not marked.
 
 ---
 
@@ -781,3 +785,152 @@ The page looks results up by KPI name and interval start, so `kpis.json` must no
 ```
 
 `run_id` matches the `run_id` of `run.json` in the same folder, so the frontend can check that the KPIs and the playback belong to the same run. Results use canonical identifiers only (`INT_001`, `APP_S`, `MOV_S_W`, `LANE_S_1`), never SUMO lane or edge IDs.
+
+---
+
+# 17. Historical Performance Analysis
+
+The Traffic Patterns & Trends page shows how the intersection performed over the last 7, 30 or 90 days, for all days, weekdays or weekends. Its values come from simulating whole days and combining their measurements with the engine's own rules, so a day, a week and a 15-minute interval follow the same definitions.
+
+```text
+synthetic source (or RCRC demand)
+   │  simulation/scripts/run_history.py   one SUMO run per day, 00:00–24:00
+   ▼
+data/history/<date>.json.gz               the day's measurements (17.3); the 4 GB FCD is deleted
+   │  backend/analytics/trends.py         combine any days and times of day (17.4–17.7)
+   ▼
+backend/analytics/trends_page.py          the page's parts (17.8)
+   ▼
+frontend/public/data/INT_001/history/trends_<days>d_<day type>.json   9 files (17.10)
+```
+
+Commands, from the repository root:
+
+```bash
+uvicorn traffic_source.synthetic.server:app                                          # the source, in one terminal
+python simulation/scripts/run_history.py --first-day 2026-10-27 --last-day 2026-11-09 # the days, in another
+python -m backend.analytics.trends_page                                              # the 9 page files
+```
+
+## 17.1 Which days are simulated
+
+- **Whole days**, 00:00–24:00 Riyadh time, each as one continuous run with 15 minutes of warm-up before and clearance after (23:45 to 00:15 the next day). A period and a day type are made of calendar days, and the heatmap needs every hour.
+- **One fixed seed for every day** (42). Like current and forecast simulations, historical ones use one fixed seed; several matched seeds are used only to compare scenarios (section 12). A stored day can therefore always be rebuilt identically.
+- **One demand source per history.** The history is built from one source (synthetic, or RCRC once it is available) and never mixes them: a trend that switched from synthetic to observed days would show a change caused by the data, not by the traffic. With RCRC demand, the history covers the days RCRC provides; periods longer than that report "not enough data" (17.6).
+- **Cost of one day**, measured on 22 Oct 2026 (synthetic demand): SUMO run 8.7 min, reading the FCD into measurements 6.5 min, FCD file 4.3 GB. Days are simulated one after another, so 14 days take about 3.5 hours and 90 days about 23 hours.
+- A day already stored is skipped, so a batch can be restarted with the same dates; a finished run whose day was not stored is read again instead of simulated again; a day that fails is reported and the batch continues, and nothing partial is stored.
+
+## 17.2 Measurements first, KPIs later
+
+Reading a day's FCD takes almost all of the 6.5 minutes; calculating the KPIs from what it produces takes seconds. `service.py` therefore has two steps: `collect_measurements` (FCD → measurement records) and `calculate_kpis` (records → results). `calculate_run_kpis` still does both, and gives the same results as before the split.
+
+`RunCalculation.parts()` returns the measured building blocks of every 15-minute interval before they become results: each movement's delays **with the number of vehicles behind each mean**, its throughput, each lane's and approach's largest cycle queue, and the blocked approaches (section 13.7). The published results and the historical analysis start from this one calculation, so their rules cannot drift apart.
+
+## 17.3 The measurement store
+
+`backend/analytics/history.py` keeps one compressed file per day in `data/history/` (about 15–20 MB a day, ignored by git):
+
+- **Only measurements** are stored: vehicle passages, incomplete passages, vehicles not entered, lane and approach cycle queues, demand and the run's record. KPI results are never stored: they are calculated from these, and storing both would keep two copies of the same facts.
+- **Whole days only**: a run whose analysis period is not exactly 00:00–24:00 Riyadh time is refused.
+- A file is written under a temporary name and renamed when complete, so a stopped run never leaves half a day; a stored day is never overwritten.
+- Every file carries a format version; a file of another version is refused rather than read wrongly. A day measured with another network-mapping version is refused when its KPIs are calculated, as for a run folder.
+- The computed demand fields `is_allocated` and `is_imputed` are not saved; they are recalculated when a day is loaded.
+
+## 17.4 Combining days and times of day
+
+`period_values(days, slots)` in `trends.py` combines any selection: a set of days, and a set of the day's 96 fifteen-minute slots (all of them, one hour such as 17:00–18:00, or one slot such as 07:30–07:45). Each KPI keeps the rule it has for approaches (section 11), so a day is combined the way an approach is:
+
+| KPI | Over a selection | Why |
+| --- | --- | --- |
+| Control delay, queue duration | Mean over every vehicle that arrived: the interval means weighted by their vehicles | A plain mean of intervals lets a quiet interval count as much as a busy one |
+| Level of service | Graded from the combined delay | Letters are never averaged |
+| Throughput | Mean hourly flow of the selected intervals | All intervals are 15 minutes long |
+| Queue length, storage ratio | 95th-percentile cycle queue of all the selected cycles pooled (section 6.4) | The same rule as the whole-period queue of one run |
+| Volume-to-capacity ratio | The highest single 15-minute value, with its interval | v/c is never averaged |
+
+Worked example, East through in the 07:30 slot: on day A two cars lose 20 s and 40 s, on day B one car loses 60 s.
+
+| KPI | Result | Not |
+| --- | --- | --- |
+| Delay | (20 + 40 + 60) / 3 = **40 s**, LOS D | (30 + 60) / 2 = 45 s, the mean of the day means |
+| Throughput | (8 + 4) / 2 = **6 veh/h** | |
+| v/c, North left (100 vehicles on day A, 200 on day B; capacity 658.9 veh/h) | **1.21 on day B, 07:30–07:45** | the average of 0.61 and 1.21 |
+
+## 17.5 Missing data
+
+A value is shown only when it cannot be wrong. The gaps in a simulation are not random: when the engine cannot measure something, it is usually because traffic was at its worst (a queue longer than the stretch measured). Leaving such intervals out would make the result look better than it was.
+
+- **Delay, level of service, queue duration and throughput are strict**: one unavailable interval in the selection makes the selection unavailable, with that interval's reason. A missing interval's delay could be anything, so no value without it can be shown, and no "at most X % worse" can be given either: delay has no upper limit.
+- **Queues use the percentile rule**, which is exact. A cycle cut off at the end of what was measured is at least as long as the stretch, so cut-off cycles sort to the top; the 95th percentile is unavailable only when the cycle at its rank is one of them. Example: 720 cycles, rank 684. With 30 cut-off cycles (positions 691–720), cycle 684 is a measured one and its value is exact, because the unknown cycles are certainly longer. With 40 (positions 681–720), cycle 684 is cut off and the queue is unavailable.
+- **Intervals with no vehicles are left out**: an empty interval is not missing data.
+- **Example, 22 Oct 2026 (synthetic demand).** North's queue reached the end of its 500 m zone from 06:00 to 07:15: North-left demand was 1,052–1,320 veh/h against a capacity of 659 veh/h. North's and the intersection's delay are unavailable for those intervals, and so for the day; East, West and South are unaffected. A longer zone would not help: the road in the network ends 625.5 m from the stop line, and the queue grew by about 250–410 m every 15 minutes.
+
+## 17.6 Coverage of a period
+
+A period ends on the latest stored day: "30 days" are the 30 days up to it. Its results are produced only when:
+
+1. at least **80 %** of its days of the selected day type are stored (`HISTORY_MIN_DAY_SHARE`), and
+2. every weekday of the selected day type appears at least once.
+
+Otherwise the page receives `available: false` and the reason, such as "not enough data: 14 of 30 days are stored (at least 24 are needed)" or "not enough data: no Thursday is stored in the period".
+
+| View | Rule in practice |
+| --- | --- |
+| 7 days | Complete: 7 days, one of each weekday (6 of 7 is 86 %, but the weekday rule stops it) |
+| 30 days, all days | At least 24 days, every weekday present |
+| 30 days, weekends | At least 7 of the 8–9 weekend days, Friday and Saturday both present |
+
+Days go missing for reasons unrelated to traffic (a run that failed, a day RCRC did not send), so a share of them makes a result less certain but not systematically better. What they can change is the weekday mix (Thursday evenings and Sunday mornings differ from midweek), which the second rule protects; it also keeps every heatmap column filled. **80 % is a project choice, not a value from a standard**; it is defined once, in `parameters.py`.
+
+**Weekdays are Sunday to Thursday; weekends are Friday and Saturday**, Saudi Arabia's official weekend.
+
+## 17.7 Peaks
+
+| Tile | Definition | Why |
+| --- | --- | --- |
+| Peak congestion window | The 15-minute slot of the day with the highest delay, each slot combined over all the period's days (vehicle-weighted) | It answers "when is it usually congested?": one bad day does not move it |
+| Peak v/c | The highest single 15-minute value, with its date and time | It answers "was capacity exceeded, and when?"; v/c is never averaged |
+
+The two can point to different times; they answer different questions. The peak window is **unavailable when any slot's delay is unavailable**, because that slot could be the peak (17.5).
+
+## 17.8 The page's parts
+
+`build_trends(stored, days, day_type)` in `trends_page.py` builds the shape agreed in `frontend/src/services/trendsService.js`:
+
+| Part | Content |
+| --- | --- |
+| `period` | Dates, `daysExpected`, `daysUsed`, `missingDays`, for the "based on 27 of 30 days" label |
+| `views` | For the intersection (`all`) and each approach: summary, trend, weekday/weekend pair and heatmap, so the page's approach filter needs no calculation |
+| Summary | Delay, LOS, throughput, the worst movement's 95th-percentile queue with its storage ratio, peak v/c and the peak window (17.7). The worst queue is unknown when any movement's queue is unavailable |
+| Trend | One value per day for delay, queue, throughput and v/c; a day that is not stored appears as `unavailable` with its reason. Reference lines at the LOS thresholds (section 3.2) and at v/c 1.0 |
+| Weekday / weekend | Each KPI over the period's weekdays and over its weekends, each side with its own coverage check |
+| Heatmap | LOS and delay per weekday and hour; cells outside the selected day type are `unavailable` ("not part of the selected day type") |
+| LOS distribution | The share of 15-minute intervals at each grade, **plus the share whose grade is unavailable** |
+| Breakdown | Every KPI for approaches, movements and the intersection, for the whole day and for each of the 24 hours |
+
+- **No comparison with a previous period.** The network and signal timing do not change between periods, so a change would only reflect demand, which the daily trend already shows day by day; and a 30-day comparison would need 60 days of history.
+- **The LOS distribution shows unavailable intervals as their own share** rather than leaving them out. On 22 Oct the intersection had 5 unavailable intervals of 96: leaving them out would scale up the known grades, although the missing ones were almost certainly F. Intervals with no vehicles have no grade and are not counted.
+- **Not produced here:** recurring alerts and threshold windows (recurring-problem detection, backlog items 24–25, which can run on the stored measurements) and anomaly days (`anomalies` is empty).
+
+## 17.9 Results that combine days
+
+Every value is a `KpiResult` with `run_combination` set to `days` (`data_models.md` section 6.6): its runs are different days, one run per day, so it has no standard deviation (day-to-day variation is not seed uncertainty) and its `replication_count` is 1. All belong to the history scenario `SCN_HISTORY_BASELINE`.
+
+- A period value's interval is the whole period, from the first day's 00:00 to the day after the last; a trend point's is its day.
+- A peak v/c result's interval is the 15 minutes the peak was in.
+- A heatmap cell's interval runs from its hour on the first of its weekdays to the end of that hour on the last.
+- Simulation results list the runs of the days they combine; HCM results have no runs.
+
+## 17.10 Output files
+
+`python -m backend.analytics.trends_page` writes one file per period and day type to `frontend/public/data/<intersection>/history/`:
+
+```text
+trends_7d_all.json    trends_7d_weekdays.json    trends_7d_weekends.json
+trends_30d_all.json   trends_30d_weekdays.json   trends_30d_weekends.json
+trends_90d_all.json   trends_90d_weekdays.json   trends_90d_weekends.json
+```
+
+A period without enough days still gets its file, holding `available: false` and the reason.
+
+**The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB; without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
