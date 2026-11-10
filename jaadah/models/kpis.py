@@ -109,6 +109,21 @@ class InputOrigin(str, Enum):
     SIMULATED = "simulated"
 
 
+class RunCombination(str, Enum):
+    """
+    How the runs behind a result relate (docs/kpi_engine.md section 17).
+
+    REPLICATIONS: the same conditions run with different seeds; value is
+    the mean across the runs and their spread is the standard deviation.
+    DAYS: different days, one run per day, combined over a period by the
+    historical analysis; the day-to-day spread is not seed uncertainty,
+    so there is no standard deviation, and each interval has one run.
+    """
+
+    REPLICATIONS = "replications"
+    DAYS = "days"
+
+
 class LevelOfServiceGrade(str, Enum):
     """HCM level-of-service grades."""
 
@@ -220,9 +235,13 @@ class KpiResult(BaseModel):
     A missing value is never represented as zero: results without
     a value carry status UNAVAILABLE or NOT_APPLICABLE and a reason.
 
-    When run_ids holds more than one run (a replicated experiment),
-    value is the mean across the runs and standard_deviation is
-    the spread between them. HCM results may have no runs at all.
+    When run_ids holds more than one run, run_combination says how they
+    relate. Replications (the default) are a replicated experiment:
+    value is the mean across the runs and standard_deviation is the
+    spread between them. Days are different days combined over a
+    period by the historical analysis: value follows the KPI's period
+    rule (e.g. the mean over every vehicle), with no standard
+    deviation. HCM results may have no runs at all.
 
     A movement result taken from a shared lane or lane group names it
     in measured_on_lane_id or measured_on_lane_group_id; the dashboard
@@ -284,6 +303,7 @@ class KpiResult(BaseModel):
 
     scenario_id: str
     run_ids: list[str] = Field(default_factory=list)
+    run_combination: RunCombination = RunCombination.REPLICATIONS
 
     standard_deviation: float | None = Field(
         default=None,
@@ -602,6 +622,14 @@ class KpiResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_replication(self) -> "KpiResult":
+        if self.run_combination == RunCombination.DAYS:
+            if self.standard_deviation is not None:
+                raise ValueError(
+                    "results combining days have no standard_deviation: "
+                    "the spread between days is not seed uncertainty"
+                )
+            return self
+
         is_replicated = len(self.run_ids) > 1
 
         if not is_replicated and self.standard_deviation is not None:
@@ -630,7 +658,14 @@ class KpiResult(BaseModel):
     @computed_field
     @property
     def replication_count(self) -> int:
-        """Number of simulation runs this result summarizes (0 for HCM)."""
+        """
+        Number of simulation runs behind each interval's value: the
+        number of replications, 1 for a result combining days (one run
+        per day), 0 for an HCM result without runs.
+        """
+
+        if self.run_combination == RunCombination.DAYS:
+            return 1 if self.run_ids else 0
 
         return len(self.run_ids)
 
