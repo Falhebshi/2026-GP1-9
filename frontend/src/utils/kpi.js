@@ -60,12 +60,14 @@ export const OVER_LIMIT = {
 // The KPIs reported for the whole intersection (kpi_engine.md, section
 // 11.1), in the order pages show them. Capacity and saturation flow are
 // not on this list: they are reported per approach and movement only.
+// Queue storage ratio is not on it either: the backend leaves it out of
+// kpis.json, because approaches and the intersection never have one
+// (kpi_engine.md, section 6.5).
 export const INTERSECTION_KPIS = [
   'level_of_service',
   'control_delay',
   'queue_length',
   'queue_duration',
-  'queue_storage_ratio',
   'throughput',
   'volume_to_capacity_ratio',
 ]
