@@ -7,19 +7,31 @@ chosen time loss; each day has cycle records for every lane in all 96
 slots, so queues can be pooled over whole days.
 """
 
+import json
+import sys
 from datetime import date, timedelta
 
 import pytest
+
+from backend.analytics.history import save_day
 
 from backend.analytics.kpi.parameters import HISTORY_MIN_DAY_SHARE
 from backend.analytics.trends_page import (
     HISTORY_SCENARIO_ID,
     build_trends,
     check_coverage,
+    compact_trends,
+    expand_result,
     expected_days,
+    is_result,
+    load_stored_days,
+    main,
     page_weekday,
+    trends_file_name,
+    write_trends,
 )
 from jaadah.models.kpis import KpiResult
+from test_history import measurements as one_day_measurements
 from test_trends import ALL_SLOTS_SET, car, cycles, stored_day
 
 
@@ -267,3 +279,85 @@ def test_every_breakdown_result_is_a_valid_kpi_result(trends_7_all):
                 valid(result)
     for result in window["intersection"]["results"].values():
         valid(result)
+
+
+# ============================================================
+# WRITING
+# ============================================================
+
+def test_nine_files_are_written_and_short_periods_say_why(full_week, tmp_path):
+    paths = write_trends(full_week, tmp_path)
+
+    assert [p.name for p in paths] == [
+        trends_file_name(length, day_type)
+        for length in (7, 30, 90) for day_type in ("all", "weekdays", "weekends")
+    ]
+    assert paths[0].name == "trends_7d_all.json"
+
+    seven = json.loads((tmp_path / "trends_7d_weekends.json").read_text(encoding="utf-8"))
+    ninety = json.loads((tmp_path / "trends_90d_all.json").read_text(encoding="utf-8"))
+
+    assert seven["available"] is True
+    assert seven["period"]["daysUsed"] == 2
+    assert ninety["available"] is False
+    assert ninety["reason"] == "not enough data: 7 of 90 days are stored (at least 72 are needed)"
+
+
+def test_stored_days_are_loaded_and_prepared(tmp_path):
+    save_day(one_day_measurements(), tmp_path)
+
+    stored = load_stored_days(tmp_path)
+
+    assert list(stored) == [date(2026, 10, 22)]
+    assert stored[date(2026, 10, 22)].calculation.run.run_id == "RUN_HISTORY_20261022_S42"
+
+
+def test_the_command_stops_when_no_day_is_stored(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["trends_page", "--history-dir", str(tmp_path), "--out", str(tmp_path)])
+
+    with pytest.raises(SystemExit, match="No day is stored"):
+        main()
+
+
+def every_result(item):
+    """Every result inside the page's data, in order."""
+
+    if is_result(item):
+        yield item
+    elif isinstance(item, dict):
+        for value in item.values():
+            yield from every_result(value)
+    elif isinstance(item, list):
+        for value in item:
+            yield from every_result(value)
+
+
+def test_compact_results_unpack_to_exactly_the_full_results(trends_7_all):
+    packed = compact_trends(trends_7_all)
+    defaults = packed["resultDefaults"]
+
+    full, compact = list(every_result(trends_7_all)), list(every_result(packed))
+
+    assert len(full) == len(compact) > 4000
+    assert [expand_result(r, defaults) for r in compact] == full
+
+
+def test_compact_results_leave_out_shared_and_null_fields(trends_7_all):
+    packed = compact_trends(trends_7_all)
+    delay = packed["views"]["all"]["summary"]["control_delay"]["current"]
+    one_day = packed["views"]["all"]["trend"]["series"]["control_delay"][0]["result"]
+    peak_vc = packed["views"]["all"]["summary"]["volume_to_capacity_ratio"]["current"]
+
+    assert packed["resultDefaults"]["run_combination"] == "days"
+    assert len(packed["resultDefaults"]["run_ids"]) == 7
+    # The period's own runs and nulls are left out ...
+    assert "run_ids" not in delay and "scenario_id" not in delay and "reason" not in delay
+    # ... other runs are kept: one day's trend point, and HCM without runs
+    assert one_day["run_ids"] == ["RUN_HISTORY_20261103_S42"]
+    assert peak_vc["run_ids"] == []
+
+
+def test_a_short_period_file_is_not_compacted(full_week):
+    short = build_trends(full_week, 30, "all")
+
+    assert compact_trends(short) == short
