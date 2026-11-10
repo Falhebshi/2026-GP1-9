@@ -41,6 +41,7 @@ LANES = [lane.lane_id for lane in CONFIG.approach_lanes]
 SIGNAL_APPROACHES = ["APP_E", "APP_N", "APP_S", "APP_W"]
 CYCLE_S = 120
 CYCLES_PER_SLOT = 8           # cycles starting at +0, +120, ... +840 s of each slot
+ALL_SLOTS_SET = frozenset(range(96))
 
 M, VEH, MOV, APP, INT, LANE = (
     KpiUnit.METRES, KpiUnit.VEHICLES, KpiLevel.MOVEMENT, KpiLevel.APPROACH,
