@@ -66,8 +66,16 @@
   }
 }
 
-/* The tiles have no comparison, so no colored left edge either:
-   a plain 1px border like the other cards */
+/* The tiles have no comparison, so no colored left edge and no change
+   line (the "—" of an unavailable tile): three lines instead of four */
 .trends-kpi-row > .kpi-tile {
   border-left-width: 1px;
+}
+
+.trends-kpi-row > .kpi-tile-stacked {
+  grid-row: span 3;
+}
+
+.trends-kpi-row .kpi-footer {
+  display: none;
 }
