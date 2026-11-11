@@ -705,7 +705,7 @@ def main() -> None:
     out = args.out or FRONTEND_DATA_DIR / intersection_id / "history"
     for path in write_trends(stored, out):
         payload = json.loads(path.read_text(encoding="utf-8"))
-        state = "ok" if payload["available"] else f"not enough data ({payload['reason']})"
+        state = "ok" if payload["available"] else payload["reason"]
         print(f"Written: {path} ({path.stat().st_size / 1e6:.1f} MB, {state})")
     print(f"Done in {time.monotonic() - started:.0f} s")
 
