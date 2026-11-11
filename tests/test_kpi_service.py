@@ -8,11 +8,16 @@ import pytest
 
 from backend.analytics.service import (
     DEFAULT_MAPPING_PATH,
+    RunMeasurements,
+    calculate_kpis,
     calculate_run_kpis,
+    prepare_calculation,
     load_run,
     page_results,
     write_kpis,
 )
+from jaadah.kpi_inputs.cycle_queues import CycleQueues
+from jaadah.kpi_inputs.vehicle_passages import VehiclePassages
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.kpis import KpiLevel, KpiName, KpiResult, KpiStatus
 from simulation.scripts.run_baseline import run_baseline
@@ -76,6 +81,49 @@ def test_run_with_another_mapping_version_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="used mapping 0.0-old"):
         calculate_run_kpis(files)
+
+
+def test_stored_measurements_with_another_mapping_version_are_refused(tmp_path):
+    """
+    Measurements kept after the FCD is deleted may meet a newer mapping
+    later; the KPIs are then refused, as for a run folder.
+    """
+
+    files = load_run(run_folder(tmp_path, mapping_version="0.0-old"))
+    measurements = RunMeasurements(
+        files.run, files.window, VehiclePassages([], [], []), CycleQueues([], []), [],
+    )
+
+    with pytest.raises(ValueError, match="used mapping 0.0-old"):
+        calculate_kpis(measurements)
+
+
+def test_interval_parts_keep_the_vehicle_count_behind_each_value():
+    """
+    The per-interval parts the historical analysis combines, for the
+    hand-made day of test_history: one North-left car arrives at
+    08:00:10 and crosses the stop line at 08:01:00, and North's queue
+    reaches the end of its zone in the 08:00 cycle.
+    """
+
+    from test_history import at, measurements
+
+    parts = prepare_calculation(measurements()).parts()
+    eight = next(i for (m, i) in parts.delays if m == "MOV_N_E" and i.start == at("08:00:00"))
+
+    # The car is counted, but North is blocked, so its delay is unavailable
+    delay = parts.delays[("MOV_N_E", eight)]
+    assert delay.completed_vehicles == 1
+    assert delay.status == KpiStatus.UNAVAILABLE
+    assert "end of the measurement zone" in delay.reason
+    assert ("APP_N", eight) in parts.blocked
+
+    # Throughput is not blocked by the zone end: 1 car in 15 min = 4 veh/h
+    assert parts.throughput[("MOV_N_E", eight)].value_veh_h == 4.0
+
+    # An interval with no arrivals does not apply
+    nine = next(i for (m, i) in parts.delays if m == "MOV_N_E" and i.start == at("09:00:00"))
+    assert parts.delays[("MOV_N_E", nine)].status == KpiStatus.NOT_APPLICABLE
 
 
 # ============================================================

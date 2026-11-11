@@ -473,7 +473,7 @@ Implemented in `jaadah/models/kpis.py`.
 | When | `interval_start`, `interval_end` (15-minute intervals) |
 | Value | `value` (≥ 0) or, for level of service, `los_grade` (A–F); `status`; `reason` |
 | Provenance | `input_origins` |
-| Runs | `scenario_id`, `run_ids`, `standard_deviation` |
+| Runs | `scenario_id`, `run_ids`, `run_combination` (`replications` or `days`), `standard_deviation` |
 | Shared lanes | `measured_on_lane_id` or `measured_on_lane_group_id` |
 | Slips | `uncontrolled_movements` (section 6.7) |
 
@@ -490,6 +490,7 @@ Implemented in `jaadah/models/kpis.py`.
 | `InputOrigin` | `observed`, `modelled_assumption`, `simulated` |
 | `LevelOfServiceGrade` | `A` … `F` |
 | `UncontrolledMovements` | `included`, `excluded` |
+| `RunCombination` | `replications`, `days` |
 
 ## 6.3 Missing values are never zero
 
@@ -524,7 +525,9 @@ The four provenance labels overlap (an HCM result can be derived from observed d
 ## 6.6 Runs and replication
 
 - Simulation results summarize at least one run. HCM results may have no runs (e.g. capacity from demand, geometry and signal timing).
-- With more than one run, `value` is the mean and `standard_deviation` is required (not for LOS, a letter grade). One run means no standard deviation.
+- `run_combination` says how the runs relate. **`replications`** (the default) are the same conditions run with different seeds: with more than one run, `value` is the mean and `standard_deviation` is required (not for LOS, a letter grade). One run means no standard deviation.
+- **`days`** are different days, one run per day, combined over a period by the historical analysis (`kpi_engine.md` section 17). `value` follows the KPI's period rule (for example the mean over every vehicle, or the 95th-percentile cycle queue), not a mean of the runs, and there is **no** `standard_deviation`: the spread between days is day-to-day variation, not seed uncertainty. Example: a 30-day delay lists the 30 day-runs in `run_ids`.
+- The computed `replication_count` is the number of runs behind each interval's value: the number of replications, 1 for a result combining days, 0 for an HCM result without runs.
 - `scenario_id` is always stored: a result belongs to a scenario, while `run_ids` only lists the executions it summarizes.
 
 ## 6.7 Shared lanes (Option C, 17 Oct 2026)
@@ -797,3 +800,4 @@ Together, these structures form the common data language used across the Jaadah 
 | 26 Oct 2026 (approach queues) | Added `ApproachCycleQueueRecord`: each approach's full queue per signal cycle, measured from the signal stop line over the whole zone, with `reaches_zone_end` |
 | 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |
 | 27 Oct 2026 (vehicles not inserted) | Added `UninsertedVehicle`: a planned vehicle SUMO could not insert before the run ended, with its planned stop-line time. `reaches_section_end` and `reaches_zone_end` described as cut-off queues, not minimum values |
+| 10 Nov 2026 (historical analysis) | Added `RunCombination` and `KpiResult.run_combination` (default `replications`, the existing rules). Results combining days (`days`) have no standard deviation and a `replication_count` of 1 |
