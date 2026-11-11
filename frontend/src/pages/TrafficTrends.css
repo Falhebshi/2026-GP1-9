@@ -65,3 +65,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The tiles have no comparison, so no colored left edge either:
+   a plain 1px border like the other cards */
+.trends-kpi-row > .kpi-tile {
+  border-left-width: 1px;
+}
