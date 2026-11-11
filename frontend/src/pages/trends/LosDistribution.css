@@ -67,6 +67,12 @@
 .losd-los-e { background: var(--los-e); color: var(--color-text-on-dark); }
 .losd-los-f { background: var(--los-f); color: var(--color-text-on-dark); }
 
+/* Grade unknown: an empty segment with a dashed outline */
+.losd-los-unavailable {
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border-strong);
+}
+
 .losd-poor {
   font-size: var(--text-sm);
   font-weight: 600;

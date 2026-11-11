@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
+import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import KpiGroup from '../components/KpiGroup'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
-import Notice from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import { EmptyPeriodError, getTrends } from '../services/trendsService'
 import { formatKpiValue, kpiTileProps } from '../utils/kpi'
-import { shortDate, timeOf, timeRange } from '../utils/format'
+import { dayAndDate, shortDate, timeOf, timeRange } from '../utils/format'
 import BreakdownTable from './trends/BreakdownTable'
 import CongestionHeatmap from './trends/CongestionHeatmap'
 import LosDistribution from './trends/LosDistribution'
@@ -35,7 +35,9 @@ const DAY_TYPE_OPTIONS = [
 
 function TrafficTrends() {
   // The filters. Changing any of them loads the data again.
-  const [periodDays, setPeriodDays] = useState(30)
+  // The page opens on 7 days: the longest period with enough simulated days
+  // today (docs/kpi_engine.md, section 17.6).
+  const [periodDays, setPeriodDays] = useState(7)
   const [dayType, setDayType] = useState('all')
   const [approachId, setApproachId] = useState('all')
 
@@ -74,7 +76,8 @@ function TrafficTrends() {
   const header = (
     <PageHeader
       title="Traffic Patterns & Trends"
-      subtitle={data && describePeriod(data.period, periodDays)}
+      // The period of the data on screen: none while an error is shown instead
+      subtitle={data && !error ? describePeriod(data.period) : undefined}
       actions={
         <>
           <Select
@@ -126,45 +129,34 @@ function TrafficTrends() {
     )
   }
 
-  const note = `vs prev. ${periodDays} days`
-
   return (
     <>
       {header}
-
-      {data.isSample && (
-        <Notice variant="warning" className="trends-notice">
-          Sample data for layout only: all values on this page are illustrative, not
-          simulation results.
-        </Notice>
-      )}
 
       {/* While new data loads, the old data stays on screen, faded */}
       <div className={`trends-layout ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
         <aside className="trends-side">
           <LocationInfoCard intersection={data.intersection} />
 
-          <div>
-            <AlertList
-              title="Recurring problem alerts"
-              alerts={data.recurringAlerts.map(toAlertListItem)}
-              emptyMessage="No recurring traffic problems are currently identified."
-            />
-            <p className="trends-side-note">
-              A problem counts as recurring when its rule is exceeded in the same time
-              window on at least half the days in the period.
-            </p>
-          </div>
+          {data.recurringAlerts ? (
+            <div>
+              <AlertList
+                title="Recurring problem alerts"
+                alerts={data.recurringAlerts.map(toAlertListItem)}
+                emptyMessage="No recurring traffic problems are currently identified."
+              />
+              <p className="trends-side-note">
+                A problem counts as recurring when its rule is exceeded in the same time
+                window on at least half the days in the period.
+              </p>
+            </div>
+          ) : (
+            <NotAvailableYet title="Recurring problem alerts" />
+          )}
         </aside>
 
         <div className="trends-main">
-          <KpiRow
-            summary={data.summary}
-            dayType={dayType}
-            approachId={approachId}
-            periodDays={periodDays}
-            note={note}
-          />
+          <KpiRow summary={data.summary} dayType={dayType} approachId={approachId} />
 
           <div className="trends-row trends-row-wide-left">
             <TrendChart trend={data.trend} />
@@ -174,7 +166,11 @@ function TrafficTrends() {
           <CongestionHeatmap cells={data.heatmap} />
 
           <div className="trends-row trends-row-wide-left">
-            <ThresholdChart thresholds={data.thresholds} />
+            {data.thresholds ? (
+              <ThresholdChart thresholds={data.thresholds} />
+            ) : (
+              <NotAvailableYet title="Threshold exceedance by time window" />
+            )}
             <LosDistribution rows={data.losDistribution} />
           </div>
 
@@ -190,59 +186,81 @@ function TrafficTrends() {
 
 // ---- The five KPI tiles ----------------------------------------------------
 
-function KpiRow({ summary, dayType, approachId, periodDays, note }) {
-  const delay = summary.control_delay
+// The values are over the whole period; there is no comparison with an
+// earlier period (the trend chart shows the direction day by day).
+function KpiRow({ summary, dayType, approachId }) {
+  const delay = summary.control_delay.current
   const queue = summary.queue_length
-  const vc = summary.volume_to_capacity_ratio
+  const vc = summary.volume_to_capacity_ratio.current
   const grade = summary.level_of_service.current.los_grade
   const peak = summary.peakWindow
   const dayWord = DAY_WORDS[dayType]
 
-  // What the tiles share is said once by KpiGroup, so the tiles leave out the tag and the
-  // "vs prev." note
-  const results = [delay.current, queue.current, summary.throughput.current, vc.current]
+  // How the values were measured is said once by KpiGroup, so the tiles leave out the tag
+  const results = [delay, queue.current, summary.throughput.current, vc]
 
   return (
-    <KpiGroup compared={`the previous ${periodDays} days`} results={results}>
-      <div className="kpi-row">
+    <KpiGroup results={results}>
+      <div className="kpi-row trends-kpi-row">
         <KpiTile
           layout="stacked"
           label="Avg control delay"
           detail={grade ? `LOS ${grade}` : 'LOS unavailable'}
-          {...kpiTileProps(delay.current, delay.previous)}
+          {...kpiTileProps(delay)}
           tag={undefined}
         />
         <KpiTile
           layout="stacked"
           label="95th-pct queue, worst movement"
-          detail={`${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`}
-          {...kpiTileProps(queue.current, queue.previous)}
+          detail={
+            queue.worst
+              ? `${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`
+              : undefined
+          }
+          {...kpiTileProps(queue.current)}
           tag={undefined}
         />
         <KpiTile
           layout="stacked"
           label="Avg throughput"
-          detail={approachId === 'all' ? 'All signalized movements' : 'All movements of this approach'}
-          {...kpiTileProps(summary.throughput.current, summary.throughput.previous)}
+          detail={approachId === 'all' ? 'All movements' : 'All movements of this approach'}
+          {...kpiTileProps(summary.throughput.current)}
           tag={undefined}
         />
         <KpiTile
           layout="stacked"
           label={approachId === 'all' ? 'Critical v/c, peak 15 min' : 'Highest v/c, peak 15 min'}
-          detail={`${dayWord} ${timeRange(vc.current.interval_start, vc.current.interval_end)}`}
-          {...kpiTileProps(vc.current, vc.previous)}
+          // The peak is one real interval, so its day is shown
+          detail={
+            vc.status === 'ok'
+              ? `${dayAndDate(vc.interval_start.slice(0, 10))}, ${timeRange(vc.interval_start, vc.interval_end)}`
+              : undefined
+          }
+          {...kpiTileProps(vc)}
           tag={undefined}
         />
         <KpiTile
           layout="stacked"
           label="Peak congestion window"
-          value={timeOf(peak.interval_start)}
-          unit={`–${timeOf(peak.interval_end)}`}
-          detail={`Highest avg control delay, ${dayWord.toLowerCase()}`}
-          changeNote={peak.sameAsPrevious ? `Same window as ${note.replace('vs ', '')}` : 'Moved since the previous period'}
+          value={peak.status === 'ok' ? timeOf(peak.interval_start) : null}
+          unit={peak.status === 'ok' ? `–${timeOf(peak.interval_end)}` : undefined}
+          status={peak.status === 'ok' ? undefined : peak.status}
+          reason={peak.status === 'ok' ? undefined : peak.reason}
+          detail={peak.status === 'ok' ? `Highest avg control delay, ${dayWord.toLowerCase()}` : undefined}
         />
       </div>
     </KpiGroup>
+  )
+}
+
+// A panel whose data comes from a later feature
+function NotAvailableYet({ title }) {
+  return (
+    <Card title={title}>
+      <EmptyState title="Not available yet">
+        Recurring-problem detection is a later feature (backlog items 24 and 25).
+      </EmptyState>
+    </Card>
   )
 }
 
@@ -269,10 +287,10 @@ function toAlertListItem(alert) {
   }
 }
 
-// "15 Sep – 14 Oct 2026 · 2,880 fifteen-minute intervals · compared with the previous 30 days"
-function describePeriod(period, periodDays) {
+// "3 Nov – 9 Nov 2026 · based on 7 of 7 days · 672 fifteen-minute intervals"
+function describePeriod(period) {
   const range = `${shortDate(period.start)} – ${shortDate(period.end)} ${period.end.slice(0, 4)}`
-  return `${range} · ${period.intervalCount.toLocaleString('en-US')} fifteen-minute intervals · compared with the previous ${periodDays} days`
+  return `${range} · based on ${period.daysUsed} of ${period.daysExpected} days · ${period.intervalCount.toLocaleString('en-US')} fifteen-minute intervals`
 }
 
-export default TrafficTrends
+export default TrafficTrends
