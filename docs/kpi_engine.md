@@ -691,7 +691,7 @@ Stop-line counts count vehicles as they are served: in an overloaded interval fe
 - **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`. When storage lengths are added, only lanes that end near the stop line get one (section 6.5); approach and intersection storage ratios stay `unavailable`.
 - **Modelled signal timing:** the baseline signal program was built for the model, not taken from the controller (section 9.8).
 - **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
-- **Historical analysis** (section 17): public holidays count as ordinary days of their weekday; only the last 7, 30 or 90 days can be chosen, because the page reads files made in advance (a free date range would need the results calculated on request); all stored days are held in memory while the page files are built, which suits weeks of history but may need a leaner approach for a history of several months; anomaly days are not marked.
+- **Historical analysis** (section 17): public holidays count as ordinary days of their weekday; only the last 7, 30 or 90 days can be chosen, because the page reads files made in advance (a free date range would need the results calculated on request); all stored days are held in memory while the page files are built: 14 days took 2.3 GB and 6 minutes to load (about 26 s a day), so 30 days need about 5 GB and 90 days about 15 GB, and a history longer than a few weeks needs a leaner approach; anomaly days are not marked.
 
 ---
 
@@ -817,7 +817,7 @@ python -m backend.analytics.trends_page                                         
 - **Whole days**, 00:00–24:00 Riyadh time, each as one continuous run with 15 minutes of warm-up before and clearance after (23:45 to 00:15 the next day). A period and a day type are made of calendar days, and the heatmap needs every hour.
 - **One fixed seed for every day** (42). Like current and forecast simulations, historical ones use one fixed seed; several matched seeds are used only to compare scenarios (section 12). A stored day can therefore always be rebuilt identically.
 - **One demand source per history.** The history is built from one source (synthetic, or RCRC once it is available) and never mixes them: a trend that switched from synthetic to observed days would show a change caused by the data, not by the traffic. With RCRC demand, the history covers the days RCRC provides; periods longer than that report "not enough data" (17.6).
-- **Cost of one day**, measured on 22 Oct 2026 (synthetic demand): SUMO run 8.7 min, reading the FCD into measurements 6.5 min, FCD file 4.3 GB. Days are simulated one after another, so 14 days take about 3.5 hours and 90 days about 23 hours.
+- **Cost of one day**, measured on 22 Oct 2026 (synthetic demand): SUMO run 8.7 min, reading the FCD into measurements 6.5 min, FCD file 4.3 GB. The 14 days of 27 Oct–9 Nov 2026 took 6 to 12 minutes each, 2 hours 20 minutes in all; at that rate 90 days take about 15 hours.
 - A day already stored is skipped, so a batch can be restarted with the same dates; a finished run whose day was not stored is read again instead of simulated again; a day that fails is reported and the batch continues, and nothing partial is stored.
 
 ## 17.2 Measurements first, KPIs later
@@ -828,7 +828,7 @@ Reading a day's FCD takes almost all of the 6.5 minutes; calculating the KPIs fr
 
 ## 17.3 The measurement store
 
-`backend/analytics/history.py` keeps one compressed file per day in `data/history/` (about 15–20 MB a day, ignored by git):
+`backend/analytics/history.py` keeps one compressed file per day in `data/history/` (about 2.5 MB a day; 14 days take 35 MB; ignored by git):
 
 - **Only measurements** are stored: vehicle passages, incomplete passages, vehicles not entered, lane and approach cycle queues, demand and the run's record. KPI results are never stored: they are calculated from these, and storing both would keep two copies of the same facts.
 - **Whole days only**: a run whose analysis period is not exactly 00:00–24:00 Riyadh time is refused.
@@ -863,6 +863,7 @@ A value is shown only when it cannot be wrong. The gaps in a simulation are not 
 - **Delay, level of service, queue duration and throughput are strict**: one unavailable interval in the selection makes the selection unavailable, with that interval's reason. A missing interval's delay could be anything, so no value without it can be shown, and no "at most X % worse" can be given either: delay has no upper limit.
 - **Queues use the percentile rule**, which is exact. A cycle cut off at the end of what was measured is at least as long as the stretch, so cut-off cycles sort to the top; the 95th percentile is unavailable only when the cycle at its rank is one of them. Example: 720 cycles, rank 684. With 30 cut-off cycles (positions 691–720), cycle 684 is a measured one and its value is exact, because the unknown cycles are certainly longer. With 40 (positions 681–720), cycle 684 is cut off and the queue is unavailable.
 - **Intervals with no vehicles are left out**: an empty interval is not missing data.
+- **Example, 3–9 Nov 2026 (synthetic demand).** On weekdays North's and South's queues reach the end of their zones around 06:00 and for about six hours every evening (Tue 3 Nov: North 17:00–22:15, South 17:30–23:30; peak v/c 2.01 and 1.82); on Friday 6 Nov only South, 22:00–23:45. Every day therefore has an unavailable interval, so the intersection's, North's and South's daily delay and level of service are unavailable on every day, and 24 % of the intersection's intervals have no grade; East and West are unaffected. This reflects the model (synthetic demand built from another intersection's counts, and modelled signal timing), not a rule of the analysis, and is an input to calibration.
 - **Example, 22 Oct 2026 (synthetic demand).** North's queue reached the end of its 500 m zone from 06:00 to 07:15: North-left demand was 1,052–1,320 veh/h against a capacity of 659 veh/h. North's and the intersection's delay are unavailable for those intervals, and so for the day; East, West and South are unaffected. A longer zone would not help: the road in the network ends 625.5 m from the stop line, and the queue grew by about 250–410 m every 15 minutes.
 
 ## 17.6 Coverage of a period
@@ -892,6 +893,8 @@ Days go missing for reasons unrelated to traffic (a run that failed, a day RCRC 
 | Peak v/c | The highest single 15-minute value, with its date and time | It answers "was capacity exceeded, and when?"; v/c is never averaged |
 
 The two can point to different times; they answer different questions. The peak window is **unavailable when any slot's delay is unavailable**, because that slot could be the peak (17.5).
+
+For an approach that is never congested, delay is almost the same in every slot: at a fixed-time signal a vehicle waits for the red whatever the demand. Its peak window is then the slot with marginally the most delay, which can fall at night (West, 3–9 Nov 2026: 03:30), not a congestion period.
 
 ## 17.8 The page's parts
 
@@ -933,4 +936,4 @@ trends_90d_all.json   trends_90d_weekdays.json   trends_90d_weekends.json
 
 A period without enough days still gets its file, holding `available: false` and the reason.
 
-**The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB; without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
+**The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB (the real 7-day files of 3–9 Nov 2026 are 1.6–1.8 MB); without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
