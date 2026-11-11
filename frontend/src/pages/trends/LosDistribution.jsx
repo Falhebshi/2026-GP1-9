@@ -8,11 +8,15 @@ import './LosDistribution.css'
 // A grade's letter is written inside its segment only when it fits
 const MIN_LABEL_WIDTH = 20
 
+// The grades, then the intervals whose grade is unknown, in bar order
+const SEGMENTS = [...GRADES, 'unavailable']
+
 // Level of service distribution: for the intersection and each approach,
-// one bar split by the share of 15-minute intervals at each grade, A to F.
-// The column on the right is the share at E or F (poor operation).
+// one bar split by the share of 15-minute intervals at each grade, A to F,
+// then the share whose grade is unavailable (docs/kpi_engine.md, section
+// 17.8). The column on the right is the share at E or F (poor operation).
 //
-//   rows   data.losDistribution: [{ element: { id, label }, shares: { A … F } }]
+//   rows   data.losDistribution: [{ element: { id, label }, shares: { A … F, unavailable } }]
 function LosDistribution({ rows }) {
   const [hovered, setHovered] = useState(null) // { label, grade, share }
   const [ref, width] = useElementWidth() // width of one bar, for the letters
@@ -44,9 +48,9 @@ function LosDistribution({ rows }) {
                 ref={index === 0 ? ref : undefined}
                 className="losd-bar"
                 role="img"
-                aria-label={`${row.element.label}: ${GRADES.map((g) => `${g} ${percent(row.shares[g])}`).join(', ')}`}
+                aria-label={`${row.element.label}: ${SEGMENTS.map((g) => `${segmentName(g)} ${percent(row.shares[g])}`).join(', ')}`}
               >
-                {GRADES.map((grade) => {
+                {SEGMENTS.map((grade) => {
                   const share = row.shares[grade] ?? 0
                   if (share <= 0) return null
                   const fits = share * width >= MIN_LABEL_WIDTH
@@ -58,7 +62,7 @@ function LosDistribution({ rows }) {
                       style={{ flexGrow: share }}
                       onPointerEnter={() => setHovered({ label: row.element.label, grade, share })}
                     >
-                      {fits ? grade : ''}
+                      {fits && grade !== 'unavailable' ? grade : ''}
                     </span>
                   )
                 })}
@@ -72,20 +76,25 @@ function LosDistribution({ rows }) {
 
       {/* Legend: every grade, so small segments without a letter can still be read */}
       <div className="losd-legend">
-        {GRADES.map((grade) => (
+        {SEGMENTS.map((grade) => (
           <span key={grade} className="losd-legend-item">
             <span className={`losd-swatch losd-los-${grade.toLowerCase()}`} />
-            {grade}
+            {grade === 'unavailable' ? 'Unavailable' : grade}
           </span>
         ))}
         <span className="losd-readout" aria-live="polite">
           {hovered
-            ? `${hovered.label} · LOS ${hovered.grade} · ${percent(hovered.share)} of intervals`
+            ? `${hovered.label} · ${segmentName(hovered.grade)} · ${percent(hovered.share)} of intervals`
             : ''}
         </span>
       </div>
     </Card>
   )
+}
+
+// 'C' → "LOS C"; 'unavailable' → "LOS unavailable"
+function segmentName(grade) {
+  return `LOS ${grade}`
 }
 
 // 0.153 → "15%"

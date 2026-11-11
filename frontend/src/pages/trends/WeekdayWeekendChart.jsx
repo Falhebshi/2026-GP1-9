@@ -7,7 +7,8 @@ const ROWS = [
   { kpi: 'control_delay', label: 'Control delay' },
   { kpi: 'queue_length', label: '95th-pct queue' },
   { kpi: 'throughput', label: 'Throughput' },
-  { kpi: 'volume_to_capacity_ratio', label: 'Critical v/c' },
+  // The intersection's v/c is the critical v/c (Xc); an approach's is its highest movement's
+  { kpi: 'volume_to_capacity_ratio', label: 'Critical v/c', approachLabel: 'Highest v/c' },
 ]
 
 // Weekdays vs weekends: for each KPI, one bar for weekdays and one for
@@ -42,7 +43,7 @@ function WeekdayWeekendChart({ pairs }) {
           return (
             <div key={row.kpi} className="ww-row">
               <p className="ww-label">
-                {row.label ?? KPI_DEFINITIONS[row.kpi]?.label}
+                {rowLabel(row, weekdays ?? weekends)}
                 {unit && <span className="ww-unit"> {unit}</span>}
               </p>
               <div className="ww-bars">
@@ -85,6 +86,12 @@ function Bar({ result, max, kind, name }) {
       <span className="ww-value">{formatKpiValue(result)}</span>
     </div>
   )
+}
+
+// The row's label for the element the results belong to
+function rowLabel(row, result) {
+  if (row.approachLabel && result && result.level !== 'intersection') return row.approachLabel
+  return row.label ?? KPI_DEFINITIONS[row.kpi]?.label
 }
 
 export default WeekdayWeekendChart
