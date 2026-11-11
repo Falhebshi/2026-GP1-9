@@ -193,6 +193,37 @@ def test_the_peak_window_is_unknown_when_a_slot_is_unavailable():
     assert peak["interval_start"] is None
 
 
+def test_the_worst_queue_is_named_by_approach_and_movement(trends_7_all):
+    """Every lane's queue is 0 m, so the first movement is the worst, written as words."""
+
+    queue = trends_7_all["views"]["APP_E"]["summary"]["queue_length"]
+
+    assert queue["current"]["status"] == "ok"
+    assert queue["worst"]["label"] in {"East through", "East left"}
+
+
+def test_the_worst_queue_is_unknown_when_a_movement_queue_is_unavailable():
+    """
+    East reaches its zone end in slots 0-9 every day: 10 of 96 slots,
+    more than the top 5 %, so the 95th-percentile cycle of East's
+    movements is a cut-off one. The reason names them in words.
+    """
+
+    stored = {
+        d: stored_day(
+            d, cars=[car(d, 1, "07:31:00", 30, 5)],
+            queues=cycles(d, ALL_SLOTS_SET, cut_approach_slots={("APP_E", s) for s in range(10)}),
+        )
+        for d in WEEK
+    }
+    queue = build_trends(stored, 7, "all")["views"]["APP_E"]["summary"]["queue_length"]
+
+    assert queue["worst"] is None
+    assert queue["current"]["status"] == "unavailable"
+    assert "East through" in queue["current"]["reason"]
+    assert "MOV_" not in queue["current"]["reason"]
+
+
 # ============================================================
 # TREND, WEEKDAYS AND WEEKENDS, HEATMAP
 # ============================================================

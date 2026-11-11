@@ -904,7 +904,7 @@ For an approach that is never congested, delay is almost the same in every slot:
 | --- | --- |
 | `period` | Dates, `daysExpected`, `daysUsed`, `missingDays`, for the "based on 27 of 30 days" label |
 | `views` | For the intersection (`all`) and each approach: summary, trend, weekday/weekend pair and heatmap, so the page's approach filter needs no calculation |
-| Summary | Delay, LOS, throughput, the worst movement's 95th-percentile queue with its storage ratio, peak v/c and the peak window (17.7). The worst queue is unknown when any movement's queue is unavailable |
+| Summary | Delay, LOS, throughput, the worst movement's 95th-percentile queue with its storage ratio, peak v/c and the peak window (17.7). The worst queue is unknown when any movement's queue is unavailable; the reason names those movements in words ("South left, North right (slip lane)") |
 | Trend | One value per day for delay, queue, throughput and v/c; a day that is not stored appears as `unavailable` with its reason. Reference lines at the LOS thresholds (section 3.2) and at v/c 1.0 |
 | Weekday / weekend | Each KPI over the period's weekdays and over its weekends, each side with its own coverage check |
 | Heatmap | LOS and delay per weekday and hour; cells outside the selected day type are `unavailable` ("not part of the selected day type") |
@@ -914,6 +914,7 @@ For an approach that is never congested, delay is almost the same in every slot:
 - **No comparison with a previous period.** The network and signal timing do not change between periods, so a change would only reflect demand, which the daily trend already shows day by day; and a 30-day comparison would need 60 days of history.
 - **The LOS distribution shows unavailable intervals as their own share** rather than leaving them out. On 22 Oct the intersection had 5 unavailable intervals of 96: leaving them out would scale up the known grades, although the missing ones were almost certainly F. Intervals with no vehicles have no grade and are not counted.
 - **Not produced here:** recurring alerts and threshold windows (recurring-problem detection, backlog items 24–25, which can run on the stored measurements) and anomaly days (`anomalies` is empty).
+- **The page opens on 7 days**, the longest period with enough stored days today; the 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
 
 ## 17.9 Results that combine days
 

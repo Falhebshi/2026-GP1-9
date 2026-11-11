@@ -350,6 +350,13 @@ def _movement_label(movement_id: str, model) -> str:
     return "Left" if attributes.movement_type == MovementType.LEFT else "Through"
 
 
+def _movement_name(movement_id: str, model, approach_labels: dict) -> str:
+    """'South right (slip lane)': the approach, then the movement."""
+
+    approach = approach_labels[model.movements[movement_id].approach_id]
+    return f"{approach} {_movement_label(movement_id, model).lower()}"
+
+
 def _movements_of(approach_id: str, model) -> list[str]:
     return [m for m in model.movement_ids if model.movements[m].approach_id == approach_id]
 
@@ -379,8 +386,10 @@ def _worst_queue(movements, values, results, interval, level, element_id, model,
     queues = {m: values[(QUEUE, METRES, KpiLevel.MOVEMENT, m)] for m in movements}
     unavailable = [m for m, q in queues.items() if q.status == KpiStatus.UNAVAILABLE]
 
+    labels = {a["approach_id"]: a["label"] for a in approaches}
     if unavailable:
-        reason = f"the queue of {', '.join(unavailable)} is unavailable, so the longest is unknown"
+        names = ", ".join(_movement_name(m, model, labels) for m in unavailable)
+        reason = f"the queue of {names} is unavailable, so the longest is unknown"
         return {
             "current": _dump(results.missing(QUEUE, METRES, level, element_id, interval, reason)),
             "worst": None,
@@ -388,12 +397,11 @@ def _worst_queue(movements, values, results, interval, level, element_id, model,
 
     usable = {m: q for m, q in queues.items() if q.status == KpiStatus.OK}
     worst = max(usable, key=lambda m: usable[m].value)        # the first one when equal
-    labels = {a["approach_id"]: a["label"] for a in approaches}
     return {
         "current": _dump(results.result(QUEUE, METRES, KpiLevel.MOVEMENT, worst, usable[worst], interval)),
         "worst": {
             "movement_id": worst,
-            "label": f"{labels[model.movements[worst].approach_id]} {_movement_label(worst, model).lower()}",
+            "label": _movement_name(worst, model, labels),
             "storageRatio": _dump(results.result(
                 STORAGE, RATIO, KpiLevel.MOVEMENT, worst,
                 values[(STORAGE, RATIO, KpiLevel.MOVEMENT, worst)], interval,
