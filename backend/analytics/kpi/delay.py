@@ -20,7 +20,7 @@ interval (blocked):
 - vehicles could not enter the network before the run ended
   (UninsertedVehicle): the delay they met waiting to enter is not
   measured, and the vehicles behind them were held back too;
-- the approach's queue reached the end of its measurement zone
+- the approach's queue was near the end of its measurement zone
   (queue.zone_end_approaches): delay met before the zone is not
   measured.
 

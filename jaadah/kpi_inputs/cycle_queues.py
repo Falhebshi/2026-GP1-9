@@ -23,19 +23,27 @@ Rules applied, and why:
   length is the distance from the stop line to the back of its last
   vehicle; queued vehicles separated from it by a larger gap are not part
   of it.
-- Section end: a queue whose last vehicle's back is less than 10 m from
-  the start of the section may continue upstream, where lanes merge and
-  the queue belongs to no single lane. Its length is capped at the
-  section length and the record is marked reaches_section_end; the full
+- Near the section end: a queue whose last vehicle's back is less than
+  10 m from the start of the section may continue upstream, where lanes
+  merge and the queue belongs to no single lane. Its length is capped at
+  the section length, only vehicles whose front is within the section
+  are counted, and the record is marked reaches_section_end; the full
   queue is measured on the approach.
-- Approach: the full queue of an approach is measured from its signal
-  stop line over its whole upstream zone (zone_upstream_m), across the
-  points where lanes merge: on the signal lanes' sections, on the route
-  edges behind them and on the junction lanes between those edges.
-  Slip and bypass lanes are left out; their queues are lane queues.
-  Vehicles on the road behind the signal lanes count whichever way they
-  turn. A queue whose last vehicle's back is less than 10 m from the far
-  end of the zone is capped at the zone length and marked
+- Approach: the full queue of an approach is measured over its whole
+  upstream zone (zone_upstream_m), across the points where lanes merge,
+  along several paths:
+  - the signal path, anchored at the signal stop line: the sections of
+    the lanes that serve signalised movements, the route edges behind
+    them and the junction lanes between those edges;
+  - one path per uncontrolled slip or bypass, anchored at the end of
+    its own lanes: its lanes' sections, then the shared road behind
+    them in the same way, so a slip queue that fills its lanes is
+    followed back onto the shared road.
+  Vehicles on the shared road count whichever way they turn. The
+  approach's queue at each moment is the longest of its paths' queues.
+  A path's queue whose last vehicle's back is less than 10 m from the
+  far end of the zone is capped at the zone length (with the same
+  vehicle count rule) and the approach's record is marked
   reaches_zone_end.
 - Cycles: one record per lane or approach and whole signal cycle of the run, aligned
   with the cycle start (KPI engine section 6.1): the cycle is the signal
@@ -87,9 +95,10 @@ class LaneSection(NamedTuple):
 
 class ApproachPath(NamedTuple):
     """
-    The part of an approach its full queue is measured over. to_stop_line_m
+    One path an approach's full queue is measured along. to_stop_line_m
     gives, for each SUMO lane of the path, the distance from the end of
-    that lane to the signal stop line; length_m is the upstream zone.
+    that lane to the path's anchor (the signal stop line, or the end of
+    a slip's lanes); length_m is the upstream zone.
     """
 
     approach_id: str
@@ -161,9 +170,11 @@ def approach_paths(
     sections: dict[str, LaneSection],
 ) -> dict[str, ApproachPath]:
     """
-    The path of every approach with signalised analysed movements: its
-    signal lanes' sections, the route edges behind them up to the zone
-    start, and the junction lanes between those edges.
+    The paths of every approach, keyed by the approach ID for its signal
+    path and by "<approach ID>/<movement ID>" for each uncontrolled
+    movement's path: the sections of the path's own lanes, the route
+    edges behind them up to the zone start, and the junction lanes
+    between those edges.
     """
 
     root = ET.parse(network_path).getroot()
@@ -184,15 +195,21 @@ def approach_paths(
     zones = movement_zones(config, network_path)
     movements = {item.movement_id: item for item in config.movement_mappings}
     approaches = {item.approach_id: item for item in config.approach_mappings}
-    signalised = {
-        item.movement_id for item in config.movement_attributes
-        if item.control == MovementControl.SIGNALIZED
-    }
+    control = {item.movement_id: item.control for item in config.movement_attributes}
     section_lanes = {lane for section in sections.values() for lane in section.to_stop_line_m}
 
+    groups = {}
+    for approach_id in sorted({movements[m].approach_id for m in control}):
+        analysed = sorted(m for m in control if movements[m].approach_id == approach_id)
+        signalised = [m for m in analysed if control[m] == MovementControl.SIGNALIZED]
+        if signalised:
+            groups[approach_id] = (approach_id, signalised)
+        for movement_id in analysed:
+            if control[movement_id] == MovementControl.UNCONTROLLED:
+                groups[f"{approach_id}/{movement_id}"] = (approach_id, [movement_id])
+
     paths = {}
-    for approach_id in sorted({movements[m].approach_id for m in signalised}):
-        own = [m for m in signalised if movements[m].approach_id == approach_id]
+    for key, (approach_id, own) in groups.items():
         to_stop: dict[str, float] = {}
         for lane in config.approach_lanes:
             if lane.approach_id == approach_id and set(lane.served_movement_ids) & set(own):
@@ -216,7 +233,7 @@ def approach_paths(
                     for piece in reversed(pieces):
                         to_stop.setdefault(piece, remaining)
                         remaining += lengths[piece]
-        paths[approach_id] = ApproachPath(
+        paths[key] = ApproachPath(
             approach_id, approaches[approach_id].zone_upstream_m, to_stop,
         )
     return paths
@@ -225,20 +242,27 @@ def approach_paths(
 def anchored_queue(fronts_m: list[float], section_length_m: float, vehicle_length_m: float) -> QueueAtStep:
     """
     The queue anchored at the stop line, from the distances of queued
-    vehicles' fronts to the stop line.
+    vehicles' fronts to the stop line. The length is capped at the
+    section length, and only vehicles whose front is within the section
+    are counted, so the count covers the same stretch as the length. A
+    queue that continues past the section end is the whole section long.
     """
 
-    back, vehicles = None, 0
+    back, vehicles, beyond = None, 0, False
     for front in sorted(fronts_m):
         previous_end = 0.0 if back is None else back
         if front - previous_end >= JAM_GAP_M:
+            break
+        if front > section_length_m:
+            beyond = True
             break
         back, vehicles = front + vehicle_length_m, vehicles + 1
 
     if back is None:
         return QueueAtStep(0.0, 0, False)
-    reaches_end = back > section_length_m - JAM_GAP_M
-    return QueueAtStep(min(back, section_length_m), vehicles, reaches_end)
+    reaches_end = beyond or back > section_length_m - JAM_GAP_M
+    length = section_length_m if beyond else min(back, section_length_m)
+    return QueueAtStep(length, vehicles, reaches_end)
 
 
 # ============================================================
@@ -268,21 +292,27 @@ def collect_cycle_queues(
     sections = lane_sections(config, network_path)
     section_of = {lane: section for section in sections.values() for lane in section.to_stop_line_m}
     paths = approach_paths(config, network_path, sections)
-    path_of = {lane: path for path in paths.values() for lane in path.to_stop_line_m}
+    paths_of = defaultdict(list)
+    for key, path in paths.items():
+        for lane, to_stop in path.to_stop_line_m.items():
+            paths_of[lane].append((key, to_stop))
     lengths = {lane.get("id"): float(lane.get("length")) for lane in ET.parse(network_path).getroot().iter("lane")}
 
     slow_since: dict[str, float] = {}
     best: dict[tuple[str, int], list] = defaultdict(lambda: [0.0, 0, False])
     fronts = defaultdict(list)
     lengths_of = {lane_id: section.length_m for lane_id, section in sections.items()}
-    lengths_of.update({approach_id: path.length_m for approach_id, path in paths.items()})
+    lengths_of.update({key: path.length_m for key, path in paths.items()})
+    record_of = {lane_id: lane_id for lane_id in sections}
+    record_of.update({key: path.approach_id for key, path in paths.items()})
+    approach_ids = sorted({path.approach_id for path in paths.values()})
     time_s = None
 
     def close_step():
         number = int(math.floor(time_s / cycle + TOLERANCE_S))
         for key, length in lengths_of.items():
             queue = anchored_queue(fronts[key], length, vehicle_length_m)
-            item = best[(key, number)]
+            item = best[(record_of[key], number)]
             item[0] = max(item[0], queue.length_m)
             item[1] = max(item[1], queue.vehicles)
             item[2] = item[2] or queue.reaches_section_end
@@ -298,12 +328,12 @@ def collect_cycle_queues(
             else:
                 slow_since.pop(vehicle_id, None)
             queued = time_s - slow_since.get(vehicle_id, math.inf) >= JAM_TIME_S - TOLERANCE_S
-            if queued and (lane in section_of or lane in path_of):
+            if queued and (lane in section_of or lane in paths_of):
                 rest = lengths[lane] - float(element.get("pos"))
                 if lane in section_of:
                     fronts[section_of[lane].lane_id].append(rest + section_of[lane].to_stop_line_m[lane])
-                if lane in path_of:
-                    fronts[path_of[lane].approach_id].append(rest + path_of[lane].to_stop_line_m[lane])
+                for key, to_stop in paths_of.get(lane, ()):
+                    fronts[key].append(rest + to_stop)
             element.clear()
         elif event == "end" and element.tag == "timestep":
             close_step()
@@ -333,7 +363,7 @@ def collect_cycle_queues(
             max_queue_vehicles=best[(approach_id, number)][1],
             reaches_zone_end=best[(approach_id, number)][2],
         )
-        for approach_id in paths
+        for approach_id in approach_ids
         for number in range(whole_cycles)
     ]
     return CycleQueues(lanes=lane_records, approaches=approach_records)

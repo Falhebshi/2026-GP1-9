@@ -16,10 +16,10 @@ A lane or approach with no cycle records has no queue value (None): a
 record is written for every lane, approach and cycle, even with no
 queue, so a missing record means missing data, not an empty lane.
 
-A cycle whose queue reached the end of what was measured (a lane's
-section, or an approach's zone) is cut off: the real queue was longer.
-A summary that depends on a cut-off cycle is marked reaches_end and is
-reported as unavailable. Cut-off cycles hold the largest values, so the
+A cycle whose queue was near the end of what was measured (within 10 m
+of a lane's section end or an approach's zone end) may be cut off: the
+real queue may have been longer. A summary that depends on such a cycle
+is marked reaches_end and is reported as unavailable. Cut-off cycles hold the largest values, so the
 period percentile depends on one only when the cycle at its rank is
 cut off.
 
@@ -34,10 +34,13 @@ from backend.analytics.kpi.parameters import QUEUE_PERCENTILE
 from jaadah.models.outputs import ApproachCycleQueueRecord, CycleQueueRecord
 
 
-SECTION_END_REASON = "queue extends beyond this lane's section; see the approach queue"
+SECTION_END_REASON = (
+    "the queue is near the end of this lane's section and may continue "
+    "beyond it; see the approach queue"
+)
 ZONE_END_REASON = (
-    "the queue reached the end of the measurement zone; delay before the "
-    "zone is not measured"
+    "the queue is near the end of the measurement zone and may continue "
+    "beyond it; delay before the zone is not measured"
 )
 NO_RECORDS_REASON = "no cycle records for this lane in this interval"
 PERIOD_INCOMPLETE_REASON = (
@@ -48,8 +51,8 @@ PERIOD_INCOMPLETE_REASON = (
 class LaneQueue(NamedTuple):
     """
     A queue in both units: metres and vehicles. reaches_end is True when
-    the value depends on a cycle cut off at the end of what was
-    measured, so the real queue was longer.
+    the value depends on a cycle whose queue was near the end of what
+    was measured, so the real queue may have been longer.
     """
 
     length_m: float
@@ -72,7 +75,7 @@ def interval_queues(
 
     The value is None when a lane has no cycle record in an interval.
     Metres and vehicles are each the largest of the interval's cycles;
-    reaches_end is True when one of the cycles reached the section end.
+    reaches_end is True when one of the cycles was near the section end.
     """
 
     cycles = _cycles_by_key_and_interval(run_id, lane_ids, intervals, cycle_records, "lane_id")
@@ -113,7 +116,7 @@ def approach_interval_queues(
     """
     Return the largest full-zone cycle queue of each approach in each
     interval, the same way as interval_queues; reaches_end is True when
-    one of the cycles reached the zone end.
+    one of the cycles was near the zone end.
     """
 
     cycles = _cycles_by_key_and_interval(
@@ -140,9 +143,9 @@ def zone_end_approaches(
     approach_queues: dict[tuple[str, AnalysisInterval], LaneQueue | None],
 ) -> dict[tuple[str, AnalysisInterval], str]:
     """
-    The (approach, interval) pairs in which the approach's queue reached
-    its zone end, with the reason: there, the delay vehicles met before
-    the zone is not measured, so the approach's measured delay, queue
+    The (approach, interval) pairs in which the approach's queue was
+    near its zone end, with the reason: there, delay that vehicles met
+    before the zone may not be measured, so the approach's measured delay, queue
     duration and queue are not valid.
     """
 

@@ -231,12 +231,12 @@ The HCM 7th edition calculates its percentile back of queue analytically and doe
 
 ## 6.5 Queue storage ratio
 
-The queue storage ratio is a queue divided by the lane's storage length (`ApproachLane.storage_length_m`). A ratio above 1 means the queue was longer than the storage available, so it spilled back. It is reported:
+The queue storage ratio is a queue divided by the lane's storage length (`ApproachLane.storage_length_m`). A ratio above 1 means the queue was longer than the storage available, so it spilled back. "Spillback" is used only for this, or for other evidence that a queue blocked an upstream junction or traffic stream; a queue near the measurement limit (section 6.8) is not called spillback. It is reported:
 
 - **per interval**: the interval's largest cycle queue ÷ storage length;
 - **over the analysis period**: the 95th-percentile queue ÷ storage length.
 
-When the storage length of a lane is not known, the queue length is still reported and only the storage ratio is `unavailable`, with the reason "the lane has no storage length". When the lane's queue reached the end of its section (section 6.8), the storage ratio is `unavailable` too.
+When the storage length of a lane is not known, the queue length is still reported and only the storage ratio is `unavailable`, with the reason "the lane has no storage length". When the lane's queue was near the end of its section (section 6.8), the storage ratio is `unavailable` too.
 
 **Which lanes have a storage length.** A storage length is set only for a lane that really ends near the stop line: a turn bay, a lane that begins where the road splits, or a slip road. Example: South through lanes 1 and 2 begin where the road splits into through and slip lanes, 86.3 m before the stop line, so a queue longer than 86.3 m blocks the split. A lane that continues upstream beyond its section (section 6.8) has no storage length: the end of its section is only where the network edge was cut, not a limit on the queue (North left lane 1 has an 82 m section but continues about 625 m upstream; a storage length of 82 m would turn a 70 m queue into a misleading ratio of 0.85). Such a lane's queue reaching its section end is reported through the section rule (section 6.8) and the approach's full-zone queue.
 
@@ -252,9 +252,9 @@ An error is raised when a record belongs to a different run, to a lane or approa
 
 ## 6.8 Queues longer than the stretch measured
 
-A cycle record is marked when its queue reached the end of what was measured: `reaches_section_end` for a lane, `reaches_zone_end` for an approach. The real queue was then longer than the recorded one.
+A cycle record is marked when the back of its queue came within 10 m of the end of what was measured: `reaches_section_end` for a lane, `reaches_zone_end` for an approach. The queue may then continue beyond the boundary, so the recorded length may be shorter than the real queue. The flag shows that the queue is near the measurement limit, not that it went past it.
 
-- **Per interval:** when any cycle of the interval was cut off, the interval's queue is `unavailable`. For a lane the reason is "queue extends beyond this lane's section; see the approach queue"; the approach's full-zone queue gives its length. For an approach it is "the queue reached the end of the measurement zone; delay before the zone is not measured", and the approach's delay and queue duration are `unavailable` too (section 13.7).
+- **Per interval:** when any cycle of the interval was near the limit, the interval's queue is `unavailable`. For a lane the reason is "the queue is near the end of this lane's section and may continue beyond it; see the approach queue"; the approach's full-zone queue gives its length. For an approach it is "the queue is near the end of the measurement zone and may continue beyond it; delay before the zone is not measured", and the approach's delay and queue duration are `unavailable` too (section 13.7).
 - **Over the analysis period:** cut-off cycles hold the longest queues, so they sort to the top (above an uncut cycle of the same recorded value). The 95th percentile is `unavailable` only when the cycle at its rank was cut off; cut-off cycles above the rank do not change it. Example: with 20 cycles, one cut-off cycle leaves the 19th smallest queue valid; two make it `unavailable`.
 - A lane cut off at its section does not affect its approach, whose full-zone queue is measured further back.
 
@@ -309,7 +309,7 @@ An error is raised when a record belongs to a different run, uses a movement tha
 
 Two conditions make the control delay and queue duration of every movement of an approach `unavailable` in an interval (section 13.7):
 
-- the approach's queue reached the end of its measurement zone (section 6.8), so vehicles were delayed before they entered the zone;
+- the approach's queue was near the end of its measurement zone (section 6.8), so vehicles may have been delayed before they entered the zone;
 - vehicles of the approach could not enter the network before the run ended, so their delay was never measured.
 
 The completed and incomplete vehicle counts are still reported with the result.
@@ -508,7 +508,7 @@ Implemented in `backend/analytics/kpi/rollup.py`. The roll-up combines the resul
 | Measured control delay | section 7 | mean of its movements, weighted by completed vehicles | mean of all movements, weighted by completed vehicles |
 | Queue duration | section 7 | as measured control delay | as measured control delay |
 | Throughput | section 5 | sum of its movements | sum of all movements |
-| Queue length (m and veh) | longest of the lanes it uses | larger of its full-zone queue and its slip lanes | longest approach |
+| Queue length (m and veh) | longest of the lanes it uses | its full-zone queue (signal and slip queues, to the zone end) | longest approach |
 | Queue storage ratio | highest of the lanes it uses | highest of its lanes | highest of all lanes |
 | HCM control delay | section 10.4 | mean of its lane groups, weighted by lane-group demand (Equation 19-28) | mean of all lane groups, weighted by demand (Equation 19-29) |
 | HCM level of service | section 10.4 | from the approach delay alone | from the intersection delay alone |
@@ -523,7 +523,7 @@ Measured levels of service are graded after the runs are combined (section 7.6).
 
 A queue length or storage ratio names the lane it was measured on (`measured_on_lane_id`). For a movement this is the longest of the lanes that serve it; the result is tagged **Shared lane** only when that lane is shared with another movement. Metres and vehicles are each the longest separately, so they can come from different lanes. When two lanes are equal, the first in lane order is named.
 
-An approach's queue length is the larger of its full-zone queue and the queues of its uncontrolled slip lanes, which the full-zone queue leaves out ([KPI measurements](kpi_measurements.md), section 5.6). It names a lane only when a slip lane is the longer. The intersection takes its longest approach.
+An approach's queue length is its full-zone queue: the longest of its signal queue and its slips' queues, each followed back to the zone end ([KPI measurements](kpi_measurements.md), section 5.6). It names no lane. A slip queue that fills its lane continues onto the shared approach road and stays part of the approach queue, so a slip lane near its section end does not make the approach unavailable. The intersection takes its longest approach.
 
 ## 11.3 Uncontrolled right turns
 
@@ -531,10 +531,10 @@ The uncontrolled right-turn slips (section 1) are **included** in the measured d
 
 ## 11.4 Missing and not-applicable parts
 
-- If **any** part of an approach or the intersection is `unavailable`, the combined value is `unavailable`. A partial value would look complete but leave out the missing part. When all the unavailable parts give the same reason, the combined value keeps it, so the cause is visible at every level (for example, "the queue reached the end of the measurement zone; delay before the zone is not measured" on the approach and the intersection); otherwise the reason is "a part of this element has no result".
+- If **any** part of an approach or the intersection is `unavailable`, the combined value is `unavailable`. A partial value would look complete but leave out the missing part. When all the unavailable parts give the same reason, the combined value keeps it, so the cause is visible at every level (for example, "the queue is near the end of the measurement zone and may continue beyond it; delay before the zone is not measured" on the approach and the intersection); otherwise the reason is "a part of this element has no result".
 - Parts that are `not_applicable` (for example a movement with no arrivals) are left out. If no part is left, the combined value is `not_applicable`.
-- A lane with no cycle records, or whose queue reached its section end, makes the queue of its movements `unavailable`; the approach queue comes from the full-zone queue and is not affected. A lane with no known storage length makes the storage ratio of its movements, its approach and the intersection `unavailable`.
-- An approach whose queue reached its zone end, or with vehicles that could not enter the network, makes its own and the intersection's values `unavailable` as described in section 13.7.
+- A lane with no cycle records, or whose queue was near its section end, makes the queue of its movements `unavailable`; the approach queue comes from the full-zone queue and is not affected. A lane with no known storage length makes the storage ratio of its movements, its approach and the intersection `unavailable`.
+- An approach whose queue was near its zone end, or with vehicles that could not enter the network, makes its own and the intersection's values `unavailable` as described in section 13.7.
 - All movements must belong to one intersection; otherwise the roll-up raises an error.
 
 ---
@@ -549,7 +549,7 @@ Each seed is one repetition of the experiment and counts once. For each KPI, ele
 
 - **Value:** the mean over the runs that have a value.
 - **Spread:** the sample standard deviation (divided by n − 1) when two or more runs have a value; none with one run. Example: 30, 34 and 38 s give 34 ± 4.0 s.
-- **A run without a result:** if any run is `unavailable`, the combined result is `unavailable`, with a reason such as "unavailable in 1 of 10 runs", preceded by the runs' reason when they all give the same one ("the queue reached the end of the measurement zone; delay before the zone is not measured; unavailable in 2 of 10 runs"). The missing run is usually the most congested one (vehicles still queued at the end of the run), so averaging the others would make the result look better than it was. The remedy is a longer clearance.
+- **A run without a result:** if any run is `unavailable`, the combined result is `unavailable`, with a reason such as "unavailable in 1 of 10 runs", preceded by the runs' reason when they all give the same one ("the queue is near the end of the measurement zone and may continue beyond it; delay before the zone is not measured; unavailable in 2 of 10 runs"). The missing run is usually the most congested one (vehicles still queued at the end of the run), so averaging the others would make the result look better than it was. The remedy is a longer clearance.
 - **A run with nothing to measure:** runs that are `not_applicable` (for example, no vehicles arrived) are left out, not counted as zero: a mean over no vehicles does not exist, and a zero would pull the mean down and widen the spread. The result is `not_applicable` only if no run has a value.
 - `run_ids` lists the runs behind the value; a result without a value lists every run that was looked at.
 - A movement value taken from a shared lane carries `measured_on_lane_id` (queues, section 12.3), and one taken from a shared lane group carries `measured_on_lane_group_id` (HCM values, section 9.6); both are set on the `KpiSpec` and kept only on results with a value.
@@ -562,7 +562,7 @@ Delay, queue duration and throughput are rolled up to approaches and the interse
 
 ## 12.3 Queues: lanes first
 
-Queue length and storage ratio are combined over the runs **per lane first**, and the approaches' full-zone queues per approach; a movement then takes its longest (highest) lane, an approach the larger of its full-zone queue and its slip lanes (its highest lane for the storage ratio), and the intersection its longest approach, each with its source's mean, standard deviation and runs. Example, East through over three runs: lane 3 has 80, 50 and 70 m (mean 66.7 m), lane 4 has 60, 90 and 60 m (mean 70 m), so East through is 70 m, measured on lane 4. Taking each run's longest lane first would give 80 m, a value no lane has. Combining per lane keeps the movement value equal to one lane result (one value in every view) and names one real lane for the "Shared lane" tag, which appears only when that lane is shared.
+Queue length and storage ratio are combined over the runs **per lane first**, and the approaches' full-zone queues per approach; a movement then takes its longest (highest) lane, an approach its full-zone queue (its highest lane for the storage ratio), and the intersection its longest approach, each with its source's mean, standard deviation and runs. Example, East through over three runs: lane 3 has 80, 50 and 70 m (mean 66.7 m), lane 4 has 60, 90 and 60 m (mean 70 m), so East through is 70 m, measured on lane 4. Taking each run's longest lane first would give 80 m, a value no lane has. Combining per lane keeps the movement value equal to one lane result (one value in every view) and names one real lane for the "Shared lane" tag, which appears only when that lane is shared.
 
 ## 12.4 Comparing a baseline and an intervention
 
@@ -619,11 +619,11 @@ What the engine expects from the components that prepare its inputs (network map
 
 ## 13.1 Queue length: lanes and approaches
 
-- **Lanes and movements** report the queue of each lane over the lane's own section (its lane chain, `LaneMapping.sumo_lane_ids`): which lane is full, turn-bay and slip spillback, storage ratio.
+- **Lanes and movements** report the queue of each lane over the lane's own section (its lane chain, `LaneMapping.sumo_lane_ids`): which lane is full, turn-bay and slip queues, storage ratio.
 - **Approaches and the intersection** report the **full queue over the whole upstream zone** (section 1.3): how far back the queue reaches. Beyond a lane chain several lanes merge, so a vehicle queued there belongs to the approach but to no single Jaadah lane. Example: on West the lane sections are 95 m long while the zone is 450 m; a queue reaching 250 m back is reported as 250 m on the approach.
-- A lane whose queue reaches the end of its section is `unavailable`, with the reason "queue extends beyond this lane's section; see the approach queue"; so is its storage ratio (section 6.8).
-- An approach whose queue reaches the end of its zone is `unavailable`, with its delay and queue duration (section 13.7).
-- Each lane's section, its queue and whether the queue reached the section end are measured from vehicle positions ([KPI measurements](kpi_measurements.md), section 5).
+- A lane whose queue is near the end of its section is `unavailable`, with the reason "the queue is near the end of this lane's section and may continue beyond it; see the approach queue"; so is its storage ratio (section 6.8).
+- An approach whose queue is near the end of its zone is `unavailable`, with its delay and queue duration (section 13.7). The approach's slips are measured to the zone end too, so a slip queue that fills its lane does not make the approach unavailable on its own.
+- Each lane's section, its queue and whether the queue came near the section end are measured from vehicle positions ([KPI measurements](kpi_measurements.md), section 5).
 - The full-zone queue per approach and cycle is measured from vehicle positions (`ApproachCycleQueueRecord`, [KPI measurements](kpi_measurements.md), section 5.6).
 
 ## 13.2 Uncontrolled right-turn slips
@@ -662,12 +662,12 @@ SUMO creates a vehicle at the network edge only when there is a safe gap; otherw
 
 | Condition | Measured by | Unavailable for the approach, its movements and lanes, in that interval | Reason |
 | --- | --- | --- | --- |
-| The queue reached the end of the measurement zone | `ApproachCycleQueueRecord.reaches_zone_end` | measured control delay, queue duration, queue length | "the queue reached the end of the measurement zone; delay before the zone is not measured" |
+| The queue was near the end of the measurement zone | `ApproachCycleQueueRecord.reaches_zone_end` | measured control delay, queue duration, queue length | "the queue is near the end of the measurement zone and may continue beyond it; delay before the zone is not measured" |
 | Vehicles could not enter the network before the run ended | `UninsertedVehicle`, by the interval of its planned stop-line time | measured control delay, queue duration, queue length, throughput | "N vehicle(s) could not enter the network before the run ended" |
 
-- Every route starts before its zone, so a queue reaching the model edge reaches the zone end first; the zone-end flag covers the case without a separate insertion-delay threshold.
+- Every route starts before its zone, so a queue reaching the model edge passes the zone end first; the zone-end flag covers the case without a separate insertion-delay threshold.
 - Throughput is not affected by the zone end: the vehicles served at the stop line are still counted correctly. It is affected by vehicles that never entered, which were never served.
-- When both conditions apply to one approach and interval, the reason gives both, never-entered first: "3 vehicle(s) could not enter the network before the run ended; the queue reached the end of the measurement zone; delay before the zone is not measured".
+- When both conditions apply to one approach and interval, the reason gives both, never-entered first: "3 vehicle(s) could not enter the network before the run ended; the queue is near the end of the measurement zone and may continue beyond it; delay before the zone is not measured".
 - The intersection follows through the roll-up (section 11.4); other approaches and the HCM results are not affected.
 - The measurements are described in [KPI measurements](kpi_measurements.md), sections 2.7 and 5.6.
 
@@ -706,7 +706,7 @@ The decisions that were hardest to make, what made each difficult, and what was 
 | Unsupported signal patterns | Several greens per cycle are a normal intervention design, but the HCM delay used here assumes one | Capacity kept, HCM delay and Xc `unavailable` until supported (section 9.5) |
 | Queue measurement area | Lane sections are 85–395 m long (85–119 m except on East), the zones 388–500 m; a lane's queue cannot be followed beyond the point where lanes merge | Full-zone queue per approach, per-lane queues on the chains (section 13.1) |
 | Queues longer than measured | A value known to be too low could be shown as a minimum, but a minimum looks like a result and is easily compared as one | Every result is valid or `unavailable` with its reason; no minimum values (sections 6.8 and 13.7) |
-| Vehicles waiting to enter | Their waiting is real but happens outside the model and is not control delay | Not added to delay; the approach is `unavailable` when its queue reaches the zone end or vehicles never entered (section 13.7) |
+| Vehicles waiting to enter | Their waiting is real but happens outside the model and is not control delay | Not added to delay; the approach is `unavailable` when its queue is near the zone end or vehicles never entered (section 13.7) |
 
 ---
 

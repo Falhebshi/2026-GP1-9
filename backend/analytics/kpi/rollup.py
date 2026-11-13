@@ -17,14 +17,14 @@ applicable.
 
 A queue is measured twice: per lane, over the lane's section, and per
 approach, over the whole measurement zone (section 5). Movements take
-their longest lane; an approach takes the larger of its full-zone queue
-and its uncontrolled slip lanes; the intersection takes its longest
-approach.
+their longest lane; an approach takes its full-zone queue, which already
+covers its uncontrolled slips (their queues are followed onto the shared
+road); the intersection takes its longest approach.
 
 Two conditions make every value of an approach unavailable in an
-interval (passed as blocked, from delay.py and queue.py): the queue
-reached the end of the measurement zone (delay, queue duration and
-queue), and vehicles could not enter the network (also throughput).
+interval (passed as blocked, from delay.py and queue.py): the queue was
+near the end of the measurement zone (delay, queue duration and queue),
+and vehicles could not enter the network (also throughput).
 
 Uncontrolled right-turn slips are included in the measured delay,
 queue duration, throughput, queue length and storage ratio of their
@@ -69,9 +69,6 @@ PART_UNAVAILABLE_REASON = "a part of this element has no result"
 NOTHING_TO_COMBINE_REASON = "no part of this element has a result"
 NO_APPROACH_RECORDS_REASON = "no cycle records for this approach in this interval"
 NO_STORAGE_LENGTH_REASON = "the lane has no storage length"
-SLIP_SECTION_END_REASON = (
-    "the queue on an uncontrolled right-turn lane extends beyond its section"
-)
 
 
 class RolledUp(NamedTuple):
@@ -311,7 +308,6 @@ def queue_rollup(
     interval: AnalysisInterval,
     *,
     approach_queues: dict[tuple[str, AnalysisInterval], LaneQueue | None],
-    slip_lane_ids: set[str] = frozenset(),
     blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
     unit: str = "m",
 ) -> dict[tuple[str, str], RolledUp]:
@@ -321,14 +317,14 @@ def queue_rollup(
     ("movement", id), ("approach", id) and ("intersection", id).
 
     - A lane is unavailable when it has no cycle records, or when its
-      queue reached the end of its section (the approach queue then
+      queue was near the end of its section (the approach queue then
       gives the full length).
     - A movement takes its longest lane, with the lane it was measured
       on.
-    - An approach takes the larger of its full-zone queue
-      (approach_queues) and its uncontrolled slip lanes (slip_lane_ids,
-      which the full-zone queue leaves out). It is unavailable when its
-      queue reached the zone end.
+    - An approach takes its full-zone queue (approach_queues), the
+      longest of its signal queue and its slips' queues, each followed
+      to the zone end. It is unavailable when its queue was near the
+      zone end.
     - The intersection takes its longest approach.
 
     blocked maps (approach_id, interval) to the reason every queue of
@@ -379,17 +375,7 @@ def queue_rollup(
     approach_results = {}
 
     for approach_id in sorted({lane.approach_id for lane in lanes}):
-        slips = []
-        for lane in lanes:
-            if lane.approach_id == approach_id and lane.lane_id in slip_lane_ids:
-                part = lane_parts[lane.lane_id]
-                if part.reason == SECTION_END_REASON:
-                    part = part._replace(reason=SLIP_SECTION_END_REASON)
-                slips.append(part)
-
-        approach_results[approach_id] = combine_highest(
-            [approach_part(approach_id), *slips]
-        )
+        approach_results[approach_id] = combine_highest([approach_part(approach_id)])
         results[("approach", approach_id)] = approach_results[approach_id]
 
     intersection_id = _intersection_id(
@@ -417,7 +403,7 @@ def storage_ratio_rollup(
     Lane, movement, approach and intersection queue storage ratios: the
     highest lane ratio, with the lane it was measured on. A lane
     without a storage length or without queue records, or whose queue
-    reached the end of its section, is unavailable, and so is every
+    was near the end of its section, is unavailable, and so is every
     element it is part of; blocked is as for queue_rollup.
     """
 
