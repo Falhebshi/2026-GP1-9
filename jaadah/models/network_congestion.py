@@ -135,7 +135,7 @@ class SegmentCongestion(BaseModel):
     segment without data is never shown with a level.
 
     Not used by the synthetic generator yet: synthetic roads always
-    have a value, and its daily files keep only the volumes. It is
+    have a value, and its daily files keep only the speeds. It is
     kept for the RCRC data, where a missing detector makes a segment
     unavailable, and is checked against it when the data arrives.
     """

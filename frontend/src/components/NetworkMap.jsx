@@ -41,6 +41,16 @@ function rgbOf(color) {
 
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
 
+// the area the map can show, which the hexagons cover: maxBounds, or a margin around bounds
+function extentOf(bounds, maxBounds) {
+  return (
+    maxBounds ?? [
+      [bounds[0][0] - 0.12, bounds[0][1] - 0.1],
+      [bounds[1][0] + 0.12, bounds[1][1] + 0.1],
+    ]
+  )
+}
+
 // one-dimensional Gaussian blur of a grid (width x height), along rows or columns
 function blur(values, width, height, sigma, alongRows) {
   const radius = Math.ceil(sigma * 3)
@@ -193,14 +203,6 @@ function NetworkMap({
     onArriveRef.current = onArrive
   }, [onSelect, onArrive])
 
-  // the area the map can show, which the heat image covers
-  const extent = maxBounds ?? [
-    [bounds[0][0] - 0.12, bounds[0][1] - 0.1],
-    [bounds[1][0] + 0.12, bounds[1][1] + 0.1],
-  ]
-  const extentRef = useRef(extent)
-  extentRef.current = extent
-
   // create the map once
   useEffect(() => {
     const map = new MapLibreMap({
@@ -210,7 +212,7 @@ function NetworkMap({
       // leave room at the bottom for the timeline card that sits over the map
       fitBoundsOptions: { padding: { top: 20, right: 20, left: 20, bottom: 200 } },
       minZoom: 10,
-      maxBounds: extent,
+      maxBounds: extentOf(bounds, maxBounds),
       attributionControl: { compact: true },
       dragRotate: false,
       pitchWithRotate: false,
@@ -385,8 +387,8 @@ function NetworkMap({
     if (!ready) return
     const map = mapRef.current
     map.getSource('segments').setData(segments ?? EMPTY)
-    map.getSource('heat').setData(hexagons(segments, extentRef.current))
-  }, [ready, segments])
+    map.getSource('heat').setData(hexagons(segments, extentOf(bounds, maxBounds)))
+  }, [ready, segments, bounds, maxBounds])
 
   // segments or heatmap
   useEffect(() => {

@@ -29,7 +29,7 @@ import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 //   id, name, road_class, lanes, source  from segments.geojson
 //   speed       percent of free-flow speed
 //   level       'low', 'moderate' or 'high' (sets the line color), or null with no data
-//   congestion  0 (free flow) to 1 (standstill): 1 - speed / 100 (the heatmap weight)
+// and `limits`, the level limits in percent of free flow, for the Heatmap view
 const DATA_DIR = '/data/network'
 const QUARTER_HOUR = 15 * 60 * 1000
 
@@ -132,7 +132,6 @@ export async function getSegments(time = null) {
           source: p.source,
           speed: known ? speed : null,
           level: known ? levelOf(speed, index) : null,
-          congestion: known ? 1 - speed / 100 : 0,
         },
       }
     }),
