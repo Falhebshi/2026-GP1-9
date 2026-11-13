@@ -147,19 +147,43 @@ def test_study_area_sections():
     }
 
 
-def test_study_area_approach_paths_leave_out_slip_lanes():
+def test_study_area_signal_paths_leave_out_slip_lanes():
     """South: the signal lanes and the shared road behind them, not the bypass lanes."""
     config = load_network_mappings(MAPPING_PATH)
     sections = lane_sections(config, NETWORK_PATH)
     paths = approach_paths(config, NETWORK_PATH, sections)
     south = paths["APP_S"].to_stop_line_m
 
-    assert set(paths) == {"APP_E", "APP_N", "APP_S", "APP_W"}
-    assert {a: p.length_m for a, p in paths.items()} == {"APP_E": 388, "APP_W": 450, "APP_N": 500, "APP_S": 500}
+    assert set(paths) == {
+        "APP_E", "APP_N", "APP_S", "APP_W",
+        "APP_N/MOV_N_W_SLIP", "APP_S/MOV_S_E_BYPASS", "APP_W/MOV_W_S_SLIP",
+    }
+    assert {key: p.length_m for key, p in paths.items()} == {
+        "APP_E": 388, "APP_W": 450, "APP_N": 500, "APP_S": 500,
+        "APP_N/MOV_N_W_SLIP": 500, "APP_S/MOV_S_E_BYPASS": 500, "APP_W/MOV_W_S_SLIP": 450,
+    }
     assert set(sections["LANE_S_1"].to_stop_line_m) <= set(south)
     assert not set(sections["LANE_S_3"].to_stop_line_m) & set(south)
     assert not set(sections["LANE_W_4"].to_stop_line_m) & set(paths["APP_W"].to_stop_line_m)
     assert "E3_0" in south
+
+
+def test_study_area_slip_paths_continue_onto_the_shared_road():
+    """
+    The bypass path: its own lanes from the bypass end, then the shared
+    road behind them, without the signal lanes. The shared road's lanes
+    are measured from the bypass end, not from the signal stop line.
+    """
+    config = load_network_mappings(MAPPING_PATH)
+    sections = lane_sections(config, NETWORK_PATH)
+    paths = approach_paths(config, NETWORK_PATH, sections)
+    bypass = paths["APP_S/MOV_S_E_BYPASS"]
+
+    assert bypass.approach_id == "APP_S"
+    assert set(sections["LANE_S_3"].to_stop_line_m) <= set(bypass.to_stop_line_m)
+    assert not set(sections["LANE_S_1"].to_stop_line_m) & set(bypass.to_stop_line_m)
+    assert "E3_0" in bypass.to_stop_line_m
+    assert bypass.to_stop_line_m["E3_0"] != paths["APP_S"].to_stop_line_m["E3_0"]
 
 
 # ============================================================
@@ -179,8 +203,19 @@ def test_no_queue_when_no_queued_car_is_near_the_stop_line():
 
 
 def test_queue_reaching_the_section_start_is_capped_and_flagged():
-    """The back of the last car at 152.5 m, beyond the 150 m section."""
-    assert anchored_queue(queue_of(21), 150, 5.0) == (150, 21, True)
+    """
+    21 cars every 7.5 m from 1 m: the 21st car's front is at 151 m, past
+    the 150 m section. The queue is the whole section long, and only the
+    20 cars within it are counted.
+    """
+    assert anchored_queue(queue_of(21), 150, 5.0) == (150, 20, True)
+
+
+def test_count_stops_at_the_boundary_like_the_length():
+    """A car whose front is past the boundary is not counted, even when its back is not."""
+    queue = anchored_queue(queue_of(20) + [151.0, 158.5], 150, 5.0)
+
+    assert (queue.length_m, queue.vehicles, queue.reaches_section_end) == (150, 20, True)
 
 
 def test_queue_ending_within_10_m_of_the_section_start_is_flagged():
@@ -246,3 +281,84 @@ def test_approach_queue_reaching_the_zone_end_is_capped_and_flagged(tmp_path):
 def test_offset_that_is_not_whole_cycles_rejected(tmp_path):
     with pytest.raises(CycleQueueError, match="signal offset \\[30.0\\] is not a whole number of 60 s"):
         collect(tmp_path, {}, offset=30)
+
+
+# ============================================================
+# A SLIP LANE ON THE APPROACH
+# ============================================================
+
+def slip_network():
+    """
+    The signal lane a -> c as in network(), plus a slip lane b leaving
+    the shared road u through the junction lane :s:
+
+        u 100 m -> :s 10 m -> b 60 m (slip end) -> e
+    """
+    return network().replace("</net>", """  <edge id=":s" function="internal"><lane id=":s_0" index="0" length="10" speed="10"/></edge>
+  <edge id="b"><lane id="b_0" index="0" length="60" speed="10"/></edge>
+  <edge id="e"><lane id="e_0" index="0" length="50" speed="10"/></edge>
+  <connection from="u" to="b" fromLane="0" toLane="0" via=":s_0"/>
+  <connection from=":s" to="b" fromLane="0" toLane="0"/>
+  <connection from="b" to="e" fromLane="0" toLane="0"/>
+</net>""")
+
+
+SLIP_CONFIG = NetworkMappingConfig.model_validate({
+    **CONFIG.model_dump(mode="json"),
+    "approach_lanes": [
+        {"lane_id": "LANE_A", "approach_id": "APP_A", "lane_index": 1,
+         "served_movement_ids": ["MOV_A"], "lane_width_m": 3.5},
+        {"lane_id": "LANE_B", "approach_id": "APP_A", "lane_index": 2,
+         "served_movement_ids": ["MOV_B"], "lane_width_m": 3.5},
+    ],
+    "lane_mappings": [{"lane_id": "LANE_A", "sumo_lane_ids": ["a_0", "c_0"]},
+                      {"lane_id": "LANE_B", "sumo_lane_ids": ["b_0"]}],
+    "movement_mappings": CONFIG.model_dump(mode="json")["movement_mappings"] + [{
+        "movement_id": "MOV_B", "intersection_id": "INT_001", "approach_id": "APP_A",
+        "sumo_route_edge_ids": ["u", "b", "e"], "signal_controlled": False,
+    }],
+    "movement_attributes": [
+        {"movement_id": "MOV_A", "movement_type": "through", "control": "signalized"},
+        {"movement_id": "MOV_B", "movement_type": "right", "control": "uncontrolled"},
+    ],
+})
+
+SLIP_PATH = [("u_0", 100), (":s_0", 10), ("b_0", 60)]
+
+
+def slip_position(distance):
+    """SUMO lane and pos of a car front at a distance from the slip end."""
+    remaining = distance
+    for lane, length in reversed(SLIP_PATH):
+        if remaining <= length:
+            return lane, length - remaining
+        remaining -= length
+    return SLIP_PATH[0][0], 0.0
+
+
+def test_slip_queue_that_fills_its_lane_continues_onto_the_shared_road(tmp_path):
+    """
+    15 cars stopped every 7.5 m from 1 m before the slip end: the last
+    back at 1 + 14 x 7.5 + 5 = 111 m, 41 m back on the shared road u.
+    The slip lane sees only the cars on its 60 m section (the last back
+    at 58.5 m) and is flagged near its end; the approach queue follows
+    the queue onto the shared road to 111 m, inside the 240 m zone, so
+    it is measured.
+    """
+    (tmp_path / "net.xml").write_text(slip_network(), encoding="utf-8")
+    rows = ""
+    for i, distance in enumerate(queue_of(15)):
+        lane, pos = slip_position(distance)
+        rows += f'<vehicle id="V{i}" speed="0" pos="{pos}" lane="{lane}"/>'
+    steps = "".join(f'<timestep time="{round(n * 0.4, 1)}">{rows if n * 0.4 < 30 else ""}</timestep>'
+                    for n in range(450))
+    (tmp_path / "fcd.xml").write_text(f"<fcd-export>{steps}</fcd-export>", encoding="utf-8")
+
+    queues = collect_cycle_queues(SLIP_CONFIG, tmp_path / "net.xml", PROGRAM, tmp_path / "fcd.xml",
+                                  run_id="RUN", window=WINDOW, vehicle_length_m=5.0)
+    slip_lane = next(q for q in queues.lanes if q.lane_id == "LANE_B" and q.cycle_start == EPOCH)
+    approach = next(q for q in queues.approaches if q.cycle_start == EPOCH)
+
+    assert (slip_lane.max_queue_length_m, slip_lane.reaches_section_end) == (58.5, True)
+    assert approach.approach_id == "APP_A"
+    assert (approach.max_queue_length_m, approach.max_queue_vehicles, approach.reaches_zone_end) == (111, 15, False)

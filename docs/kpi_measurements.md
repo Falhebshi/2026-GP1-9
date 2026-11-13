@@ -39,7 +39,7 @@ Delay, queue duration and throughput are measured per vehicle while it passes th
 | North | 500 m | 65 m | 50 km/h |
 | South | 500 m | 65 m | 50 km/h |
 
-The upstream distances come from the Approach Study Distances Reference. A queue that reaches the zone end makes the approach's measured values `unavailable` (section 5.6). If East's queue reaches its zone end in runs with real peak demand, East's zone can be extended: the modelled East road starts about 855 m before the stop line. The distances are stored on each approach in `network_mappings.json` (`zone_upstream_m`, `zone_downstream_m`; see [Network mapping](network_mapping.md#measurement-zones)), and the network validator checks that every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
+The upstream distances come from the Approach Study Distances Reference. A queue near the zone end makes the approach's measured values `unavailable` (section 5.6). If East's queue comes near its zone end in runs with real peak demand, East's zone can be extended: the modelled East road starts about 855 m before the stop line. The distances are stored on each approach in `network_mappings.json` (`zone_upstream_m`, `zone_downstream_m`; see [Network mapping](network_mapping.md#measurement-zones)), and the network validator checks that every movement's route starts before its zone and continues beyond it, so each zone lies entirely inside the modelled network.
 
 A vehicle's zone is therefore the upstream part, the path through the junction, and the downstream part. The path through the junction differs by movement (about 46–70 m for the signalised movements and under 8 m for the slips), so the zone length differs by movement. Within a movement it differs by a few metres with the lane a vehicle uses through the junction (for `MOV_E_S`, about 589–593 m).
 
@@ -222,27 +222,26 @@ The queue is **anchored at the stop line**: it starts with a queued vehicle whos
 
 Example: 8 cars stopped every 7.5 m from 1 m before the stop line give a queue of 1 + 7 × 7.5 + 5 = 58.5 m and 8 vehicles. A group of slow cars at 75–95 m, more than 10 m behind, is not part of it.
 
-## 5.4 Queues that reach the section end
+## 5.4 Queues near the section end
 
-When the back of a lane's queue is less than 10 m from the start of its section, the queue may continue upstream, where lanes merge and a queued vehicle belongs to the approach but to no single lane. The lane's queue is then capped at the section length and the record is marked `reaches_section_end`; the KPI engine reports the lane's queue and storage ratio as `unavailable`, and the full queue is measured on the approach (KPI engine sections 6.8 and 13.1).
+When the back of a lane's queue is less than 10 m from the start of its section, the queue is **near the measurement limit**: it may continue upstream, where lanes merge and a queued vehicle belongs to the approach but to no single lane. The flag shows proximity, not that the queue went past the boundary. The lane's queue is then capped at the section length, only vehicles whose front is within the section are counted, so the count covers the same stretch as the length, and the record is marked `reaches_section_end`; the KPI engine reports the lane's queue and storage ratio as `unavailable`, and the full queue is measured on the approach (KPI engine sections 6.8 and 13.1).
 
 ## 5.5 Records
 
-One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue reached the section end during the cycle. A cycle without a queue is a measured 0.
+One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue came near the section end during the cycle. A cycle without a queue is a measured 0.
 
 ## 5.6 Approach queue
 
-The full queue of an approach answers how far back from the signal its queue reaches, over the approach's whole upstream zone (`zone_upstream_m`: East 388 m, West 450 m, North and South 500 m) and across the points where its lanes merge. It is measured with the same rules as the lane queues (sections 5.2 and 5.3), anchored at the **signal stop line**, over:
+The full queue of an approach answers how far back its queues reach, over the approach's whole upstream zone (`zone_upstream_m`: East 388 m, West 450 m, North and South 500 m) and across the points where its lanes merge. It is measured with the same rules as the lane queues (sections 5.2 and 5.3) along several paths, each up to the zone length:
 
-- the sections of the lanes that serve the approach's signalised movements;
-- the route edges behind them, back to the zone start;
-- the junction lanes between those edges, each with its own length (on West, 9.8–12.7 m by lane at the first junction).
+- **the signal path**, anchored at the **signal stop line**: the sections of the lanes that serve the approach's signalised movements, the route edges behind them back to the zone start, and the junction lanes between those edges, each with its own length (on West, 9.8–12.7 m by lane at the first junction);
+- **one path per slip or bypass**, anchored at the **end of its own lanes**: its lanes' sections, then the shared approach road behind them in the same way. A slip queue that fills its lanes continues onto the shared road, and is followed there.
 
-Slip and bypass lanes are left out; their queues are lane queues. Vehicles on the road behind the signal lanes count whichever way they turn: a vehicle heading for a slip that waits behind the signal queue is part of it.
+At each moment, the approach's queue is the longest of its paths' queues. Vehicles on the shared road count whichever way they turn: a vehicle heading for a slip that waits behind the signal queue is part of the signal queue, and one waiting behind a slip queue is part of the slip's. Slip and bypass lanes also keep their own lane queues (section 5.1).
 
-When the back of the queue is less than 10 m from the far end of the zone, the queue may continue beyond what is measured: it is capped at the zone length and the record is marked `reaches_zone_end`. The KPI engine then reports the approach's queue, measured delay and queue duration as `unavailable` (KPI engine section 13.7).
+When the back of a path's queue is less than 10 m from the far end of the zone, the queue is near the measurement limit and may continue beyond it: it is capped at the zone length, with only vehicles whose front is within the zone counted, and the record is marked `reaches_zone_end`. The KPI engine then reports the approach's queue, measured delay and queue duration as `unavailable` (KPI engine section 13.7).
 
-One `ApproachCycleQueueRecord` (data model section 4.6) is written for every approach with signalised movements and every whole signal cycle of the run, with the longest queue of the cycle in metres and vehicles. An approach's queue continues its lanes' queues, so it is never shorter than the queue of one of its signal lanes in the same cycle, unless it reached its zone end: it stops there, while East's lane sections run 6.8 m further back (394.8 m against the 388 m zone, section 5.1). Both values are then `unavailable`.
+One `ApproachCycleQueueRecord` (data model section 4.6) is written for every approach with analysed movements and every whole signal cycle of the run, with the longest queue of the cycle in metres and vehicles. An approach's queue continues its lanes' queues, so it is never shorter than the queue of one of its signal lanes in the same cycle, unless it came near its zone end: it stops there, while East's lane sections run 6.8 m further back (394.8 m against the 388 m zone, section 5.1). Both values are then `unavailable`.
 
 ---
 
@@ -254,7 +253,7 @@ One `ApproachCycleQueueRecord` (data model section 4.6) is written for every app
 2. every vehicle that arrived in its zone during the analysis period has left it by the end of the run, so the clearance is long enough;
 3. no vehicle's time loss in its zone exceeds its time loss over the whole trip reported by SUMO (tripinfo `timeLoss`) by more than one FCD period, since the zone is part of the trip;
 4. every canonical lane and every signalised approach has a queue record for every whole signal cycle of the run, since a missing record would be reported as unavailable;
-5. no approach's queue is shorter than the queue of one of its signal lanes in the same cycle, unless it reached its zone end (section 5.6).
+5. no approach's queue is shorter than the queue of one of its signal lanes in the same cycle, unless it came near its zone end (section 5.6).
 
 The records are saved as `vehicle_delay_records.json`, `incomplete_passages.json`, `uninserted_vehicles.json`, `cycle_queue_records.json` and `approach_cycle_queue_records.json`, with a `summary.json`, in `simulation/outputs/tests/kpi_measurement_check/`, which is not committed. The script exits with 0 when all rules pass, 1 when a rule fails, and 2 when the check cannot run.
 
