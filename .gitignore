@@ -32,3 +32,10 @@ Thumbs.db
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db
 /data/synthetic_traffic/*.db-*
+
+# OpenStreetMap download for the network map (rebuild with the Overpass query)
+/data/raw/network/
+
+# Network map files built from the RCRC daily pattern: kept off GitHub
+# until RCRC allows publishing (python -m jaadah.network_congestion.synthetic)
+/frontend/public/data/network/

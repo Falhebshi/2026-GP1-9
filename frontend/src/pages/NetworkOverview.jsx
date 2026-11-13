@@ -8,7 +8,13 @@ import NetworkMap from '../components/NetworkMap'
 import Notice from '../components/Notice'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
-import { getNetwork, getNetworkTimeline, getSegments } from '../services/networkService'
+import {
+  getAvailableDays,
+  getNetwork,
+  getNetworkTimeline,
+  getOpeningTime,
+  getSegments,
+} from '../services/networkService'
 import './NetworkOverview.css'
 
 // Network Traffic Overview: the city map with road congestion, a list of intersections by
@@ -29,18 +35,25 @@ const DAY = 24 * 60 * 60 * 1000
 const pad = (n) => String(n).padStart(2, '0')
 const hourLabel = (h) => `${pad(h)}:00`
 
-// the last 7 days, today first ('' means today, so the timeline follows live data)
-function dayOptions(now) {
+const dayLabel = (d) =>
+  d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+
+// The days to pick from, newest first. With network data, the days that have it ('' is the
+// newest); without, the last 7 days ('' is today, so the timeline follows live data).
+function dayOptions(now, availableDays) {
+  if (availableDays.length) {
+    const today = new Date(now)
+    const todayValue = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    return [...availableDays].reverse().map((day, i) => ({
+      value: i === 0 ? '' : day,
+      label: day === todayValue ? 'Today' : dayLabel(new Date(`${day}T12:00:00`)),
+    }))
+  }
   const options = [{ value: '', label: 'Today' }]
   for (let back = 1; back < 7; back++) {
     const d = new Date(now - back * DAY)
     const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    const label = d.toLocaleDateString('en-GB', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    })
-    options.push({ value, label })
+    options.push({ value, label: dayLabel(d) })
   }
   return options
 }
@@ -67,6 +80,8 @@ function NetworkOverview() {
   const [error, setError] = useState(null) // the error message, if loading failed
   const [bars, setBars] = useState([])
   const [segments, setSegments] = useState(null)
+  const [availableDays, setAvailableDays] = useState([]) // days with network data
+  const [timelineOpen, setTimelineOpen] = useState(false) // closed, so the map gets the room
   const timelineRef = useRef(null)
   const sideRef = useRef(null)
   const [timelineHeight, setTimelineHeight] = useState(0)
@@ -83,6 +98,13 @@ function NetworkOverview() {
       .catch((err) => {
         if (!cancelled) setError(err.message)
       })
+
+    // with network data, open on the current time of day on the newest day
+    Promise.all([getAvailableDays(), getOpeningTime()]).then(([days, opening]) => {
+      if (cancelled) return
+      setAvailableDays(days)
+      if (opening) setTime(opening)
+    })
 
     return () => {
       cancelled = true
@@ -129,7 +151,7 @@ function NetworkOverview() {
 
   function changeDay(value) {
     setDay(value)
-    // keep the same hour on the new day
+    // keep the same hour on the new day; '' (the newest day) goes to the latest data
     if (value) setTime(`${value}T${pad(shown.getHours())}:00:00`)
     else setTime(null)
   }
@@ -162,12 +184,13 @@ function NetworkOverview() {
     return <EmptyState>Loading the network…</EmptyState>
   }
 
-  const { bounds, intersections } = network
+  const { bounds, maxBounds, intersections } = network
 
   return (
     <div className="network-overview" style={{ '--map-bottom-inset': `${timelineHeight + 32}px` }}>
       <NetworkMap
         bounds={bounds}
+        maxBounds={maxBounds}
         segments={segments}
         view={view}
         intersections={intersections}
@@ -188,7 +211,9 @@ function NetworkOverview() {
 
         {network.isSample && (
           <Notice variant="warning">
-            Sample data for layout only: the congestion levels on the map are illustrative.
+            {availableDays.length
+              ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
+              : 'Sample data for layout only: the congestion levels on the map are illustrative.'}
           </Notice>
         )}
 
@@ -217,46 +242,70 @@ function NetworkOverview() {
         />
       </div>
 
-      <div className="network-overview-timeline" ref={timelineRef}>
-        <HistoricalTimeline
-          title="Traffic Timeline"
-          bars={bars}
-          value={time}
-          onChange={(value) => {
-            // the Latest button (or the newest bar) goes back to today's live data
-            if (value === null) {
-              setDay('')
-              setTime(null)
-            } else setTime(value)
-          }}
-          className="card-floating"
+      <div
+        className={`network-overview-timeline${timelineOpen ? '' : ' network-overview-timeline-closed'}`}
+        ref={timelineRef}
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          className="network-overview-timeline-toggle"
+          aria-expanded={timelineOpen}
+          onClick={() => setTimelineOpen((open) => !open)}
         >
-          <Select
-            label="Past time"
-            size="sm"
-            options={dayOptions(now)}
-            value={day}
-            onChange={changeDay}
-          />
-          <Select
-            ariaLabel="Hour"
-            size="sm"
-            options={hourOptions}
-            value={String(shown.getHours())}
-            onChange={(h) => goToHour(Number(h))}
-          />
-          <span className="network-overview-divider" />
-          {PEAKS.map((peak) => (
-            <Button
-              key={peak.id}
+          <svg
+            className="network-overview-chevron"
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            aria-hidden="true"
+          >
+            <path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          {timelineOpen ? 'Hide timeline' : 'Traffic timeline'}
+        </Button>
+
+        {timelineOpen && (
+          <HistoricalTimeline
+            title="Traffic Timeline"
+            bars={bars}
+            value={time}
+            onChange={(value) => {
+              // the Latest button (or the newest bar) goes back to today's live data
+              if (value === null) {
+                setDay('')
+                setTime(null)
+              } else setTime(value)
+            }}
+            className="card-floating"
+          >
+            <Select
+              label="Past time"
               size="sm"
-              variant={activePeak === peak ? 'primary' : 'secondary'}
-              onClick={() => goToHour(peak.from)}
-            >
-              {peak.label} · {hourLabel(peak.from)}–{hourLabel(peak.to)}
-            </Button>
-          ))}
-        </HistoricalTimeline>
+              options={dayOptions(now, availableDays)}
+              value={day}
+              onChange={changeDay}
+            />
+            <Select
+              ariaLabel="Hour"
+              size="sm"
+              options={hourOptions}
+              value={String(shown.getHours())}
+              onChange={(h) => goToHour(Number(h))}
+            />
+            <span className="network-overview-divider" />
+            {PEAKS.map((peak) => (
+              <Button
+                key={peak.id}
+                size="sm"
+                variant={activePeak === peak ? 'primary' : 'secondary'}
+                onClick={() => goToHour(peak.from)}
+              >
+                {peak.label} · {hourLabel(peak.from)}–{hourLabel(peak.to)}
+              </Button>
+            ))}
+          </HistoricalTimeline>
+        )}
       </div>
     </div>
   )
