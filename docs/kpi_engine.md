@@ -238,6 +238,10 @@ The queue storage ratio is a queue divided by the lane's storage length (`Approa
 
 When the storage length of a lane is not known, the queue length is still reported and only the storage ratio is `unavailable`, with the reason "the lane has no storage length". When the lane's queue reached the end of its section (section 6.8), the storage ratio is `unavailable` too.
 
+**Which lanes have a storage length.** A storage length is set only for a lane that really ends near the stop line: a turn bay, a lane that begins where the road splits, or a slip road. Example: South through lanes 1 and 2 begin where the road splits into through and slip lanes, 86.3 m before the stop line, so a queue longer than 86.3 m blocks the split. A lane that continues upstream beyond its section (section 6.8) has no storage length: the end of its section is only where the network edge was cut, not a limit on the queue (North left lane 1 has an 82 m section but continues about 625 m upstream; a storage length of 82 m would turn a 70 m queue into a misleading ratio of 0.85). Such a lane's queue reaching its section end is reported through the section rule (section 6.8) and the approach's full-zone queue.
+
+**Where the storage ratio is shown.** Every approach has at least one continuous lane, so approach and intersection storage ratios are always `unavailable` (section 11). The storage ratio is therefore kept in `kpis_all.json`, for analysis and before-and-after comparisons, and left out of the current-traffic page (`kpis.json`, section 16.4).
+
 ## 6.6 Missing records are not zero queues
 
 A record is written for every cycle, including cycles with no queue, which are recorded as 0 m. A reported 0 m is a measured zero and is reported as `ok` with a value of 0. When a lane has **no** cycle record in an interval, its data is missing, and its queue is `unavailable` with the reason "no cycle records for this lane in this interval"; it is never reported as 0.
@@ -442,6 +446,8 @@ The demand v of a movement in an interval is its `SimulationDemand` vehicle coun
 ## 9.8 Origin of the signal timing
 
 The `input_origins` of capacity and volume-to-capacity results follow `SignalProgram.source`: a program with source `observed` is labelled *observed*; `baseline_model` and `intervention` are labelled *modelled assumption*.
+
+The baseline signal program (`data/processed/traffic_signals/jaadah_tls_program.xml`: four phases, greens of 40, 15, 30 and 15 s, cycle 120 s) was built for the model; its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
 
 ## 9.9 Scope limitation: passenger cars only
 
@@ -679,7 +685,8 @@ Stop-line counts count vehicles as they are served: in an overloaded interval fe
 - **Instantaneous lane changes:** no lane-change duration is set, so a vehicle never blocks two lanes while changing lanes.
 - **Passenger cars only:** no heavy vehicles or buses (section 9.9).
 - **Signal patterns:** one green per movement and cycle; permitted left turns, several greens per cycle and greens lasting the whole cycle have no HCM delay (sections 9.3, 9.5, 10.1). Plans with overlapping phases, where a movement stays green from one phase into the next, are rejected when the signal program is built ([KPI measurements](kpi_measurements.md), section 3.1).
-- **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`.
+- **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are set only for lanes that end near the stop line (section 6.5), so every result carries *modelled assumption* and the storage ratio of every other lane, and of every approach and the intersection, is `unavailable`.
+- **Modelled signal timing:** the baseline signal program was built for the model, not taken from the controller (section 9.8).
 - **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
 
 ---
@@ -760,8 +767,8 @@ Two files, each holding the run it belongs to and results in the dashboard form 
 
 | File | Results |
 | --- | --- |
-| `kpis.json` | What the current-traffic page shows: one result per KPI, element and 15-minute interval, for movements, approaches and the intersection. Control delay and level of service are the measured ones; queue length is in metres |
-| `kpis_all.json` | Every result of section 16.3, including the HCM delay and level of service, queues in vehicles, lane results and whole-period queues |
+| `kpis.json` | What the current-traffic page shows: one result per KPI, element and 15-minute interval, for movements, approaches and the intersection. Control delay and level of service are the measured ones; queue length is in metres; queue storage ratio is left out (section 6.5) |
+| `kpis_all.json` | Every result of section 16.3, including the HCM delay and level of service, queues in vehicles, queue storage ratio, lane results and whole-period queues |
 
 The page looks results up by KPI name and interval start, so `kpis.json` must not hold two results with the same KPI, element and interval start: the HCM delay would replace the measured one, a queue in vehicles one in metres, and a whole-period queue the first interval's.
 
