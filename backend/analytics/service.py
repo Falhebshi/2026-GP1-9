@@ -222,10 +222,6 @@ class _Calculation:
         self.slips = {
             m for m, a in self.attributes.items() if a.control == MovementControl.UNCONTROLLED
         }
-        self.slip_lane_ids = {
-            lane.lane_id for lane in self.lanes
-            if set(lane.served_movement_ids) <= self.slips
-        }
         self.passages = passages
         self.queues = queues
         self.out: list[KpiResult] = []
@@ -234,8 +230,8 @@ class _Calculation:
         run_id = self.run.run_id
 
         lane_queues = interval_queues(run_id, [l.lane_id for l in self.lanes], self.intervals, self.queues.lanes)
-        # Approaches with signalised movements have full-zone queues; an
-        # approach without (none in the study area) has only slip lanes.
+        # Every approach with an analysed movement has a full-zone queue
+        # (its signal path and its slips' paths, kpi_measurements.md 5.6).
         signal_approaches = sorted({q.approach_id for q in self.queues.approaches})
         approach_queues = approach_interval_queues(
             run_id, signal_approaches, self.intervals, self.queues.approaches,
@@ -343,7 +339,7 @@ class _Calculation:
         for unit in (M, VEH):
             rolled = queue_rollup(
                 self.lanes, self.movements, lane_queues, interval,
-                approach_queues=all_approaches, slip_lane_ids=self.slip_lane_ids,
+                approach_queues=all_approaches,
                 blocked=blocked, unit="m" if unit == M else "veh",
             )
             self._queue_results(KpiName.QUEUE_LENGTH, unit, interval, rolled)

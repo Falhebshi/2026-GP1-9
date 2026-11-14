@@ -109,7 +109,7 @@ def test_unavailable_runs_with_different_reasons_give_the_count_only():
     values = {
         "R1": ok(30),
         "R2": RunValue(UNAVAILABLE, None, "incomplete passages"),
-        "R3": RunValue(UNAVAILABLE, None, "queue reached the zone end"),
+        "R3": RunValue(UNAVAILABLE, None, "the queue is near the end of the measurement zone"),
     }
 
     result = combine_runs(delay_spec(), values)
@@ -329,22 +329,22 @@ def test_approach_queue_is_its_full_zone_queue_combined_over_the_runs():
     assert out[("movement", "MOV_E_T")].result.value == pytest.approx(100)
 
 
-def test_approach_takes_a_longer_slip_lane_and_intersection_the_longest_approach():
-    """LANE_S_2 stands in for a slip lane here."""
+def test_lane_queues_are_not_added_at_the_approach_and_intersection_is_the_longest_approach():
+    """A long lane queue stays on its lane; the approach is its full-zone queue."""
 
     out = queue_from_lanes(
         lane_results(LANE_S_2=[200, 200, 200]), QUEUE_LANES, MOVEMENT_MODELS,
-        approach_results=approach_results(), slip_lane_ids={"LANE_S_2"},
+        approach_results=approach_results(),
     )
 
-    assert out[("approach", "APP_S")].lane_id == "LANE_S_2"
-    assert out[("approach", "APP_S")].result.value == pytest.approx(200)
-    assert out[("intersection", "INT_01")].result.value == pytest.approx(200)
-    assert out[("intersection", "INT_01")].lane_id == "LANE_S_2"
+    assert out[("approach", "APP_S")].lane_id is None
+    assert out[("approach", "APP_S")].result.value == pytest.approx(90)
+    assert out[("intersection", "INT_01")].result.value == pytest.approx(150)
+    assert out[("movement", "MOV_S_T")].result.value == pytest.approx(200)
 
 
 def test_unavailable_approach_queue_keeps_its_reason():
-    reason = "the queue reached the end of the measurement zone"
+    reason = "the queue is near the end of the measurement zone"
     results = approach_results(APP_E=approach_result("APP_E", [], UNAVAILABLE, reason))
 
     out = queue_from_lanes(

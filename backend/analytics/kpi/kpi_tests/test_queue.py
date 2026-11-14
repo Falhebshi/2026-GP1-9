@@ -348,7 +348,7 @@ def test_checks_also_apply_to_percentile():
 
 
 # ============================================================
-# CUT-OFF CYCLES (queue reached the end of what was measured)
+# CUT-OFF CYCLES (queue near the end of what was measured)
 # ============================================================
 
 def test_interval_with_a_cut_off_cycle_reaches_the_end():
@@ -370,7 +370,7 @@ def test_interval_without_cut_off_cycles_does_not_reach_the_end():
 def records_for_period(cut_off_count):
     """
     20 cycles (10 per interval) of 10, 20, ... 200 m; the longest
-    cut_off_count of them reached the section end.
+    cut_off_count of them came near the section end.
     """
 
     records = []

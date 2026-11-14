@@ -25,7 +25,6 @@ from backend.analytics.kpi.rollup import (
     NOTHING_TO_COMBINE_REASON,
     NO_STORAGE_LENGTH_REASON,
     PART_UNAVAILABLE_REASON,
-    SLIP_SECTION_END_REASON,
     Part,
     combine_highest,
     combine_sum,
@@ -110,9 +109,6 @@ def all_queues(**overrides):
     return {(lane_id, INTERVAL): q for lane_id, q in values.items()}
 
 
-SLIP_LANE_IDS = {lane.lane_id for lane in SLIP_LANES}
-
-
 def all_approach_queues(**overrides):
     """Every approach's full-zone queue 40 m / 6 veh, except the overrides."""
 
@@ -125,7 +121,7 @@ def queues_out(lanes=None, approaches=None, blocked=None, unit="m"):
     return queue_rollup(
         ALL_LANES, MOVEMENTS, lanes or all_queues(), INTERVAL,
         approach_queues=approaches or all_approach_queues(),
-        slip_lane_ids=SLIP_LANE_IDS, blocked=blocked, unit=unit,
+        blocked=blocked, unit=unit,
     )
 
 
@@ -152,11 +148,11 @@ def test_one_unavailable_part_makes_the_result_unavailable():
 def test_shared_reason_of_unavailable_parts_is_kept():
     result = combine_highest([
         Part(OK, 10),
-        Part(UNAVAILABLE, None, reason="the queue reached the zone end"),
-        Part(UNAVAILABLE, None, reason="the queue reached the zone end"),
+        Part(UNAVAILABLE, None, reason="the queue is near the end of the measurement zone"),
+        Part(UNAVAILABLE, None, reason="the queue is near the end of the measurement zone"),
     ])
 
-    assert result.reason == "the queue reached the zone end"
+    assert result.reason == "the queue is near the end of the measurement zone"
 
 
 def test_different_part_reasons_give_the_general_reason():
@@ -270,7 +266,7 @@ def test_unavailable_movement_makes_approach_and_intersection_unavailable():
 
 
 def test_movement_reason_reaches_approach_and_intersection():
-    reason = "the queue reached the end of the measurement zone"
+    reason = "the queue is near the end of the measurement zone"
     delays = all_delays(
         MOV_W_T=delay(None, 10, status=UNAVAILABLE, reason=reason),
         MOV_W_L=delay(None, 4, status=UNAVAILABLE, reason=reason),
@@ -352,11 +348,14 @@ def test_approach_queue_is_its_full_zone_queue():
     assert out[("lane", "LANE_E_3")].value == 85
 
 
-def test_approach_takes_a_longer_slip_lane():
+def test_slip_lane_queue_is_not_added_at_the_approach():
+    """The full-zone queue already covers the slip, followed onto the shared road."""
+
     out = queues_out(lanes=all_queues(LANE_N_SLIP=LaneQueue(95.0, 14)))
 
-    assert out[("approach", "APP_N")].value == 95
-    assert out[("approach", "APP_N")].measured_on_lane_id == "LANE_N_SLIP"
+    assert out[("approach", "APP_N")].value == 40
+    assert out[("approach", "APP_N")].measured_on_lane_id is None
+    assert out[("lane", "LANE_N_SLIP")].value == 95
 
 
 def test_intersection_is_the_longest_approach():
@@ -382,18 +381,17 @@ def test_shared_tag_only_when_longest_lane_is_shared():
 
 
 def test_metres_and_vehicles_are_each_the_longest_separately():
-    """A long zone queue of large gaps and a short slip queue of many cars."""
+    """A long lane queue of large gaps and a short lane queue of many cars."""
 
-    lanes = all_queues(LANE_S_SLIP=LaneQueue(70.0, 11))
-    approaches = all_approach_queues(APP_S=LaneQueue(80.0, 8))
+    lanes = all_queues(LANE_S_1=LaneQueue(80.0, 8), LANE_S_SLIP=LaneQueue(70.0, 11))
 
-    metres = queues_out(lanes=lanes, approaches=approaches, unit="m")
-    vehicles = queues_out(lanes=lanes, approaches=approaches, unit="veh")
+    metres = queues_out(lanes=lanes, unit="m")
+    vehicles = queues_out(lanes=lanes, unit="veh")
 
-    assert metres[("approach", "APP_S")].measured_on_lane_id is None
-    assert metres[("approach", "APP_S")].value == 80
-    assert vehicles[("approach", "APP_S")].measured_on_lane_id == "LANE_S_SLIP"
-    assert vehicles[("approach", "APP_S")].value == 11
+    assert metres[("lane", "LANE_S_1")].value == 80
+    assert vehicles[("lane", "LANE_S_SLIP")].value == 11
+    assert metres[("approach", "APP_S")].value == 40
+    assert vehicles[("approach", "APP_S")].value == 6
 
 
 def test_lane_without_records_makes_its_movements_unavailable():
@@ -416,11 +414,14 @@ def test_lane_queue_past_its_section_points_to_the_approach_queue():
     assert out[("approach", "APP_E")].status == OK
 
 
-def test_slip_lane_past_its_section_makes_the_approach_unavailable():
+def test_slip_lane_near_its_section_end_leaves_the_approach_measured():
+    """The approach's full-zone queue follows the slip queue onto the shared road."""
+
     out = queues_out(lanes=all_queues(LANE_N_SLIP=LaneQueue(60.0, 9, reaches_end=True)))
 
-    assert out[("approach", "APP_N")].status == UNAVAILABLE
-    assert out[("approach", "APP_N")].reason == SLIP_SECTION_END_REASON
+    assert out[("lane", "LANE_N_SLIP")].reason == SECTION_END_REASON
+    assert out[("movement", "MOV_N_R")].reason == SECTION_END_REASON
+    assert out[("approach", "APP_N")].status == OK
 
 
 def test_queue_at_the_zone_end_makes_approach_and_intersection_unavailable():
