@@ -87,6 +87,8 @@ Each approach has its own measurement zone, measured from the stop line:
 | North | 0–500 m | ≈65 m | 50 km/h |
 | South | 0–500 m | ≈65 m | 50 km/h |
 
+The zones replace an earlier fixed 250 m; why each distance was chosen is in [KPI measurements](kpi_measurements.md), section 1.
+
 Delay is measured per vehicle over the whole zone. Per-lane queues are measured over each lane's own section (its lane chain), and the full queue of an approach over the whole upstream zone (section 13.1).
 
 Lane numbers in Jaadah count from the median (`ApproachLane.lane_index` 1 is the lane next to the median). Field references that count from the kerb are converted before use.
