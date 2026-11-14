@@ -32,7 +32,7 @@ from backend.analytics.trends_page import (
 )
 from jaadah.models.kpis import KpiResult
 from test_history import measurements as one_day_measurements
-from test_trends import ALL_SLOTS_SET, car, cycles, stored_day
+from test_trends import ALL_SLOTS_SET, car, cycles, demand, stored_day
 
 
 FIRST, LAST = date(2026, 11, 3), date(2026, 11, 9)
@@ -191,6 +191,55 @@ def test_the_peak_window_is_unknown_when_a_slot_is_unavailable():
     assert peak["status"] == "unavailable"
     assert "17:00" in peak["reason"]
     assert peak["interval_start"] is None
+
+
+def test_peak_vc_keeps_the_shared_lane_group_of_its_interval():
+    """
+    data_models.md section 6.7: a movement's HCM value measured on a
+    shared lane group names it in measured_on_lane_group_id, and the
+    group can change from interval to interval (it depends on how the
+    flow is assigned). Every day East has 50 left + 50 through vehicles
+    per 15 minutes, and 300 left + 50 through at 17:30. The engine gives:
+
+                         light intervals          17:30 (the peak)
+        left  MOV_E_W    0.166, no lane group     0.663 on APP_E_LT
+        thru  MOV_E_S    0.164 on APP_E_LT        0.332, no lane group
+
+    The period's peak v/c must carry the attribution of the peak
+    interval itself, after aggregation and after compact expansion.
+    """
+
+    east = ["MOV_E_W", "MOV_E_S"]
+    peak_slot = 70                                   # 17:30-17:45
+    stored = {
+        d: stored_day(
+            d, cars=[car(d, 1, "07:31:00", 30, 5)], queues=cycles(d, ALL_SLOTS_SET),
+            demands=[
+                demand(d, m, s, 300 if (m == "MOV_E_W" and s == peak_slot) else 50)
+                for m in east for s in range(96)
+            ],
+        )
+        for d in WEEK
+    }
+    trends = build_trends(stored, 7, "all")
+    packed = compact_trends(trends)
+
+    def peak_vc(payload, movement_id):
+        approach = next(a for a in payload["breakdown"]["whole-day"]["approaches"] if a["approach_id"] == "APP_E")
+        movement = next(m for m in approach["movements"] if m["movement_id"] == movement_id)
+        return movement["results"]["volume_to_capacity_ratio"]
+
+    for payload, unpack in ((trends, lambda r: r), (packed, lambda r: expand_result(r, packed["resultDefaults"]))):
+        left, through = unpack(peak_vc(payload, "MOV_E_W")), unpack(peak_vc(payload, "MOV_E_S"))
+
+        assert left["value"] == pytest.approx(0.663, abs=0.001)
+        assert left["interval_start"] == "2026-11-03T17:30:00+03:00"
+        assert left["measured_on_lane_group_id"] == "APP_E_LT"
+        assert left["is_shared_value"] is True
+
+        assert through["value"] == pytest.approx(0.332, abs=0.001)
+        assert through["measured_on_lane_group_id"] is None
+        assert through["is_shared_value"] is False
 
 
 # ============================================================
