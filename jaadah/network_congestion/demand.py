@@ -7,8 +7,10 @@ This script estimates it with weighted network centrality: trips are
 sent from where people live to where they go, along the fastest roads,
 and a segment's demand is the share of those trips that use it.
 Centrality of this kind is shown to follow measured traffic volumes
-closely (e.g. the Colombo AADT study, validation R^2 = 0.93; Lowry,
-Journal of Transport Geography, 2014).
+closely: Lowry's origin-destination centrality estimated annual
+average daily traffic with an out-of-sample R^2 of 0.95 (Lowry,
+Journal of Transport Geography 36, 2014,
+doi:10.1016/j.jtrangeo.2014.03.007).
 
 Inputs, all open data (data/raw/network/, not committed):
 

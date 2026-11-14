@@ -20,9 +20,13 @@ from datetime import datetime, timedelta
 from threading import Event
 
 from jaadah.network_congestion.parameters import (
+    EVENING_DEMAND_FROM_HOUR,
     HISTORY_DAYS,
     INTERVAL_S,
+    MORNING_DEMAND_UNTIL_HOUR,
     SEED,
+    TOMTOM_HOURS,
+    TOMTOM_TRAVEL_TIME_10KM_S,
 )
 from jaadah.network_congestion.storage import (
     RIYADH,
@@ -60,12 +64,27 @@ def next_interval_boundary(now: datetime) -> datetime:
 
 
 def source_metadata(city: City) -> SourceMetadata:
-    """Return the settings and input fingerprint the values are built from."""
+    """
+    Return the settings and input fingerprint the values are built from.
+
+    The fingerprint covers everything a stored speed depends on: the
+    seed, the segments, the corridor factors (so the demand too), the
+    RCRC measures, the TomTom table and the morning/evening hours. If
+    any of them changes, old rows would no longer match new ones.
+    """
 
     fingerprint = hashlib.sha256()
-    fingerprint.update(str(SEED).encode())
-    fingerprint.update(",".join(s.segment_id for s in city.segments).encode())
-    fingerprint.update(repr(city.measures).encode())
+
+    for part in (
+        SEED,
+        ",".join(s.segment_id for s in city.segments),
+        sorted(city.factors.items()),
+        city.measures,
+        TOMTOM_HOURS,
+        sorted(TOMTOM_TRAVEL_TIME_10KM_S.items()),
+        (MORNING_DEMAND_UNTIL_HOUR, EVENING_DEMAND_FROM_HOUR),
+    ):
+        fingerprint.update(repr(part).encode())
 
     return SourceMetadata(
         seed=SEED,

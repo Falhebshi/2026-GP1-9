@@ -153,6 +153,15 @@ def test_other_inputs_are_refused(storage):
         )
 
 
+def test_a_changed_parameter_changes_the_fingerprint(city, monkeypatch):
+    import jaadah.network_congestion.producer as producer
+
+    before = source_metadata(city).inputs
+    monkeypatch.setattr(producer, "MORNING_DEMAND_UNTIL_HOUR", 10)
+
+    assert source_metadata(city).inputs != before
+
+
 def test_run_forever_stops(city, storage):
     stop = Event()
     stop.set()

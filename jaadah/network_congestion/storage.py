@@ -49,9 +49,9 @@ class SourceMetadata:
     """
     What the stored values were built from.
 
-    inputs is a fingerprint (SHA-256) of the segment IDs and the RCRC
-    measures, so values built from other inputs are never mixed in. It
-    does not reveal the measures.
+    inputs is a fingerprint (SHA-256) of everything a speed depends on
+    (producer.source_metadata), so values built from other inputs are
+    never mixed in. It does not reveal the RCRC measures.
     """
 
     seed: int
@@ -147,9 +147,10 @@ class NetworkSpeedStorage:
 
         if stored != expected:
             raise ValueError(
-                f"{self.database_path} was built from other inputs (seed, "
-                "segments or RCRC measures changed). Delete it and start "
-                "the server again to rebuild the last 7 days."
+                f"{self.database_path} was built from other inputs (the "
+                "segments, demand, parameters.py or the RCRC measures "
+                "changed). Delete it and start the server again to "
+                "rebuild the last 7 dates."
             )
 
     def insert_intervals(self, intervals: list[IntervalSpeeds]) -> None:
