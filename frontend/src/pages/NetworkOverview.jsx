@@ -15,6 +15,7 @@ import {
   getOpeningTime,
   getSegments,
 } from '../services/networkService'
+import { RIYADH_TIME_ZONE, riyadhParts, riyadhTime } from '../utils/riyadhTime'
 import './NetworkOverview.css'
 
 // Network Traffic Overview: the city map with road congestion, a list of intersections by
@@ -35,25 +36,30 @@ const DAY = 24 * 60 * 60 * 1000
 const pad = (n) => String(n).padStart(2, '0')
 const hourLabel = (h) => `${pad(h)}:00`
 
-const dayLabel = (d) =>
-  d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+// "Sat 14 Nov" of a Riyadh day (YYYY-MM-DD)
+const dayLabel = (day) =>
+  new Date(riyadhTime(day, 12)).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: RIYADH_TIME_ZONE,
+  })
 
 // The days to pick from, newest first. With network data, the days that have it ('' is the
-// newest); without, the last 7 days ('' is today, so the timeline follows live data).
+// newest); without, the last 7 days ('' is today, so the timeline follows live data). Days are
+// Riyadh days.
 function dayOptions(now, availableDays) {
+  const today = riyadhParts(now).day
   if (availableDays.length) {
-    const today = new Date(now)
-    const todayValue = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
     return [...availableDays].reverse().map((day, i) => ({
       value: i === 0 ? '' : day,
-      label: day === todayValue ? 'Today' : dayLabel(new Date(`${day}T12:00:00`)),
+      label: day === today ? 'Today' : dayLabel(day),
     }))
   }
   const options = [{ value: '', label: 'Today' }]
   for (let back = 1; back < 7; back++) {
-    const d = new Date(now - back * DAY)
-    const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    options.push({ value, label: dayLabel(d) })
+    const day = riyadhParts(now - back * DAY).day
+    options.push({ value: day, label: dayLabel(day) })
   }
   return options
 }
@@ -80,7 +86,8 @@ function NetworkOverview() {
   const [error, setError] = useState(null) // the error message, if loading failed
   const [bars, setBars] = useState([])
   const [segments, setSegments] = useState(null)
-  const [availableDays, setAvailableDays] = useState([]) // days with network data
+  // days with network data: [] while the server fills its first interval, null when it is not running
+  const [availableDays, setAvailableDays] = useState([])
   const [timelineOpen, setTimelineOpen] = useState(false) // closed, so the map gets the room
   const timelineRef = useRef(null)
   const sideRef = useRef(null)
@@ -99,11 +106,9 @@ function NetworkOverview() {
         if (!cancelled) setError(err.message)
       })
 
-    // with network data, open on the current time of day on the newest day
-    Promise.all([getAvailableDays(), getOpeningTime()]).then(([days, opening]) => {
-      if (cancelled) return
-      setAvailableDays(days)
-      if (opening) setTime(opening)
+    // with network data that does not reach today, open on the current time of day on the newest day
+    getOpeningTime().then((opening) => {
+      if (!cancelled && opening) setTime(opening)
     })
 
     return () => {
@@ -118,13 +123,29 @@ function NetworkOverview() {
     return () => clearInterval(timer)
   }, [])
 
+  // the days with data, again every minute: the server fills them after it starts, and it can be
+  // started or stopped while the page is open
+  useEffect(() => {
+    let cancelled = false
+    getAvailableDays().then((days) => {
+      if (!cancelled) setAvailableDays(days)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [now])
+
   // 24 hours of bars: the last 24 hours today, or the whole of a past day
   useEffect(() => {
     let cancelled = false
-    const end = day ? new Date(`${day}T23:45:00`).getTime() : now
-    getNetworkTimeline(end).then((result) => {
-      if (!cancelled) setBars(result.bars)
-    })
+    const end = day ? Date.parse(riyadhTime(day, 23, 45)) : now
+    getNetworkTimeline(end)
+      .then((result) => {
+        if (!cancelled) setBars(result.bars)
+      })
+      .catch(() => {
+        if (!cancelled) setBars([]) // tried again at the next minute
+      })
     return () => {
       cancelled = true
     }
@@ -132,18 +153,25 @@ function NetworkOverview() {
 
   const latest = bars.at(-1)?.time
   const shown = time ? new Date(time) : new Date(latest ?? now)
+  const shownHour = riyadhParts(shown.getTime()).hour // the hour in Riyadh
 
-  // the map at the chosen time; for the latest data, again whenever a new bar arrives
+  // the map at the chosen time; for the latest data, again whenever a new bar arrives; and again when
+  // the server starts, stops or adds a day
   const liveBar = time ? null : latest
+  const dayCount = availableDays === null ? -1 : availableDays.length
   useEffect(() => {
     let cancelled = false
-    getSegments(time).then((data) => {
-      if (!cancelled) setSegments(data)
-    })
+    getSegments(time)
+      .then((data) => {
+        if (!cancelled) setSegments(data)
+      })
+      .catch(() => {
+        if (!cancelled) setSegments(null) // the plain map until the next try
+      })
     return () => {
       cancelled = true
     }
-  }, [time, liveBar])
+  }, [time, liveBar, dayCount])
 
   // the size of the floating cards: the map keeps its buttons above the timeline, and fits the
   // study area into the space the cards leave free, so the intersection dots are never under them
@@ -161,25 +189,25 @@ function NetworkOverview() {
   function changeDay(value) {
     setDay(value)
     // keep the same hour on the new day; '' (the newest day) goes to the latest data
-    if (value) setTime(`${value}T${pad(shown.getHours())}:00:00`)
+    if (value) setTime(riyadhTime(value, shownHour))
     else setTime(null)
   }
 
   // the most recent bar that starts at this hour
   function goToHour(hour) {
     const bar = [...bars].reverse().find((b) => {
-      const d = new Date(b.time)
-      return d.getHours() === hour && d.getMinutes() === 0
+      const t = riyadhParts(Date.parse(b.time))
+      return t.hour === hour && t.minute === 0
     })
     if (bar) setTime(bar === bars.at(-1) && !day ? null : bar.time)
   }
 
   const hourOptions = []
   for (let h = 0; h < 24; h++) {
-    if (bars.some((b) => new Date(b.time).getHours() === h))
+    if (bars.some((b) => riyadhParts(Date.parse(b.time)).hour === h))
       hourOptions.push({ value: String(h), label: hourLabel(h) })
   }
-  const activePeak = PEAKS.find((p) => shown.getHours() >= p.from && shown.getHours() < p.to)
+  const activePeak = PEAKS.find((p) => shownHour >= p.from && shownHour < p.to)
 
   if (error) {
     return (
@@ -220,9 +248,11 @@ function NetworkOverview() {
 
         {network.isSample && (
           <Notice variant="warning">
-            {availableDays.length
-              ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
-              : 'Road congestion is not available: the network map server is not running.'}
+            {availableDays === null
+              ? 'Road congestion is not available: the network map server is not running.'
+              : availableDays.length
+                ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
+                : 'Loading road congestion: the network map server is preparing the last 7 days.'}
           </Notice>
         )}
 
@@ -291,7 +321,7 @@ function NetworkOverview() {
             <Select
               label="Past time"
               size="sm"
-              options={dayOptions(now, availableDays)}
+              options={dayOptions(now, availableDays ?? [])}
               value={day}
               onChange={changeDay}
             />
@@ -299,7 +329,7 @@ function NetworkOverview() {
               ariaLabel="Hour"
               size="sm"
               options={hourOptions}
-              value={String(shown.getHours())}
+              value={String(shownHour)}
               onChange={(h) => goToHour(Number(h))}
             />
             <span className="network-overview-divider" />

@@ -3,6 +3,7 @@ import Badge from './Badge'
 import Button from './Button'
 import Card from './Card'
 import EmptyState from './EmptyState'
+import { RIYADH_TIME_ZONE, riyadhParts } from '../utils/riyadhTime'
 import './HistoricalTimeline.css'
 
 // The last 24 hours of congestion as a row of bars, with a slider for going
@@ -108,10 +109,8 @@ function HistoricalTimeline({
               onPointerLeave={() => setHoverIndex(null)}
             >
               {points.map((point, index) => {
-                const isMidnight =
-                  index > 0 &&
-                  point.date.getHours() === 0 &&
-                  point.date.getMinutes() === 0
+                const clock = riyadhParts(point.date.getTime())
+                const isMidnight = index > 0 && clock.hour === 0 && clock.minute === 0
 
                 return (
                   // One column: as tall as the plot, so it is easy to hit
@@ -171,8 +170,9 @@ function HistoricalTimeline({
             {/* Hour labels: one under every bar that starts on the hour */}
             <div className="timeline-axis" aria-hidden="true">
               {points.map((point, index) => {
-                if (point.date.getMinutes() !== 0) return null
-                const hour = point.date.getHours()
+                const clock = riyadhParts(point.date.getTime())
+                if (clock.minute !== 0) return null
+                const hour = clock.hour
 
                 return (
                   <span
@@ -266,13 +266,17 @@ function barHeight(point) {
 
 // "07:15"
 function formatTime(date) {
-  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: RIYADH_TIME_ZONE,
+  })
 }
 
 // "Sat 10"
 function formatDay(date) {
   return date
-    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })
+    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', timeZone: RIYADH_TIME_ZONE })
     .replace(',', '')
 }
 
@@ -285,7 +289,12 @@ function formatRange(date, intervalMinutes) {
 // "Sat 10 Oct, 07:15 – 07:30 · High congestion"
 function describe(point, intervalMinutes) {
   const day = point.date
-    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    .toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: RIYADH_TIME_ZONE,
+    })
     .replace(',', '') // some browsers write "Sat, 10 Oct"
   return `${day}, ${formatRange(point.date, intervalMinutes)} · ${levelLabel(point)}`
 }
