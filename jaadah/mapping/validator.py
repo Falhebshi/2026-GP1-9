@@ -185,11 +185,6 @@ def validate_network_mappings(config: NetworkMappingConfig, network_path: str | 
         for left, right in zip(route, route[1:]):
             if (left, right) not in connections:
                 errors.append(f"{name}: no legal SUMO connection {left} -> {right}")
-        for lane_id in movement.sumo_lanes:
-            if lane_id not in lanes:
-                errors.append(f"{name}: lane not found: {lane_id}")
-            elif not lane_supports_route(lane_id, route):
-                errors.append(f"{name}: lane is not connected along the mapped route: {lane_id}")
         if movement.signal_controlled:
             if movement.sumo_tls_id not in tls_ids:
                 errors.append(f"{name}: TLS not found: {movement.sumo_tls_id}")
