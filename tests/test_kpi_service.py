@@ -16,6 +16,7 @@ from backend.analytics.service import (
     page_results,
     write_kpis,
 )
+from backend.analytics.trends import prepare_day
 from jaadah.kpi_inputs.cycle_queues import CycleQueues
 from jaadah.kpi_inputs.vehicle_passages import VehiclePassages
 from jaadah.mapping.loader import load_network_mappings
@@ -74,6 +75,28 @@ def test_failed_run_has_no_kpis(tmp_path):
 
     with pytest.raises(ValueError, match="run RUN_TEST is failed; only a completed run has KPIs"):
         calculate_run_kpis(files)
+
+
+@pytest.mark.parametrize("status", ["failed", "running", "pending"])
+@pytest.mark.parametrize("calculate", [
+    calculate_kpis,
+    prepare_calculation,
+    lambda measurements: prepare_day(measurements.run.started_at.date(), measurements),
+], ids=["calculate_kpis", "prepare_calculation", "prepare_day"])
+def test_measurements_of_a_run_that_did_not_complete_have_no_kpis(tmp_path, status, calculate):
+    """
+    Stored or supplied measurements reach the engine without
+    collect_measurements; the "only a completed run has KPIs" rule must
+    hold there too.
+    """
+
+    files = load_run(run_folder(tmp_path, status=status))
+    measurements = RunMeasurements(
+        files.run, files.window, VehiclePassages([], [], []), CycleQueues([], []), [],
+    )
+
+    with pytest.raises(ValueError, match=f"run RUN_TEST is {status}; only a completed run has KPIs"):
+        calculate(measurements)
 
 
 def test_run_with_another_mapping_version_is_refused(tmp_path):
