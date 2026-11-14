@@ -199,10 +199,7 @@ def collect_measurements(
     """
 
     run = files.run
-
-    if run.status != SimulationRunStatus.COMPLETED:
-        raise ValueError(f"run {run.run_id} is {run.status.value}; only a completed run has KPIs")
-
+    _check_completed(run)
     config = _mapping_of(run, mapping_path)
     program = _program_of(run, config, network_path)
 
@@ -233,8 +230,8 @@ def calculate_kpis(
     The KpiResults of one run from its measurement records. Fast: the
     FCD is not read.
 
-    Raises ValueError when the run was measured with another version of
-    the network mapping.
+    Raises ValueError when the run did not complete, or when it was
+    measured with another version of the network mapping.
     """
 
     return prepare_calculation(measurements, mapping_path, network_path).results()
@@ -250,11 +247,14 @@ def prepare_calculation(
     per-interval parts (RunCalculation.parts, used by the historical
     analysis).
 
-    Raises ValueError when the run was measured with another version of
-    the network mapping.
+    Raises ValueError when the run did not complete, or when it was
+    measured with another version of the network mapping. Stored or
+    supplied measurements reach the engine here without
+    collect_measurements, so the run is checked again.
     """
 
     run = measurements.run
+    _check_completed(run)
     config = _mapping_of(run, mapping_path)
     network = build_network_inputs(config)
     program = _program_of(run, config, network_path)
@@ -263,6 +263,13 @@ def prepare_calculation(
         run, measurements.window, network, program,
         measurements.passages, measurements.queues, measurements.demands,
     )
+
+
+def _check_completed(run: SimulationRun) -> None:
+    """Only a completed run has KPIs."""
+
+    if run.status != SimulationRunStatus.COMPLETED:
+        raise ValueError(f"run {run.run_id} is {run.status.value}; only a completed run has KPIs")
 
 
 def _mapping_of(run: SimulationRun, mapping_path: str | Path):

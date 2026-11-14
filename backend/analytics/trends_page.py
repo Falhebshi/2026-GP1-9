@@ -228,6 +228,7 @@ class _Results:
         return KpiResult(
             kpi=kpi, level=level, **{f"{level.value}_id": element_id},
             measured_on_lane_id=value.measured_on_lane_id if ok else None,
+            measured_on_lane_group_id=value.measured_on_lane_group_id if ok else None,
             uncontrolled_movements=value.uncontrolled_movements if ok else None,
             interval_start=interval.start, interval_end=interval.end,
             value=value.value if ok and kpi != LOS else None,
