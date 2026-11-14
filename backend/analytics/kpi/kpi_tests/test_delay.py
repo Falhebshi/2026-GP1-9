@@ -331,12 +331,12 @@ def never_inserted(vehicle_id, planned, **overrides):
 def test_blocked_movement_is_unavailable_with_its_reason():
     result = delays(
         [passage("V1", at(8, 1), 10, 4)],
-        blocked={("MOV_E_T", FIRST): "the queue reached the end of the zone"},
+        blocked={("MOV_E_T", FIRST): "the queue is near the end of the measurement zone"},
     )
 
     first = result[("MOV_E_T", FIRST)]
     assert first.status == KpiStatus.UNAVAILABLE
-    assert first.reason == "the queue reached the end of the zone"
+    assert first.reason == "the queue is near the end of the measurement zone"
     assert first.mean_control_delay_s is None
     assert first.completed_vehicles == 1
     assert result[("MOV_E_T", SECOND)].status == KpiStatus.NOT_APPLICABLE
