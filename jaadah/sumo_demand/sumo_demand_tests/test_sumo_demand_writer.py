@@ -26,7 +26,7 @@ def at(hour, minute):
 def mapping():
     movement = {"intersection_id": "INT_001", "signal_controlled": False}
     return NetworkMappingConfig.model_validate({
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "mapping_version": "test",
         "network": {"version": "small", "path": "small.net.xml", "sha256": "a" * 64},
         "intersection_mapping": {"intersection_id": "INT_001"},
