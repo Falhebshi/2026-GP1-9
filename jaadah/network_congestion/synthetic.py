@@ -34,26 +34,19 @@ the peak v/c of the sample's approaches is (highest / lowest), with an
 average of 1 so the city average stays TomTom's.
 
 The values measured from the RCRC sample stay private: they are used
-in memory and never written to the repository or printed. The files
-written here are not committed either (see .gitignore).
+in memory and never written to the repository or printed.
 
-Output, in frontend/public/data/network/:
-
-- segments.geojson: every segment (from OSM only);
-- speeds_YYYY-MM-DD.json: one per day, 96 speed ratios (percent of
-  free flow) per segment and one network value per interval;
-- index.json: the days available and the level limits.
+The network map server (server.py) uses these functions: its producer
+works out each completed 15 minutes with interval_speeds and stores it.
 """
 
-import argparse
 import csv
 import hashlib
 import json
 import math
 import random
-import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 from jaadah.models.network_congestion import RoadSegment
@@ -62,11 +55,8 @@ from jaadah.network_congestion.parameters import (
     EVENING_DEMAND_FROM_HOUR,
     GREEN_SHARE_MAIN,
     GREEN_SHARE_SIDE,
-    HISTORY_DAYS,
     INTERVAL_S,
     INTERVALS_PER_DAY,
-    LOW_ABOVE_SPEED_RATIO,
-    MODERATE_ABOVE_SPEED_RATIO,
     MORNING_DEMAND_UNTIL_HOUR,
     SEED,
     TOMTOM_FREE_FLOW_10KM_S,
@@ -86,11 +76,9 @@ DEFAULT_DEMAND = DEFAULT_OUTPUT_DIR / "segment_demand.json"
 PROFILE_DIR = REPO_ROOT.parent / "jaadah-private-data/processed/rcrc_sample"
 DEFAULT_DETECTOR_PROFILE = PROFILE_DIR / "detector_time_of_day_profile.csv"
 DEFAULT_SUMMARY = PROFILE_DIR / "rcrc_profile_summary.json"
-DEFAULT_WEBSITE_DIR = REPO_ROOT / "frontend/public/data/network"
 
 # RCRC direction codes (P2-WB-L1-L-STB: cars travelling west)
 RCRC_DIRECTIONS = {"NB": "N", "EB": "E", "SB": "S", "WB": "W"}
-RIYADH_OFFSET = "+03:00"
 SLOTS_PER_HOUR = 3600 // INTERVAL_S
 
 
@@ -305,18 +293,6 @@ def evening_share(slot: int) -> float:
     )
 
 
-def day_type(day: date) -> str:
-    """Return workday (Sunday to Thursday), friday or saturday."""
-
-    if day.weekday() == 4:
-        return "friday"
-
-    if day.weekday() == 5:
-        return "saturday"
-
-    return "workday"
-
-
 # ============================================================
 # CORRIDORS
 # ============================================================
@@ -431,27 +407,24 @@ def corridor_variation(
     return values
 
 
-def day_speeds(
-    city: list[float],
+def slot_speed(
+    city_delay_now: float,
     morning_factor: float,
     evening_factor: float,
-    variation: list[float],
-) -> list[int]:
-    """Return a segment's 96 speeds, in percent of free flow."""
+    variation_now: float,
+    slot: int,
+) -> int:
+    """Return a segment's speed in one slot, in percent of free flow."""
 
-    speeds = []
+    evening = evening_share(slot)
+    factor = (1 - evening) * morning_factor + evening * evening_factor
+    delay = max(0.0, city_delay_now * factor * (1 + variation_now))
 
-    for slot in range(INTERVALS_PER_DAY):
-        evening = evening_share(slot)
-        factor = (1 - evening) * morning_factor + evening * evening_factor
-        delay = max(0.0, city[slot] * factor * (1 + variation[slot]))
-        speeds.append(round(100 / (1 + delay)))
-
-    return speeds
+    return round(100 / (1 + delay))
 
 
 # ============================================================
-# FILES
+# ROAD LINES FOR THE MAP
 # ============================================================
 
 def segments_geojson(
@@ -488,116 +461,45 @@ def segments_geojson(
     }
 
 
-def day_file(
-    segments: list[RoadSegment],
-    corridors: dict[str, str],
-    factors: dict[str, tuple[float, float]],
-    measures: SampleMeasures,
-    day: date,
-) -> dict:
-    """
-    Return one day's speeds and the network value per interval.
-
-    factors: every corridor's (morning, evening) factor.
-    """
-
-    city = city_delay(day)
-    variations = {
-        corridor: corridor_variation(corridor, day, measures)
-        for corridor in set(corridors.values())
-    }
-    speeds = {}
-
-    for segment in segments:
-        corridor = corridors[segment.segment_id]
-        morning, evening = factors[corridor]
-        speeds[segment.segment_id] = day_speeds(
-            city, morning, evening, variations[corridor]
-        )
-
-    # network value: the mean speed of all roads, percent of free flow
-    network = [
-        round(
-            sum(values[slot] for values in speeds.values()) / len(speeds),
-            1,
-        )
-        for slot in range(INTERVALS_PER_DAY)
-    ]
-
-    return {
-        "date": day.isoformat(),
-        "day_type": day_type(day),
-        "source": "synthetic",
-        "first_interval_start": f"{day.isoformat()}T00:00:00{RIYADH_OFFSET}",
-        "interval_minutes": INTERVAL_S // 60,
-        "network_speed": network,
-        "speeds": speeds,
-    }
-
-
-def write_json(path: Path, content: dict) -> int:
-    """Write compact JSON and return its size in bytes."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(content, ensure_ascii=False, separators=(",", ":"))
-    path.write_bytes(text.encode("utf-8"))
-
-    return path.stat().st_size
-
-
 # ============================================================
-# COMMAND LINE
+# THE CITY, LOADED ONCE (for the network map server)
 # ============================================================
 
-def main() -> None:
-    """Command line entry point."""
+@dataclass(frozen=True)
+class City:
+    """Everything needed to work out any segment's speed at any time."""
 
-    parser = argparse.ArgumentParser(
-        description="Generate synthetic congestion for the road segments.",
-    )
-    parser.add_argument("--segments", type=Path, default=DEFAULT_SEGMENTS)
-    parser.add_argument("--mappings", type=Path, default=DEFAULT_MAPPINGS)
-    parser.add_argument(
-        "--demand",
-        type=Path,
-        default=DEFAULT_DEMAND,
-        help="segment_demand.json from demand.py",
-    )
-    parser.add_argument(
-        "--detector-profile",
-        type=Path,
-        default=DEFAULT_DETECTOR_PROFILE,
-        help="detector_time_of_day_profile.csv in jaadah-private-data",
-    )
-    parser.add_argument(
-        "--summary",
-        type=Path,
-        default=DEFAULT_SUMMARY,
-        help="rcrc_profile_summary.json in jaadah-private-data",
-    )
-    parser.add_argument("--out", type=Path, default=DEFAULT_WEBSITE_DIR)
-    parser.add_argument(
-        "--last-day",
-        type=date.fromisoformat,
-        default=date.today(),
-        help="last day to generate (YYYY-MM-DD), default today; the "
-             "website shows today only up to the current time",
-    )
-    args = parser.parse_args()
+    segments: list[RoadSegment]
+    capacities: dict[str, float]
+    corridors: dict[str, str]                 # segment ID -> corridor
+    factors: dict[str, tuple[float, float]]   # corridor -> (morning, evening)
+    measures: SampleMeasures
 
-    started = time.perf_counter()
+
+@dataclass(frozen=True)
+class CityDay:
+    """The parts of one day shared by all its 15-minute intervals."""
+
+    day: date
+    delays: list[float]                       # city delay, per slot
+    variations: dict[str, list[float]]        # corridor -> 96 variations
+
+
+def load_city(
+    segments_path: Path = DEFAULT_SEGMENTS,
+    mappings_path: Path = DEFAULT_MAPPINGS,
+    demand_path: Path = DEFAULT_DEMAND,
+    detector_profile: Path = DEFAULT_DETECTOR_PROFILE,
+    summary: Path = DEFAULT_SUMMARY,
+) -> City:
+    """Read the segments, the demand and the private RCRC measures."""
 
     # measured values are RCRC-derived: used in memory, never printed
-    measures = measure_sample(args.detector_profile, args.summary)
-    print("measured from the RCRC sample: spread between roads, "
-          "variation and persistence")
+    measures = measure_sample(detector_profile, summary)
 
-    content = json.loads(args.segments.read_text(encoding="utf-8"))
+    content = json.loads(segments_path.read_text(encoding="utf-8"))
     segments = [RoadSegment(**record) for record in content["segments"]]
-    capacities = {
-        segment.segment_id: segment_capacity(segment) for segment in segments
-    }
-    mappings = json.loads(args.mappings.read_text(encoding="utf-8"))
+    mappings = json.loads(mappings_path.read_text(encoding="utf-8"))
     way_ids = {
         record["segment_id"]: record["osm_way_id"]
         for record in mappings["mappings"]
@@ -609,16 +511,14 @@ def main() -> None:
         )
         for segment in segments
     }
-    print(f"{len(segments)} segments in {len(set(corridors.values()))} "
-          "corridors")
 
-    if not args.demand.exists():
+    if not demand_path.exists():
         raise FileNotFoundError(
-            f"{args.demand} not found: run "
+            f"{demand_path} not found: run "
             "python -m jaadah.network_congestion.demand first"
         )
 
-    demand = json.loads(args.demand.read_text(encoding="utf-8"))
+    demand = json.loads(demand_path.read_text(encoding="utf-8"))
     morning_demand = demand["to_activities"]
     evening_demand = demand["to_homes"]
     missing = [
@@ -633,50 +533,58 @@ def main() -> None:
 
     morning_ranks = corridor_ranks(segments, corridors, morning_demand)
     evening_ranks = corridor_ranks(segments, corridors, evening_demand)
-    factors = {
-        corridor: (
-            corridor_factor(morning_ranks[corridor], measures),
-            corridor_factor(evening_ranks[corridor], measures),
-        )
-        for corridor in morning_ranks
-    }
 
-    size = write_json(
-        args.out / "segments.geojson",
-        segments_geojson(segments, capacities),
+    return City(
+        segments=segments,
+        capacities={
+            segment.segment_id: segment_capacity(segment)
+            for segment in segments
+        },
+        corridors=corridors,
+        factors={
+            corridor: (
+                corridor_factor(morning_ranks[corridor], measures),
+                corridor_factor(evening_ranks[corridor], measures),
+            )
+            for corridor in morning_ranks
+        },
+        measures=measures,
     )
-    print(f"segments.geojson: {size / 1e6:.1f} MB")
 
-    for old in args.out.glob("volumes_*.json"):
-        old.unlink()    # files of the earlier, volume-based version
 
-    days = [
-        args.last_day - timedelta(days=offset)
-        for offset in range(HISTORY_DAYS - 1, -1, -1)
-    ]
+def city_day(city: City, day: date) -> CityDay:
+    """Return the city delay and every corridor's variation for a day."""
 
-    for day in days:
-        size = write_json(
-            args.out / f"speeds_{day.isoformat()}.json",
-            day_file(segments, corridors, factors, measures, day),
-        )
-        print(f"speeds_{day.isoformat()}.json ({day.strftime('%a')}): "
-              f"{size / 1e6:.1f} MB")
-
-    write_json(
-        args.out / "index.json",
-        {
-            "source": "synthetic",
-            "built": datetime.now().isoformat(timespec="seconds"),
-            "days": [day.isoformat() for day in days],
-            "low_above_speed_ratio": LOW_ABOVE_SPEED_RATIO,
-            "moderate_above_speed_ratio": MODERATE_ABOVE_SPEED_RATIO,
+    return CityDay(
+        day=day,
+        delays=city_delay(day),
+        variations={
+            corridor: corridor_variation(corridor, day, city.measures)
+            for corridor in set(city.corridors.values())
         },
     )
 
-    print(f"\nWritten to {args.out} in "
-          f"{time.perf_counter() - started:.0f} s")
 
+def interval_speeds(
+    city: City,
+    today: CityDay,
+    slot: int,
+) -> tuple[list[int], float]:
+    """
+    Return every segment's speed in one slot, and the network speed.
 
-if __name__ == "__main__":
-    main()
+    The speeds are in the order of city.segments; the network speed is
+    their mean, for the timeline.
+    """
+
+    speeds = []
+
+    for segment in city.segments:
+        corridor = city.corridors[segment.segment_id]
+        morning, evening = city.factors[corridor]
+        speeds.append(slot_speed(
+            today.delays[slot], morning, evening,
+            today.variations[corridor][slot], slot,
+        ))
+
+    return speeds, round(sum(speeds) / len(speeds), 1)

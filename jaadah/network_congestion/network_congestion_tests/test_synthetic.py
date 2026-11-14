@@ -17,9 +17,6 @@ from jaadah.network_congestion.synthetic import (
     corridor_key,
     corridor_ranks,
     corridor_variation,
-    day_file,
-    day_speeds,
-    day_type,
     evening_share,
     heading,
     measure_sample,
@@ -27,6 +24,7 @@ from jaadah.network_congestion.synthetic import (
     read_directions,
     read_persistence,
     segments_geojson,
+    slot_speed,
     variation_sd,
 )
 
@@ -149,9 +147,6 @@ def test_city_delay_follows_the_tomtom_table():
 
 def test_friday_is_quieter_than_a_workday():
     assert max(city_delay(FRIDAY)) < max(city_delay(MONDAY))
-    assert day_type(FRIDAY) == "friday"
-    assert day_type(date(2026, 11, 7)) == "saturday"
-    assert day_type(date(2026, 11, 8)) == "workday"
 
 
 def test_morning_and_evening_demand_blend_around_midday():
@@ -201,15 +196,15 @@ def test_busier_corridors_get_more_of_the_city_delay():
 
 def test_speed_falls_as_the_delay_grows():
     city = city_delay(MONDAY)
-    flat = [0.0] * 96
-    busy = day_speeds(city, 1.5, 1.5, flat)
-    quiet = day_speeds(city, 0.5, 0.5, flat)
+
+    def speed(slot, factor):
+        return slot_speed(city[slot], factor, factor, 0.0, slot)
 
     # 04:00 is free flow, 16:00 is the evening rush
-    assert busy[16] == quiet[16] == 100
-    assert busy[64] < quiet[64] < 100
+    assert speed(16, 1.5) == speed(16, 0.5) == 100
+    assert speed(64, 1.5) < speed(64, 0.5) < 100
     # speed = 100 / (1 + delay)
-    assert busy[64] == round(100 / (1 + city[64] * 1.5))
+    assert speed(64, 1.5) == round(100 / (1 + city[64] * 1.5))
 
 
 def test_corridor_variation_has_the_measured_spread():
@@ -229,21 +224,14 @@ def test_corridor_variation_has_the_measured_spread():
     )
 
 
-def test_files_hold_only_jaadah_ids():
+def test_road_lines_hold_only_jaadah_ids():
     roads = [segment("SEG_00001"), segment("SEG_00002", road_class="motorway")]
     capacities = {road.segment_id: segment_capacity(road) for road in roads}
-    corridors = {road.segment_id: corridor_key(road, 10) for road in roads}
-    factors = {corridor: (1.0, 1.0) for corridor in corridors.values()}
 
     geojson = segments_geojson(roads, capacities)
-    day = day_file(roads, corridors, factors, MEASURES, FRIDAY)
 
     assert [f["properties"]["id"] for f in geojson["features"]] == [
         "SEG_00001",
         "SEG_00002",
     ]
-    assert day["day_type"] == "friday"
-    assert set(day["speeds"]) == {"SEG_00001", "SEG_00002"}
-    assert len(day["network_speed"]) == 96
-    assert all(0 < value <= 100 for value in day["network_speed"])
-    assert "osm" not in json.dumps([geojson, day]).lower()
+    assert "osm" not in json.dumps(geojson).lower()
