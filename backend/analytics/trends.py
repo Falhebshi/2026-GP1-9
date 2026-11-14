@@ -114,7 +114,9 @@ class PeriodValue(NamedTuple):
     value is None unless status is OK; reason then says why.
     los_grade is set for level of service, peak_interval for the
     volume-to-capacity ratio (the 15 minutes the highest value was in),
-    measured_on_lane_id / is_shared for queues and storage ratios.
+    measured_on_lane_id / is_shared for queues and storage ratios, and
+    measured_on_lane_group_id for a movement's v/c measured on a shared
+    lane group (data_models.md section 6.7).
     """
 
     status: KpiStatus
@@ -123,6 +125,7 @@ class PeriodValue(NamedTuple):
     los_grade: LevelOfServiceGrade | None = None
     peak_interval: AnalysisInterval | None = None
     measured_on_lane_id: str | None = None
+    measured_on_lane_group_id: str | None = None
     is_shared: bool = False
     uncontrolled_movements: UncontrolledMovements | None = None
 
@@ -314,8 +317,11 @@ def _queues(out, days, selected, every_interval, period, model):
     signal_approaches = sorted({key for d in days for (key, _) in d.approach_cycles})
 
     def pooled(attribute, keys, flag):
+        # A day with no record at all for a key (an approach without
+        # cycles that day) has no entry: an empty list, so the percentile
+        # rule reports the queue unavailable, as for that day alone
         cycles = {
-            (key, i): getattr(d, attribute)[(key, i)]
+            (key, i): getattr(d, attribute).get((key, i), [])
             for d in days for i in selected[d.day] for key in keys
         }
         return {
@@ -383,7 +389,11 @@ def _volume_to_capacity(out, days, selected):
             out[key] = PeriodValue(KpiStatus.NOT_APPLICABLE, reason=results[0].reason)
         else:
             peak = max(usable, key=lambda r: r.value)      # the first one when equal
+            # The shared lane group of the peak interval itself: it can
+            # change from interval to interval with the flow assignment
             out[key] = PeriodValue(
                 KpiStatus.OK, peak.value,
                 peak_interval=AnalysisInterval(peak.interval_start, peak.interval_end),
+                measured_on_lane_group_id=peak.measured_on_lane_group_id,
+                is_shared=peak.measured_on_lane_group_id is not None,
             )

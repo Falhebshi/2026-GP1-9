@@ -319,6 +319,29 @@ def test_a_cut_off_cycle_at_the_percentile_makes_the_queue_unavailable():
     assert "section" in lane.reason
 
 
+def test_a_day_without_an_approach_s_cycles_makes_its_queue_unavailable():
+    """
+    Day B has no cycle records at all for East. Day B alone gives an
+    unavailable East approach queue; combining days A and B must do the
+    same, with the same reason, instead of stopping on the missing key.
+    """
+
+    day_a = stored_day(DAY_A)
+    full = cycles(DAY_B, {30})
+    day_b = stored_day(DAY_B, queues=CycleQueues(
+        full.lanes, [r for r in full.approaches if r.approach_id != "APP_E"],
+    ))
+    key = (QUEUE, M, APP, "APP_E")
+
+    alone = period_values([day_b], frozenset({30}))[key]
+    combined = period_values([day_a, day_b], frozenset({30}))[key]
+
+    assert period_values([day_a], frozenset({30}))[key].status == KpiStatus.OK
+    assert alone.status == KpiStatus.UNAVAILABLE and alone.reason
+    assert combined.status == KpiStatus.UNAVAILABLE
+    assert combined.reason == alone.reason
+
+
 # ============================================================
 # VOLUME-TO-CAPACITY RATIO
 # ============================================================
