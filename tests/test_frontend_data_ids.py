@@ -72,10 +72,7 @@ def traffic_files() -> list[Path]:
     ]
 
     for intersection_dir in FRONTEND_DATA_DIR.iterdir():
-        # data/network/ holds the city network map, built on each laptop
-        # and not committed (jaadah/network_congestion/synthetic.py); it
-        # is not an intersection and has no SUMO data
-        if not intersection_dir.is_dir() or intersection_dir.name == "network":
+        if not intersection_dir.is_dir():
             continue
 
         files.append(intersection_dir / "network" / "approaches.json")

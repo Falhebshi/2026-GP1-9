@@ -71,7 +71,7 @@ function intersectionOptions(intersections) {
 
 function NetworkOverview() {
   const navigate = useNavigate()
-  const [now] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
   const [view, setView] = useState('segments')
   const [intersectionId, setIntersectionId] = useState('')
   const [day, setDay] = useState('') // '' = today
@@ -111,6 +111,13 @@ function NetworkOverview() {
     }
   }, [])
 
+  // check for new data every minute: the network server adds every completed 15 minutes, and
+  // the latest bar and the map follow it
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
+
   // 24 hours of bars: the last 24 hours today, or the whole of a past day
   useEffect(() => {
     let cancelled = false
@@ -126,6 +133,8 @@ function NetworkOverview() {
   const latest = bars.at(-1)?.time
   const shown = time ? new Date(time) : new Date(latest ?? now)
 
+  // the map at the chosen time; for the latest data, again whenever a new bar arrives
+  const liveBar = time ? null : latest
   useEffect(() => {
     let cancelled = false
     getSegments(time).then((data) => {
@@ -134,7 +143,7 @@ function NetworkOverview() {
     return () => {
       cancelled = true
     }
-  }, [time])
+  }, [time, liveBar])
 
   // the size of the floating cards: the map keeps its buttons above the timeline, and fits the
   // study area into the space the cards leave free, so the intersection dots are never under them
@@ -213,7 +222,7 @@ function NetworkOverview() {
           <Notice variant="warning">
             {availableDays.length
               ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
-              : 'Sample data for layout only: the congestion levels on the map are illustrative.'}
+              : 'Road congestion is not available: the network map server is not running.'}
           </Notice>
         )}
 

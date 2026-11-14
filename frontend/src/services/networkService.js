@@ -8,51 +8,59 @@
 //                            maxBounds: the same shape, how far the map can be moved and zoomed out,
 //                            intersections: [{ id, name, area, center, simulation }] }
 //   getNetworkTimeline(t)  { isSample, bars: [{ time, value, level }] }, the 96 bars of one day
-//   getSegments(time)      GeoJSON road segments, or null without network files (see below)
+//   getSegments(time)      GeoJSON road segments, or null without the network server (see below)
 //   getAvailableDays()     the days with network data, oldest first
 
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 
-// Road segment congestion comes from the files in public/data/network/, built on each laptop by
-// `python -m jaadah.network_congestion.synthetic` (they are not in git, because part of the
-// method is derived from RCRC data). When the files are missing, getSegments returns null and
-// the map shows the plain basemap, as before.
+// Road segment congestion comes from the network map server (jaadah/network_congestion/server.py),
+// through the Vite proxy at /api/network (vite.config.js). Like the synthetic traffic source, it
+// adds every completed 15 minutes by itself and keeps today plus the 6 days before. Start it next
+// to `npm run dev` with `uvicorn jaadah.network_congestion.server:app --port 8001`.
 //
-//   index.json              the days with data and the speed limits of the levels (HCM urban
-//                           street LOS: A-B above 67 % of free flow low, C-D above 40 % moderate,
-//                           E-F 40 % or less high)
-//   segments.geojson        every segment's line, name, road class and lanes
-//   speeds_YYYY-MM-DD.json  one per day: 96 speeds per segment (percent of free-flow speed) and
-//                           one network speed per 15 minutes for the timeline
+//   /days              the days with data and the speed limits of the levels
+//   /segments          every segment's line, name, road class and lanes
+//   /speeds?time=      every segment's speed in the 15 minutes that contain time (the newest
+//                      without time)
+//   /timeline?day=     the network speed of each stored 15 minutes of a day
+//
+// Its data is not in git, because part of the method is derived from RCRC data. When the server
+// is not running, getSegments returns null and the map shows the plain basemap.
+//
+// Levels (HCM urban street LOS by speed): A-B above 67 % of free flow low, C-D above 40 %
+// moderate, E-F 40 % or less high.
 //
 // getSegments(time) resolves to a GeoJSON FeatureCollection, one LineString per segment, with
-//   id, name, road_class, lanes, source  from segments.geojson
+//   id, name, road_class, lanes, source  from /segments
 //   speed       percent of free-flow speed
 //   level       'low', 'moderate' or 'high' (sets the line color), or null with no data
 // and `limits`, the level limits in percent of free flow, for the Heatmap view
-const DATA_DIR = '/data/network'
+const API = '/api/network'
 const QUARTER_HOUR = 15 * 60 * 1000
 
-let indexPromise = null
 let segmentsPromise = null
-const dayPromises = {}
 
-function fetchJson(path) {
-  return fetch(`${DATA_DIR}/${path}`).then((response) => {
+function fetchApi(path) {
+  return fetch(`${API}/${path}`).then((response) => {
     if (!response.ok) throw new Error(`${path}: ${response.status}`)
     return response.json()
   })
 }
 
-// index.json, or null when the network files have not been built on this laptop
-function loadIndex() {
-  indexPromise ??= fetchJson('index.json').catch(() => null)
-  return indexPromise
+// The days with data and the level limits, or null when the server is not running. Asked again
+// each time, since the server keeps adding intervals and can be started or stopped while the page
+// is open.
+function loadInfo() {
+  return fetchApi('days').catch(() => null)
 }
 
-function loadDay(day) {
-  dayPromises[day] ??= fetchJson(`speeds_${day}.json`)
-  return dayPromises[day]
+// every segment's speed at a time (null = the newest interval), or null when it is not stored
+function loadSpeeds(time) {
+  const query = time ? `?time=${encodeURIComponent(time)}` : ''
+  return fetchApi(`speeds${query}`).then(
+    (result) => result.speeds,
+    () => null,
+  )
 }
 
 // speed: percent of free flow
@@ -74,41 +82,27 @@ function slotTime(day, slot) {
   return new Date(Date.parse(`${day}T00:00:00+03:00`) + slot * QUARTER_HOUR).toISOString()
 }
 
-// The moment to show: the chosen time, or for the latest data the current 15 minutes of today
-// (the last interval of the newest day when the files do not reach today)
-function momentToShow(time, index) {
-  const now = riyadhSlot(Date.now())
-  if (!time) return index.days.includes(now.day) ? now : { day: index.days.at(-1), slot: 95 }
-  const moment = riyadhSlot(Date.parse(time))
-  const future = moment.day === now.day && moment.slot > now.slot
-  return index.days.includes(moment.day) && !future ? moment : null
-}
-
-// The days with network data, oldest first (empty when the files have not been built)
+// The days with network data, oldest first (empty when the server is not running)
 export async function getAvailableDays() {
-  const index = await loadIndex()
+  const index = await loadInfo()
   return index?.days ?? []
 }
 
-// Where the page opens: null (the latest data) when the files reach today; otherwise the current
-// time of day on the newest day with data. Also null without network files.
+// Where the page opens: null (the latest data) when the data reaches today; otherwise the current
+// time of day on the newest day with data. Also null when the server is not running.
 export async function getOpeningTime() {
-  const index = await loadIndex()
+  const index = await loadInfo()
   const now = riyadhSlot(Date.now())
   if (!index || index.days.includes(now.day)) return null
   return slotTime(index.days.at(-1), now.slot)
 }
 
 export async function getSegments(time = null) {
-  const index = await loadIndex()
+  const index = await loadInfo()
   if (!index) return null
 
-  const moment = momentToShow(time, index)
-  segmentsPromise ??= fetchJson('segments.geojson')
-  const [segments, dayData] = await Promise.all([
-    segmentsPromise,
-    moment ? loadDay(moment.day) : null,
-  ])
+  segmentsPromise ??= fetchApi('segments')
+  const [segments, speeds] = await Promise.all([segmentsPromise, loadSpeeds(time)])
 
   return {
     type: 'FeatureCollection',
@@ -119,7 +113,7 @@ export async function getSegments(time = null) {
     },
     features: segments.features.map((feature) => {
       const p = feature.properties
-      const speed = dayData?.speeds[p.id]?.[moment.slot]
+      const speed = speeds?.[p.id]
       const known = speed !== undefined && speed !== null
       return {
         type: 'Feature',
@@ -206,13 +200,13 @@ export async function getNetwork() {
   return { isSample: true, bounds: NETWORK_BOUNDS, maxBounds: CITY_BOUNDS, intersections }
 }
 
-// The 96 bars of one day: the day of `end` (a time in ms) when it has network data, otherwise
-// the last day with data. Without network files, 24 hours of sample bars ending at `end`.
+// The bars of one day: the day of `end` (a time in ms) when it has network data, otherwise the
+// last day with data. Without the network server, 24 hours of sample bars ending at `end`.
 export async function getNetworkTimeline(end = Date.now()) {
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === 'empty') return { isSample: true, bars: [] }
 
-  const index = await loadIndex()
+  const index = await loadInfo()
   if (!index) {
     await wait(150)
     return { isSample: true, bars: sampleTimelineBars(end) }
@@ -220,15 +214,14 @@ export async function getNetworkTimeline(end = Date.now()) {
 
   const wanted = riyadhSlot(end).day
   const day = index.days.includes(wanted) ? wanted : index.days.at(-1)
-  const dayData = await loadDay(day)
-  // bar height: how far below free flow the network is (0 free flow, 1 standstill). Today only up
-  // to the current 15 minutes, like a live feed.
-  const now = riyadhSlot(Date.now())
-  const lastSlot = day === now.day ? now.slot : 95
-  const bars = dayData.network_speed.slice(0, lastSlot + 1).map((speed, slot) => ({
-    time: slotTime(day, slot),
-    value: 1 - speed / 100,
-    level: levelOf(speed, index),
+
+  // bar height: how far below free flow the network is (0 free flow, 1 standstill). The server
+  // has only completed 15 minutes, so today ends at the latest one, like a live feed.
+  const { intervals } = await fetchApi(`timeline?day=${day}`)
+  const bars = intervals.map((interval) => ({
+    time: new Date(interval.interval_start).toISOString(),
+    value: 1 - interval.network_speed / 100,
+    level: levelOf(interval.network_speed, index),
   }))
   return { isSample: true, bars }
 }
