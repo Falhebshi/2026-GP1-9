@@ -9,7 +9,8 @@
 //                            intersections: [{ id, name, area, center, simulation }] }
 //   getNetworkTimeline(t)  { isSample, bars: [{ time, value, level }] }, the 96 bars of one day
 //   getSegments(time)      GeoJSON road segments, or null without the network server (see below)
-//   getAvailableDays()     the days with network data, oldest first
+//   getAvailableDays()     the days with network data, oldest first; [] while the server is still
+//                          filling its first interval; null when the server is not running
 
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 
@@ -82,10 +83,11 @@ function slotTime(day, slot) {
   return new Date(Date.parse(`${day}T00:00:00+03:00`) + slot * QUARTER_HOUR).toISOString()
 }
 
-// The days with network data, oldest first (empty when the server is not running)
+// The days with network data, oldest first: [] while the server is filling its first interval,
+// null when the server is not running
 export async function getAvailableDays() {
   const index = await loadInfo()
-  return index?.days ?? []
+  return index ? index.days : null
 }
 
 // Where the page opens: null (the latest data) when the data reaches today; otherwise the current
@@ -93,7 +95,7 @@ export async function getAvailableDays() {
 export async function getOpeningTime() {
   const index = await loadInfo()
   const now = riyadhSlot(Date.now())
-  if (!index || index.days.includes(now.day)) return null
+  if (!index || !index.days.length || index.days.includes(now.day)) return null
   return slotTime(index.days.at(-1), now.slot)
 }
 
@@ -101,7 +103,11 @@ export async function getSegments(time = null) {
   const index = await loadInfo()
   if (!index) return null
 
-  segmentsPromise ??= fetchApi('segments')
+  // a failed request is not kept, so the next call asks again
+  segmentsPromise ??= fetchApi('segments').catch((err) => {
+    segmentsPromise = null
+    throw err
+  })
   const [segments, speeds] = await Promise.all([segmentsPromise, loadSpeeds(time)])
 
   return {
@@ -201,7 +207,8 @@ export async function getNetwork() {
 }
 
 // The bars of one day: the day of `end` (a time in ms) when it has network data, otherwise the
-// last day with data. Without the network server, 24 hours of sample bars ending at `end`.
+// last day with data; none while the server fills its first interval. Without the network server,
+// 24 hours of sample bars ending at `end`.
 export async function getNetworkTimeline(end = Date.now()) {
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === 'empty') return { isSample: true, bars: [] }
@@ -211,6 +218,9 @@ export async function getNetworkTimeline(end = Date.now()) {
     await wait(150)
     return { isSample: true, bars: sampleTimelineBars(end) }
   }
+
+  // the server is still filling its first interval: no bars yet
+  if (!index.days.length) return { isSample: true, bars: [] }
 
   const wanted = riyadhSlot(end).day
   const day = index.days.includes(wanted) ? wanted : index.days.at(-1)
