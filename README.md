@@ -107,6 +107,8 @@ For a baseline run from the synthetic source, leave the source running and use a
 python simulation/scripts/run_baseline.py --analysis-start YYYY-MM-DDT08:00+03:00 --analysis-end YYYY-MM-DDT09:00+03:00
 ```
 
+To run from the RCRC replay source instead, add `--source rcrc`.
+
 Replace `YYYY-MM-DD` with a date available from the source. Keep the Riyadh `+03:00` offset. The run adds 15 minutes before and after the analysis period. Check that `/health` reports a `latest_available_timestamp` at or after the end of this full window; a new source initially has only seven days of history. Each run needs a new output directory under `simulation/outputs/baseline_runs/` by default. It writes generated demand, `raw/fcd.xml`, `raw/tripinfo.xml`, and `summary.json`. FCD files can be large, and raw outputs are not automatically shown as dashboard KPIs.
 
 More runner options and output details are in [simulation integration](docs/simulation_integration.md). The separate [3D scene guide](simulation/scene_3d/README.md) explains how to rebuild the frontend's scene files.

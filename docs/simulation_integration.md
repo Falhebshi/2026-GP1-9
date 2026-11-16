@@ -171,11 +171,11 @@ cycle. The runner adds no lane-change tuning. Avoid using the visualization
 set a 2 s lane-change duration. Existing smoke/stress configs are validation
 assets, not final generated demand.
 
-## Baseline Run from the Synthetic Source
+## Baseline Run from a Traffic Source
 
 `simulation/scripts/run_baseline.py` runs one baseline scenario end to end:
-synthetic source → ingestion → demand transformation →
-`generate_and_execute_scenario()`. It stops at the raw SUMO outputs; KPIs are
+traffic source (synthetic or the RCRC replay source) → ingestion → demand
+transformation → `generate_and_execute_scenario()`. It stops at the raw SUMO outputs; KPIs are
 calculated from them afterwards.
 
 From the repository root, start the source in one terminal and run the
@@ -189,7 +189,9 @@ python simulation/scripts/run_baseline.py --analysis-start 2026-10-27T08:00+03:0
 | Parameter | Meaning |
 | --- | --- |
 | `--analysis-start`, `--analysis-end` | Required. Analysis period in Riyadh time (`+03:00`). |
-| `--source-url` | Synthetic source; default `http://127.0.0.1:8000`. |
+| `--source` | `synthetic` (default) or `rcrc` (the [RCRC replay source](rcrc_replay_source.md)). |
+| `--source-url` | Default `http://127.0.0.1:8000` (synthetic) or `http://127.0.0.1:8001` (rcrc). |
+| `--history-days` | Days before the run window ingested to estimate missing counts. Default 0 (synthetic) or 35 (rcrc). |
 | `--seed`, `--step-length` | Default 42 and 0.4 s. |
 | `--run-id` | Default `RUN_BASELINE_<date>T<start>-<end>_S<seed>`, e.g. `RUN_BASELINE_20261027T0800-0900_S42`. |
 | `--out` | Fresh output folder; default `simulation/outputs/baseline_runs/<run-id>/`. |
@@ -205,7 +207,11 @@ script first checks that SUMO can be run, then:
 2. ingests the observations of the run window, and stops if any record is
    rejected;
 3. builds `SimulationDemand` for the run window, and stops if any movement or
-   interval cannot be built;
+   interval cannot be built. With `--history-days`, the days before the window
+   are ingested too, and missing counts are estimated within the gap limit
+   ([Traffic demand transformation](traffic_demand_transformation.md#missing-detector-imputation));
+   the source's latest available timestamp is passed on, so a silent newest
+   interval counts as missing;
 4. creates a historical baseline `Scenario` and a pending `SimulationRun`, then
    calls `generate_and_execute_scenario()`.
 
