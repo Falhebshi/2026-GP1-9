@@ -137,7 +137,8 @@ def input_origins(
     - RCRC demand is observed; synthetic and forecast demand are
       modelled assumptions;
     - demand that is allocated (split from a shared-lane detector) or
-      imputed (estimated for a detector that did not report) is also a
+      imputed (estimated for a detector that did not report) or
+      share-estimated (a movement no detector counts) is also a
       modelled assumption, whatever its source.
     Signal timing comes from SignalProgram.source and lane geometry is
     a modelled assumption (GEOMETRY_INPUT_ORIGIN). Simulation results
@@ -156,7 +157,11 @@ def input_origins(
             else InputOrigin.MODELLED_ASSUMPTION
         )
 
-        if demand.is_allocated or demand.is_imputed:
+        if (
+            demand.is_allocated
+            or demand.is_imputed
+            or demand.is_share_estimated
+        ):
             origins.add(InputOrigin.MODELLED_ASSUMPTION)
 
     if method == KpiMethod.SIMULATION:
