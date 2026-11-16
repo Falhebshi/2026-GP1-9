@@ -21,6 +21,17 @@ ANALYSIS_INTERVAL_S = 900
 
 
 # ============================================================
+# HISTORICAL ANALYSIS (docs/kpi_engine.md section 17)
+# ============================================================
+
+# A period's results are produced only when at least this share of its
+# days is stored, and every weekday of the selected day type at least
+# once. A project choice, not a value from a standard: missing days are
+# unrelated to traffic, so 80 % still gives a fair picture, and the
+# weekday check keeps the weekday mix (and every heatmap column).
+HISTORY_MIN_DAY_SHARE = 0.8
+
+# ============================================================
 # QUEUE
 # ============================================================
 
