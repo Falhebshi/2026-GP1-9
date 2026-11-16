@@ -212,9 +212,13 @@ function KpiRow({ summary, dayType, approachId }) {
         <KpiTile
           layout="stacked"
           label="95th-pct queue, worst movement"
+          // The storage ratio is shown only when it has a value: most lanes
+          // have no storage length yet, as on Current Traffic
           detail={
             queue.worst
-              ? `${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`
+              ? queue.worst.storageRatio?.status === 'ok'
+                ? `${queue.worst.label} · storage ratio ${formatKpiValue(queue.worst.storageRatio)}`
+                : queue.worst.label
               : undefined
           }
           {...kpiTileProps(queue.current)}
