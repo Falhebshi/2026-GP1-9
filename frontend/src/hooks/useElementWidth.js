@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // Measures how wide an element is, and measures again whenever it changes
 // size (the window is resized, a column wraps). Charts use it to draw at
@@ -8,12 +8,14 @@ import { useEffect, useRef, useState } from 'react'
 //   <div ref={ref}>… draw something width pixels wide …</div>
 //
 // width is 0 until the element has been measured once.
+//
+// ref is a callback ref, so the element is measured even when it appears
+// after the first render (a chart that first showed an empty message).
 function useElementWidth() {
-  const ref = useRef(null)
+  const [element, ref] = useState(null)
   const [width, setWidth] = useState(0)
 
   useEffect(() => {
-    const element = ref.current
     if (!element) return
 
     const observer = new ResizeObserver(([entry]) => {
@@ -22,7 +24,7 @@ function useElementWidth() {
     observer.observe(element)
 
     return () => observer.disconnect()
-  }, [])
+  }, [element])
 
   return [ref, width]
 }
