@@ -163,19 +163,26 @@ function TrendChart({ trend }) {
               ) : null,
             )}
 
-            {/* Days without a value: a light band, so the gap reads as missing */}
-            {points.map((p, i) =>
-              hasValue(p.result) ? null : (
+            {/* Days without a value: a light band, so the gap reads as missing.
+                Each band is one day wide, cut at the plot's edges (with only
+                two days, one day is the whole plot width). */}
+            {points.map((p, i) => {
+              if (hasValue(p.result)) return null
+              const half = plotWidth / Math.max(lastIndex, 1) / 2
+              const left = Math.max(x(i) - half, MARGIN.left)
+              const right = Math.min(x(i) + half, MARGIN.left + plotWidth)
+
+              return (
                 <rect
                   key={`gap-${p.date}`}
                   className="trend-missing"
-                  x={x(i) - plotWidth / Math.max(lastIndex, 1) / 2}
+                  x={left}
                   y={MARGIN.top}
-                  width={plotWidth / Math.max(lastIndex, 1)}
+                  width={right - left}
                   height={plotHeight}
                 />
-              ),
-            )}
+              )
+            })}
 
             {/* The line itself */}
             {segments.map((segment, i) =>
@@ -249,4 +256,4 @@ function unitLabel(trend, metric) {
   return unit ? ` (${unit})` : ''
 }
 
-export default TrendChart
+export default TrendChart
