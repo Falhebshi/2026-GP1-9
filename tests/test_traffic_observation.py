@@ -241,3 +241,43 @@ def test_extra_field_is_rejected():
 
     with pytest.raises(ValidationError):
         TrafficObservation(**data)
+
+# ============================================================
+# OCCUPANCY
+# ============================================================
+
+def test_occupancy_is_optional_and_kept_when_supplied():
+    data = valid_observation_data()
+    assert TrafficObservation(**data).occupancy_s is None
+
+    data["occupancy_s"] = 33
+    data["occupancy_percent"] = 3.7
+    observation = TrafficObservation(**data)
+
+    assert observation.occupancy_s == 33
+    assert observation.occupancy_percent == 3.7
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("occupancy_s", -1),
+        ("occupancy_s", 901),
+        ("occupancy_percent", -0.5),
+        ("occupancy_percent", 100.5),
+    ],
+)
+def test_impossible_occupancy_is_rejected(field, value):
+    data = valid_observation_data()
+    data[field] = value
+
+    with pytest.raises(ValidationError):
+        TrafficObservation(**data)
+
+
+def test_occupancy_may_fill_the_whole_interval():
+    data = valid_observation_data()
+    data["occupancy_s"] = 900
+    data["occupancy_percent"] = 100
+
+    assert TrafficObservation(**data).occupancy_s == 900

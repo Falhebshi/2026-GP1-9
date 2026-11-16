@@ -36,6 +36,25 @@ class ImputationMethod(str, Enum):
 
     NEIGHBOUR_REGRESSION = "neighbour_regression"
     HISTORICAL_AVERAGE = "historical_average"
+    LEVEL_ADJUSTED_AVERAGE = "level_adjusted_average"
+
+
+class ShareOrigin(str, Enum):
+    """
+    Where the ratio used to estimate an undetected movement came from.
+    Only assumed ratios exist today; add a value (for example
+    turning_count) when measured ratios become available.
+    """
+
+    ASSUMED = "assumed"
+
+
+class ShareScenario(str, Enum):
+    """Which value of an estimated ratio's range was used."""
+
+    LOW = "low"
+    CENTRAL = "central"
+    HIGH = "high"
 
 
 # ============================================================
@@ -75,6 +94,15 @@ class TrafficObservation(BaseModel):
     travel_time_s: float | None = Field(
         default=None,
         ge=0,
+    )
+    occupancy_s: float | None = Field(
+        default=None,
+        ge=0,
+    )
+    occupancy_percent: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
     )
 
     @field_validator(
@@ -127,11 +155,23 @@ class TrafficObservation(BaseModel):
 
     @model_validator(mode="after")
     def validate_interval(self) -> "TrafficObservation":
-        """Require a positive observation interval."""
+        """
+        Require a positive observation interval, and occupied time no
+        longer than the interval.
+        """
 
         if self.interval_end <= self.interval_start:
             raise ValueError(
                 "interval_end must be later than interval_start"
+            )
+
+        if (
+            self.occupancy_s is not None
+            and self.occupancy_s
+            > (self.interval_end - self.interval_start).total_seconds()
+        ):
+            raise ValueError(
+                "occupancy_s must not be longer than the interval"
             )
 
         return self
@@ -168,6 +208,41 @@ class ImputedDetector(BaseModel):
         return value
 
 
+class ShareEstimate(BaseModel):
+    """
+    How the demand of a movement without a detector was estimated: a
+    ratio applied to the demand of observed movements of the same
+    approach in the same interval (basis movements).
+
+    share_origin says where the ratio came from; today every ratio is
+    an assumption. basis_demand_ids are the demands it was applied to.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+    )
+
+    ratio: float = Field(ge=0)
+    scenario: ShareScenario
+    share_origin: ShareOrigin
+    basis_demand_ids: list[str] = Field(min_length=1)
+
+    @field_validator("basis_demand_ids")
+    @classmethod
+    def validate_basis_ids(cls, values: list[str]) -> list[str]:
+        """Reject empty or duplicate basis demand IDs."""
+
+        cleaned = [value.strip() for value in values]
+
+        if any(not value for value in cleaned):
+            raise ValueError("basis demand ID must not be empty")
+
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("basis_demand_ids must not contain duplicates")
+
+        return cleaned
+
 
 class SimulationDemand(BaseModel):
     """
@@ -185,6 +260,8 @@ class SimulationDemand(BaseModel):
     imputed_detectors lists the detectors that did not report and whose
     count was estimated. Part of such a demand is a modelled
     assumption, not a measured count.
+    share_estimate is set for a movement that no detector counts: its
+    count was estimated from a ratio to other movements' demand.
     """
 
     model_config = ConfigDict(
@@ -204,6 +281,7 @@ class SimulationDemand(BaseModel):
     source_observation_ids: list[str]
     allocated_observation_ids: list[str] = Field(default_factory=list)
     imputed_detectors: list[ImputedDetector] = Field(default_factory=list)
+    share_estimate: ShareEstimate | None = None
 
     @field_validator(
         "demand_id",
@@ -304,10 +382,18 @@ class SimulationDemand(BaseModel):
             }
             and not self.source_observation_ids
             and not self.imputed_detectors
+            and self.share_estimate is None
         ):
             raise ValueError(
                 f"{self.source.value} demand must reference "
-                "at least one source observation or imputed detector"
+                "at least one source observation, imputed detector "
+                "or share estimate"
+            )
+
+        if self.share_estimate is not None and self.source_observation_ids:
+            raise ValueError(
+                "a share-estimated demand has no source observations; "
+                "its basis is recorded in share_estimate"
             )
 
         imputed_keys = [
@@ -347,3 +433,10 @@ class SimulationDemand(BaseModel):
         """True when part of the count was estimated for a missing detector."""
 
         return bool(self.imputed_detectors)
+
+    @computed_field
+    @property
+    def is_share_estimated(self) -> bool:
+        """True when the movement has no detector and its count was estimated from a ratio."""
+
+        return self.share_estimate is not None
