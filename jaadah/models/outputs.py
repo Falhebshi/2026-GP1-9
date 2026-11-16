@@ -412,10 +412,13 @@ class CycleQueueRecord(BaseModel):
     its Jaadah lane_id; its approach, position and the movements it
     serves come from the matching ApproachLane.
 
-    reaches_section_end is true when the queue reached the start of the
-    lane's section during the cycle, so it may continue upstream where
-    lanes merge; the queue length is then the section length, a
-    minimum value.
+    reaches_section_end is true when the back of the queue came within
+    10 m of the start of the lane's section during the cycle: the queue
+    is near the measurement limit and may continue upstream where lanes
+    merge. The length is then capped at the section length and only
+    vehicles within the section are counted; the KPI engine reports the
+    lane's queue as unavailable, and the approach queue gives the full
+    length.
 
     Only the most specific identifiers are stored: the scenario is
     found through run_id (SimulationRun), and the approach and
@@ -521,19 +524,24 @@ class CycleQueueRecord(BaseModel):
 class ApproachCycleQueueRecord(BaseModel):
     """
     The full queue of one approach over one signal cycle, in one
-    simulation run: how far back from the signal stop line the queue
-    reached, over the approach's whole measurement zone and across the
-    points where its lanes merge.
+    simulation run: how far back the approach's queues reached, over
+    its whole measurement zone and across the points where its lanes
+    merge.
 
     Produced by jaadah/kpi_inputs from SUMO vehicle position output,
     per signal cycle, aligned with the cycle start
-    (docs/kpi_measurements.md). Queued vehicles on the signal lanes and
-    on the road behind them count; slip and bypass lanes have their
-    own lane queues (CycleQueueRecord).
+    (docs/kpi_measurements.md). The queue is the longest of the signal
+    queue (from the signal stop line) and each slip's or bypass's queue
+    (from the end of its lanes), each followed onto the shared road;
+    slip and bypass lanes also have their own lane queues
+    (CycleQueueRecord).
 
-    reaches_zone_end is true when the queue reached the far end of the
-    zone during the cycle, so it may continue beyond what is measured;
-    the queue length is then the zone length, a minimum value.
+    reaches_zone_end is true when the back of a queue came within 10 m
+    of the far end of the zone during the cycle: the queue is near the
+    measurement limit and may continue beyond it. The length is then
+    capped at the zone length and only vehicles within the zone are
+    counted; the KPI engine reports the approach's queue, delay and
+    queue duration as unavailable for that interval.
 
     Only the most specific identifiers are stored: the scenario is
     found through run_id (SimulationRun) and the intersection through

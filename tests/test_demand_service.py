@@ -101,7 +101,7 @@ def make_valid_config(
 
     return NetworkMappingConfig.model_validate(
         {
-            "schema_version": "2.0",
+            "schema_version": "2.1",
             "mapping_version": "test",
             "network": {
                 "version": "test",

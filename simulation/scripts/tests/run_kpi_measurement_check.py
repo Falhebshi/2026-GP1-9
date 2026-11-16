@@ -25,7 +25,7 @@ The run passes when:
    would be reported as unavailable);
 5. no approach's queue is shorter than the queue of one of its signal
    lanes in the same cycle (the approach queue continues the lane
-   queues, so it cannot be shorter), unless it reached its zone end
+   queues, so it cannot be shorter), unless it came near its zone end
    (it stops there, and both values are then unavailable).
 
 The records are saved as JSON next to the SUMO files.
