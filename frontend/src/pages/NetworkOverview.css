@@ -53,13 +53,42 @@
   box-shadow: var(--shadow-float);
 }
 
-/* timeline along the bottom */
+/* timeline along the bottom; the strip itself lets clicks through to the map */
 .network-overview-timeline {
   position: absolute;
   left: var(--space-lg);
   right: var(--space-lg);
   bottom: var(--space-md);
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  pointer-events: none;
+}
+
+.network-overview-timeline > * {
+  pointer-events: auto;
+}
+
+.network-overview-timeline > .card {
+  width: 100%;
+}
+
+/* open / close button above the timeline */
+.network-overview-timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-shadow: var(--shadow-float);
+}
+
+.network-overview-chevron {
+  transform: rotate(180deg);
+}
+
+.network-overview-timeline-closed .network-overview-chevron {
+  transform: none;
 }
 
 .network-overview-divider {
