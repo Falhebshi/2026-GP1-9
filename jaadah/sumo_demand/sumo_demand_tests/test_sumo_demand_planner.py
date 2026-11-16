@@ -363,7 +363,7 @@ SMALL_NETWORK = """<net>
 
 def small_config():
     return NetworkMappingConfig.model_validate({
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "mapping_version": "test",
         "network": {"version": "small", "path": "small.net.xml", "sha256": "a" * 64},
         "intersection_mapping": {"intersection_id": "INT_001"},

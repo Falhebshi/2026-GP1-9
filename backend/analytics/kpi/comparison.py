@@ -8,9 +8,8 @@ Combining runs and comparing scenarios (docs/kpi_engine.md section 12).
   out.
 - Queue lengths and storage ratios are combined per lane (and queue
   lengths per approach, over the whole zone) first; a movement then
-  takes its longest lane, an approach the larger of its full-zone
-  queue and its slip lanes, and the intersection its longest
-  approach.
+  takes its longest lane, an approach its full-zone queue (which
+  covers its slips), and the intersection its longest approach.
 - A baseline and an intervention are compared pair by pair (matched
   seeds): the mean of the per-pair differences, with their standard
   deviation, as a KpiComparison.
@@ -351,7 +350,6 @@ def queue_from_lanes(
     movements: dict[str, Movement],
     uncontrolled_by_approach: set[str] = frozenset(),
     approach_results: dict[str, KpiResult] | None = None,
-    slip_lane_ids: set[str] = frozenset(),
 ) -> dict[tuple[str, str], LaneChoice]:
     """
     Movement, approach and intersection values of a queue length or
@@ -362,8 +360,8 @@ def queue_from_lanes(
 
     - A movement takes its longest (highest) lane.
     - An approach takes, for a queue length (approach_results given),
-      the larger of its full-zone queue and its slip lanes
-      (slip_lane_ids); for a storage ratio, its highest lane.
+      its full-zone queue, which covers its slips; for a storage ratio,
+      its highest lane.
     - The intersection takes its longest (highest) approach.
 
     An unavailable value keeps its parts' reason when they all give the
@@ -467,8 +465,7 @@ def queue_from_lanes(
         if approach_results is None:
             sources = lane_sources(own)
         else:
-            slips = [lane for lane in own if lane.lane_id in slip_lane_ids]
-            sources = [(None, approach_results[approach_id]), *lane_sources(slips)]
+            sources = [(None, approach_results[approach_id])]
 
         results[("approach", approach_id)] = choose(
             KpiLevel.APPROACH,
