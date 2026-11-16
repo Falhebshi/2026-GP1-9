@@ -13,7 +13,15 @@ from jaadah.models.traffic import (
 # Imputation limits
 INTERVAL = timedelta(minutes=15)
 
-MAX_GAP_INTERVALS = 4
+# Longest run of missing intervals that is estimated, counted back from
+# the interval being estimated. Chosen by the gap-limit evaluation on the
+# RCRC site 1444 report (analysis/rcrc_site_1444/gap_limit_evaluation.py):
+# for this long, the hour before the gap still makes the estimate better
+# than a typical day. Longer runs stay missing.
+MAX_GAP_INTERVALS = 5
+
+# Intervals before a gap used to measure how busy the day was.
+RECENT_LEVEL_INTERVALS = 4
 
 MIN_REGRESSION_INTERVALS = 5 * 96
 
@@ -127,26 +135,108 @@ def missing_run_length(
     present: set[datetime],
     interval_start: datetime,
     first_known: datetime,
-    last_known: datetime,
-) -> int:
+) -> int | None:
     """
-    Return how many consecutive intervals around interval_start the
-    detector is missing, within the period that has any data.
+    Return how many consecutive intervals the detector has been missing,
+    counted back from interval_start (included) to its last reported
+    interval. This is what a live system knows: how long the detector
+    has been silent so far, not how long the gap will last.
+
+    Returns None when the detector has no reported interval before
+    interval_start since first_known: there is no data to estimate from.
     """
 
     length = 1
+    current = interval_start - INTERVAL
 
-    for step in (-INTERVAL, INTERVAL):
-        current = interval_start + step
+    while current not in present:
+        if current < first_known:
+            return None
 
-        while (
-            first_known <= current <= last_known
-            and current not in present
-        ):
-            length += 1
-            current += step
+        length += 1
+        current -= INTERVAL
 
     return length
+
+
+def slot_average(
+    counts: dict[datetime, int],
+    moment: datetime,
+) -> float | None:
+    """
+    Return the average count in the time slot and day type of `moment`
+    on other days, or None when fewer than MIN_HISTORICAL_VALUES exist.
+    """
+
+    values = [
+        count
+        for interval, count in counts.items()
+        if interval.time() == moment.time()
+        and interval.date() != moment.date()
+        and day_type(interval) == day_type(moment)
+    ]
+
+    if len(values) < MIN_HISTORICAL_VALUES:
+        return None
+
+    return statistics.fmean(values)
+
+
+def level_ratio(
+    recent_counts: list[int],
+    recent_averages: list[float],
+) -> float | None:
+    """
+    How busy the day is compared with a typical day: the counts of the
+    intervals before a gap (RECENT_LEVEL_INTERVALS of them, in
+    impute_count) divided by their slot averages. None when there are
+    none, the lists differ in length, or the typical count is zero.
+    """
+
+    if not recent_counts or len(recent_counts) != len(recent_averages):
+        return None
+
+    typical = sum(recent_averages)
+
+    if typical <= 0:
+        return None
+
+    return sum(recent_counts) / typical
+
+
+def level_adjusted_estimate(
+    average: float,
+    ratio: float | None,
+) -> int:
+    """
+    The estimate for a missing interval: its slot average, scaled by the
+    level ratio when there is one. Used by impute_count and by the
+    gap-limit evaluation, so the evaluation measures this exact rule.
+    """
+
+    return whole_vehicles(average * (ratio if ratio is not None else 1.0))
+
+
+def recent_level(
+    counts: dict[datetime, int],
+    gap_start: datetime,
+) -> float | None:
+    """The level ratio of the RECENT_LEVEL_INTERVALS before gap_start."""
+
+    recent = [
+        gap_start - step * INTERVAL
+        for step in range(RECENT_LEVEL_INTERVALS, 0, -1)
+    ]
+
+    if any(interval not in counts for interval in recent):
+        return None
+
+    averages = [slot_average(counts, interval) for interval in recent]
+
+    if any(average is None for average in averages):
+        return None
+
+    return level_ratio([counts[interval] for interval in recent], averages)
 
 
 def impute_count(
@@ -169,9 +259,16 @@ def impute_count(
     Method 1 uses the neighbours that reported: one regression line per
     neighbour, fitted on history, and the median of their estimates.
     Method 2, used when no neighbour estimate is possible, is the
-    average of the detector's past counts in the same time slot and
-    day type. Returns None when the gap is longer than
-    MAX_GAP_INTERVALS or neither method has enough history.
+    average of the detector's counts in the same time slot and day type
+    on other days, scaled by how busy the hour before the gap was
+    compared with a typical day (level_adjusted_average). Without a
+    complete hour before the gap, the plain average is used
+    (historical_average). Returns None when the detector has been
+    missing for more than MAX_GAP_INTERVALS, has no earlier data, or
+    neither method has enough history.
+
+    last_known is kept for the callers' signature; the gap is counted
+    back from interval_start.
     """
 
     _, site_id, detector_id = target
@@ -181,12 +278,13 @@ def impute_count(
         if interval != interval_start
     }
 
-    if missing_run_length(
+    run_length = missing_run_length(
         present=set(target_counts),
         interval_start=interval_start,
         first_known=first_known,
-        last_known=last_known,
-    ) > MAX_GAP_INTERVALS:
+    )
+
+    if run_length is None or run_length > MAX_GAP_INTERVALS:
         return None
 
     estimates = []
@@ -214,19 +312,23 @@ def impute_count(
             method=ImputationMethod.NEIGHBOUR_REGRESSION,
         )
 
-    same_slot = [
-        count
-        for interval, count in target_counts.items()
-        if interval.time() == interval_start.time()
-        and day_type(interval) == day_type(interval_start)
-    ]
+    average = slot_average(target_counts, interval_start)
 
-    if len(same_slot) >= MIN_HISTORICAL_VALUES:
-        return ImputedCount(
-            site_id=site_id,
-            detector_id=detector_id,
-            vehicle_count=whole_vehicles(statistics.fmean(same_slot)),
-            method=ImputationMethod.HISTORICAL_AVERAGE,
-        )
+    if average is None:
+        return None
 
-    return None
+    ratio = recent_level(
+        target_counts,
+        gap_start=interval_start - (run_length - 1) * INTERVAL,
+    )
+
+    return ImputedCount(
+        site_id=site_id,
+        detector_id=detector_id,
+        vehicle_count=level_adjusted_estimate(average, ratio),
+        method=(
+            ImputationMethod.LEVEL_ADJUSTED_AVERAGE
+            if ratio is not None
+            else ImputationMethod.HISTORICAL_AVERAGE
+        ),
+    )

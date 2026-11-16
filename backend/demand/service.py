@@ -383,16 +383,107 @@ def find_neighbour_detectors(
     }
 
 
+def window_intervals(
+    window_start: datetime,
+    window_end: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """Return the 15-minute intervals of a window, in order."""
+
+    intervals = []
+    interval_start = window_start
+
+    while interval_start < window_end:
+        intervals.append((interval_start, interval_start + INTERVAL))
+        interval_start += INTERVAL
+
+    return intervals
+
+
+def find_silent_sites(
+    config: NetworkMappingConfig,
+    sources: set[TrafficObservationSource],
+    intervals: list[tuple[datetime, datetime]],
+    groups: dict,
+    shared_groups: dict,
+) -> dict[tuple, set[str]]:
+    """
+    Return, keyed by source and interval, the mapped sites from which
+    no detector at all reported in that interval (a site-wide outage).
+    """
+
+    sites_by_source = defaultdict(set)
+
+    for mapping in config.detector_mappings:
+        if mapping.source in sources:
+            sites_by_source[mapping.source].add(mapping.site_id)
+
+    reported = defaultdict(set)
+
+    for group_key, group in groups.items():
+        source, _, interval_start, interval_end = group_key
+
+        for site_id, _ in group:
+            reported[(source, interval_start, interval_end)].add(site_id)
+
+    for shared_key, group in shared_groups.items():
+        for site_id, _ in group:
+            reported[shared_key].add(site_id)
+
+    silent = {}
+
+    for source, sites in sites_by_source.items():
+        for interval_start, interval_end in intervals:
+            interval_key = (source, interval_start, interval_end)
+            missing = sites - reported[interval_key]
+
+            if missing:
+                silent[interval_key] = missing
+
+    return silent
+
+
+def inside_data(
+    silent_sites: dict[tuple, set[str]],
+    first_known: datetime,
+    last_known: datetime,
+    available_until: datetime | None,
+) -> dict[tuple, set[str]]:
+    """
+    Keep only real outages: intervals after the first known data and
+    already delivered by the source.
+
+    available_until is the source's latest_available_timestamp: an
+    interval ending by then with no data is missing (live, this is how
+    the newest interval is filled). Without it, an interval counts as
+    delivered only when data exists after it. An interval before the
+    first known data is outside the data, not an outage.
+    """
+
+    return {
+        interval_key: sites
+        for interval_key, sites in silent_sites.items()
+        if first_known < interval_key[1]
+        and (
+            interval_key[2] <= available_until
+            if available_until is not None
+            else interval_key[1] < last_known
+        )
+    }
+
+
 def impute_missing_detectors(
     accepted: list[TrafficObservation],
     history: list[TrafficObservation],
     config: NetworkMappingConfig,
     groups: dict,
     conflicted_detectors: set,
+    silent_sites: dict[tuple, set[str]] | None = None,
+    available_until: datetime | None = None,
 ) -> dict[tuple, dict[tuple, ImputedCount]]:
     """
     Estimate the counts of usable detectors that did not report in an
-    interval of the batch, at a site that did report.
+    interval of the batch, at a site that did report, or at a site in
+    silent_sites (a site-wide outage inside the requested window).
 
     The estimates are learned from the valid history and the accepted
     observations of the batch only: rejected and conflicting
@@ -400,7 +491,8 @@ def impute_missing_detectors(
 
     Returns the estimates keyed like the movement groups: source,
     movement and interval, then site and detector ID. Shared-lane
-    detectors are never estimated.
+    detectors are not estimated here (see
+    impute_outage_shared_detectors).
     """
 
     history_index = build_history_index(history + accepted)
@@ -418,6 +510,11 @@ def impute_missing_detectors(
 
     reporting_sites = defaultdict(set)
     current_counts = defaultdict(dict)
+
+    for interval_key, sites in inside_data(
+        silent_sites or {}, first_known, last_known, available_until
+    ).items():
+        reporting_sites[interval_key] |= sites
 
     for group_key, group in groups.items():
         source, _, interval_start, interval_end = group_key
@@ -471,6 +568,70 @@ def impute_missing_detectors(
 
             if estimate is not None:
                 imputed[group_key][detector_key] = estimate
+
+    return imputed
+
+
+def impute_outage_shared_detectors(
+    accepted: list[TrafficObservation],
+    history: list[TrafficObservation],
+    config: NetworkMappingConfig,
+    silent_sites: dict[tuple, set[str]],
+    available_until: datetime | None = None,
+) -> dict[tuple, dict[tuple, ImputedCount]]:
+    """
+    Estimate the counts of shared-lane detectors at a site that sent
+    nothing at all in an interval (a site-wide outage).
+
+    Shared-lane detectors are otherwise never estimated, because their
+    split is already an assumption. In a site-wide outage there is no
+    measured count to protect, and without an estimate the whole
+    approach has no demand. Only the historical average is possible,
+    since no neighbour reported.
+
+    Returns the estimates keyed like the shared groups: source and
+    interval, then site and detector ID.
+    """
+
+    history_index = build_history_index(history + accepted)
+    known = [
+        interval
+        for counts in history_index.values()
+        for interval in counts
+    ]
+
+    if not known:
+        return {}
+
+    first_known, last_known = min(known), max(known)
+    imputed = defaultdict(dict)
+
+    for interval_key, sites in inside_data(
+        silent_sites, first_known, last_known, available_until
+    ).items():
+        source, interval_start, _ = interval_key
+
+        for mapping in config.detector_mappings:
+            if (
+                mapping.mapping_status != MappingStatus.REQUIRES_ALLOCATION
+                or mapping.source != source
+                or mapping.site_id not in sites
+            ):
+                continue
+
+            detector_key = (mapping.site_id, mapping.detector_id)
+            estimate = impute_count(
+                target=(source,) + detector_key,
+                interval_start=interval_start,
+                neighbours=[],
+                current_counts={},
+                history_index=history_index,
+                first_known=first_known,
+                last_known=last_known,
+            )
+
+            if estimate is not None:
+                imputed[interval_key][detector_key] = estimate
 
     return imputed
 
@@ -547,6 +708,7 @@ def transform_observations(
     history: list[TrafficObservation] | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    available_until: datetime | None = None,
 ) -> DemandTransformationResult:
     """
     Turn detector observations into movement demand for each interval.
@@ -575,6 +737,14 @@ def transform_observations(
     Observations that cannot be mapped, and movement intervals with a
     missing or conflicting detector, are reported instead of becoming
     demand.
+
+    When a requested window and history are both given, a site that
+    sent nothing at all in an interval (a site-wide outage) is
+    estimated too, including its shared-lane detectors (see
+    impute_outage_shared_detectors). available_until, the source's
+    latest_available_timestamp, says which silent intervals were
+    already delivered and are therefore missing rather than still to
+    come; without it, only gaps followed by data are estimated.
     """
 
     share_adjustments = share_adjustments or {}
@@ -698,21 +868,45 @@ def transform_observations(
         )
         not in conflicted_detectors
     ]
+    valid_history = [
+        observation
+        for observation in history or []
+        if interval_problem(observation) is None
+    ]
+    silent_sites = (
+        find_silent_sites(
+            config=config,
+            sources={
+                observation.source
+                for observation in accepted + valid_history
+            },
+            intervals=window_intervals(window_start, window_end),
+            groups=groups,
+            shared_groups=shared_groups,
+        )
+        if history and window_start is not None
+        else {}
+    )
     imputed = (
         impute_missing_detectors(
             accepted=accepted,
-            history=[
-                observation
-                for observation in history
-                if interval_problem(observation) is None
-            ],
+            history=valid_history,
             config=config,
             groups=groups,
             conflicted_detectors=conflicted_detectors,
+            silent_sites=silent_sites,
+            available_until=available_until,
         )
         if history
         else {}
     )
+    imputed_shared = impute_outage_shared_detectors(
+        accepted=accepted,
+        history=valid_history,
+        config=config,
+        silent_sites=silent_sites,
+        available_until=available_until,
+    ) if silent_sites else {}
 
     def counted(group_key, detector_key):
         """The reported or estimated count of a detector, or None."""
@@ -730,91 +924,114 @@ def transform_observations(
     split_estimates = defaultdict(dict)
     blocked = {}
 
-    for shared_key, shared_group in shared_groups.items():
+    shared_items = [
+        (shared_key, detector_key, observation, None)
+        for shared_key, shared_group in shared_groups.items()
+        for detector_key, observation in shared_group.items()
+    ] + [
+        (shared_key, detector_key, None, estimate)
+        for shared_key, estimates in imputed_shared.items()
+        for detector_key, estimate in estimates.items()
+    ]
+
+    for shared_key, detector_key, observation, shared_estimate in shared_items:
         source, interval_start, interval_end = shared_key
+        shared_count = (
+            observation.vehicle_count
+            if observation is not None
+            else shared_estimate.vehicle_count
+        )
+        shared_observation_id = (
+            observation.observation_id
+            if observation is not None
+            else None
+        )
 
-        for detector_key, observation in shared_group.items():
-            by_movement = references[(source,) + detector_key]
-            movement_keys = {
-                movement_id: (
-                    source,
-                    movement_id,
-                    interval_start,
-                    interval_end,
-                )
-                for movement_id in by_movement
-            }
+        by_movement = references[(source,) + detector_key]
+        movement_keys = {
+            movement_id: (
+                source,
+                movement_id,
+                interval_start,
+                interval_end,
+            )
+            for movement_id in by_movement
+        }
 
-            reason = None
-            detector_id = detector_key[1]
+        reason = None
+        detector_id = detector_key[1]
 
-            if shared_key + detector_key in conflicted_detectors:
-                reason = (
-                    f"shared detector {detector_id} sent different counts"
-                )
+        if shared_key + detector_key in conflicted_detectors:
+            reason = (
+                f"shared detector {detector_id} sent different counts"
+            )
 
-            elif not all(by_movement.values()):
-                reason = (
-                    f"shared detector {detector_id} has no exclusive "
-                    "lane for every movement to split by"
-                )
+        elif not all(by_movement.values()):
+            reason = (
+                f"shared detector {detector_id} has no exclusive "
+                "lane for every movement to split by"
+            )
 
-            else:
-                unusable = sorted(
-                    key[1]
-                    for movement_id, detector_keys in by_movement.items()
-                    for key in detector_keys
-                    if counted(movement_keys[movement_id], key) is None
-                    or shared_key + key in conflicted_detectors
-                )
-
-                if unusable:
-                    reason = (
-                        f"split of shared detector {detector_id} "
-                        "needs detector(s) "
-                        + ", ".join(unusable)
-                    )
-
-            if reason is not None:
-                for group_key in movement_keys.values():
-                    blocked[group_key] = (
-                        reason,
-                        observation.observation_id,
-                    )
-
-                continue
-
-            volumes_per_lane = {
-                movement_id: sum(
-                    counted(movement_keys[movement_id], key)
-                    for key in detector_keys
-                )
-                / len(detector_keys)
-                for movement_id, detector_keys in by_movement.items()
-            }
-            estimates_used = {
-                key: imputed[movement_keys[movement_id]][key]
+        else:
+            unusable = sorted(
+                key[1]
                 for movement_id, detector_keys in by_movement.items()
                 for key in detector_keys
-                if key in imputed.get(movement_keys[movement_id], {})
-            }
-            shares = adjust_shares(
-                shares=calculate_shares(volumes_per_lane),
-                share_adjustments=share_adjustments,
-            )
-            parts = split_count(
-                vehicle_count=observation.vehicle_count,
-                shares=shares,
+                if counted(movement_keys[movement_id], key) is None
+                or shared_key + key in conflicted_detectors
             )
 
-            for movement_id, part in parts.items():
-                allocated[movement_keys[movement_id]][detector_key] = (
-                    observation,
-                    part,
+            if unusable:
+                reason = (
+                    f"split of shared detector {detector_id} "
+                    "needs detector(s) "
+                    + ", ".join(unusable)
                 )
-                split_estimates[movement_keys[movement_id]].update(
-                    estimates_used
+
+        if reason is not None:
+            for group_key in movement_keys.values():
+                blocked[group_key] = (
+                    reason,
+                    shared_observation_id,
                 )
+
+            continue
+
+        volumes_per_lane = {
+            movement_id: sum(
+                counted(movement_keys[movement_id], key)
+                for key in detector_keys
+            )
+            / len(detector_keys)
+            for movement_id, detector_keys in by_movement.items()
+        }
+        estimates_used = {
+            key: imputed[movement_keys[movement_id]][key]
+            for movement_id, detector_keys in by_movement.items()
+            for key in detector_keys
+            if key in imputed.get(movement_keys[movement_id], {})
+        }
+
+        if shared_estimate is not None:
+            estimates_used[detector_key] = shared_estimate
+
+        shares = adjust_shares(
+            shares=calculate_shares(volumes_per_lane),
+            share_adjustments=share_adjustments,
+        )
+        parts = split_count(
+            vehicle_count=shared_count,
+            shares=shares,
+        )
+
+        for movement_id, part in parts.items():
+            allocated[movement_keys[movement_id]][detector_key] = (
+                observation,
+                part,
+            )
+            split_estimates[movement_keys[movement_id]].update(
+                estimates_used
+            )
 
     movement_detectors = find_movement_detectors(config)
     shared_detectors = find_shared_detectors(config)
@@ -834,6 +1051,7 @@ def transform_observations(
             + [
                 observation.observation_id
                 for observation, _ in shared_parts.values()
+                if observation is not None
             ]
         )
 
@@ -877,7 +1095,14 @@ def transform_observations(
                 DemandTransformationError(
                     message=reason,
                     observation_ids=tuple(
-                        sorted(observation_ids + [shared_observation_id])
+                        sorted(
+                            observation_ids
+                            + (
+                                [shared_observation_id]
+                                if shared_observation_id is not None
+                                else []
+                            )
+                        )
                     ),
                     movement_id=movement_id,
                     interval_end=interval_end,
@@ -940,6 +1165,7 @@ def transform_observations(
                 allocated_observation_ids=sorted(
                     observation.observation_id
                     for observation, _ in shared_parts.values()
+                    if observation is not None
                 ),
                 imputed_detectors=[
                     ImputedDetector(
@@ -1050,6 +1276,7 @@ def build_simulation_demand(
     history: list[TrafficObservation] | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    available_until: datetime | None = None,
 ) -> DemandTransformationResult:
     """
     Load the network mappings and transform a batch of observations
@@ -1070,4 +1297,5 @@ def build_simulation_demand(
         history=history,
         window_start=window_start,
         window_end=window_end,
+        available_until=available_until,
     )
