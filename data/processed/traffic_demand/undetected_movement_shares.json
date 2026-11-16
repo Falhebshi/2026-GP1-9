@@ -1,0 +1,49 @@
+{
+  "config_version": "2.0-lane-based",
+  "description": "Ratios for movements with no detector at RCRC site 1444. ratio = movement volume / total volume of the basis movements in the same interval. Central value: each slip lane is assumed to carry the average per-lane volume of the counted stop-bar lanes beside it, so central = slip lanes / counted lanes on the approach (an assumption informed by the HCM convention of distributing a volume evenly over parallel lanes; no source applies it across movements). Low = half and high = double the central value. Replace with turning counts if RCRC provides them.",
+  "shares": [
+    {
+      "movement_id": "MOV_W_S_SLIP",
+      "source": "rcrc",
+      "basis_movement_ids": [
+        "MOV_W_N",
+        "MOV_W_E"
+      ],
+      "ratio": {
+        "low": 0.16666666666666666,
+        "central": 0.3333333333333333,
+        "high": 0.6666666666666666
+      },
+      "share_origin": "assumed",
+      "note": "West: 1 slip lane (LANE_W_4) beside 3 counted lanes (LANE_W_1 to LANE_W_3)."
+    },
+    {
+      "movement_id": "MOV_N_W_SLIP",
+      "source": "rcrc",
+      "basis_movement_ids": [
+        "MOV_N_E"
+      ],
+      "ratio": {
+        "low": 0.16666666666666666,
+        "central": 0.3333333333333333,
+        "high": 0.6666666666666666
+      },
+      "share_origin": "assumed",
+      "note": "North: 1 slip lane (LANE_N_4) beside 3 counted lanes (LANE_N_1 to LANE_N_3)."
+    },
+    {
+      "movement_id": "MOV_S_E_BYPASS",
+      "source": "rcrc",
+      "basis_movement_ids": [
+        "MOV_S_W"
+      ],
+      "ratio": {
+        "low": 0.5,
+        "central": 1.0,
+        "high": 2.0
+      },
+      "share_origin": "assumed",
+      "note": "South: 2 bypass lanes (LANE_S_3, LANE_S_4) beside 2 counted lanes (LANE_S_1, LANE_S_2)."
+    }
+  ]
+}

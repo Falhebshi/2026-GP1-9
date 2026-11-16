@@ -10,6 +10,12 @@ from backend.demand.imputation import (
     build_history_index,
     impute_count,
 )
+from backend.demand.share_estimates import (
+    DEFAULT_SHARE_CONFIG_PATH,
+    ShareConfig,
+    estimate_undetected_movements,
+    load_share_config,
+)
 from backend.demand.mapper import (
     find_detector_mapping,
     map_observation_to_movement,
@@ -21,6 +27,7 @@ from jaadah.models.mappings import (
 )
 from jaadah.models.traffic import (
     ImputedDetector,
+    ShareScenario,
     SimulationDemand,
     SimulationDemandSource,
     TrafficObservation,
@@ -708,6 +715,8 @@ def transform_observations(
     history: list[TrafficObservation] | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    share_config: ShareConfig | None = None,
+    share_scenario: ShareScenario = ShareScenario.CENTRAL,
     available_until: datetime | None = None,
 ) -> DemandTransformationResult:
     """
@@ -745,6 +754,11 @@ def transform_observations(
     latest_available_timestamp, says which silent intervals were
     already delivered and are therefore missing rather than still to
     come; without it, only gaps followed by data are estimated.
+
+    share_config estimates the demand of movements that no detector
+    counts, as a ratio of observed movements on the same approach
+    (see share_estimates.py); share_scenario picks the low, central or
+    high ratio.
     """
 
     share_adjustments = share_adjustments or {}
@@ -1183,6 +1197,36 @@ def transform_observations(
             )
         )
 
+    if share_config is not None:
+        estimated, problems = estimate_undetected_movements(
+            demands=demands,
+            share_config=share_config,
+            config=config,
+            scenario=share_scenario,
+            sources={observation.source for observation in observations},
+            intervals=(
+                window_intervals(window_start, window_end)
+                if window_start is not None
+                else None
+            ),
+        )
+        demands = sorted(
+            demands + estimated,
+            key=lambda demand: (
+                demand.interval_start,
+                demand.movement_id,
+                demand.source.value,
+            ),
+        )
+        errors.extend(
+            DemandTransformationError(
+                message=message,
+                movement_id=movement_id,
+                interval_end=interval_end,
+            )
+            for movement_id, interval_end, message in problems
+        )
+
     if window_start is not None:
         errors.extend(
             find_window_gaps(
@@ -1276,6 +1320,8 @@ def build_simulation_demand(
     history: list[TrafficObservation] | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    share_config_path: str | Path | None = DEFAULT_SHARE_CONFIG_PATH,
+    share_scenario: ShareScenario = ShareScenario.CENTRAL,
     available_until: datetime | None = None,
 ) -> DemandTransformationResult:
     """
@@ -1285,7 +1331,10 @@ def build_simulation_demand(
     The observations are usually the accepted observations of one
     ingestion batch. share_adjustments (sensitivity runs), history
     (estimating detectors that did not report) and the requested window
-    are passed on to transform_observations.
+    are passed on to transform_observations. The ratios for movements
+    without a detector are read from share_config_path (None turns the
+    estimates off) and share_scenario picks their low, central or high
+    value.
     """
 
     config = load_network_mappings(mapping_path)
@@ -1297,5 +1346,11 @@ def build_simulation_demand(
         history=history,
         window_start=window_start,
         window_end=window_end,
+        share_config=(
+            load_share_config(share_config_path)
+            if share_config_path is not None
+            else None
+        ),
+        share_scenario=share_scenario,
         available_until=available_until,
     )
