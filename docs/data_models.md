@@ -390,17 +390,17 @@ Queue length for one lane over one signal cycle, aligned with the cycle start, m
 
 Fields: `run_id`, `lane_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_section_end` (default false).
 
-`reaches_section_end` is true when the queue reached the start of the lane's section during the cycle, so it may continue upstream where lanes merge; the real queue was then longer than the recorded one. It requires a queue.
+`reaches_section_end` is true when the back of the queue came within 10 m of the start of the lane's section during the cycle: the queue is near the measurement limit and may continue upstream where lanes merge, so the real queue may be longer than the recorded one. The length is capped at the section length, and only vehicles whose front is within the section are counted. It requires a queue.
 
 The lane's approach, position and served movements come from its `ApproachLane`. The queue in metres and in vehicles must both be zero or both be above zero. The cycle length is not fixed in the model; it belongs to `SignalProgram` and may change in an intervention.
 
 ## 4.6 `ApproachCycleQueueRecord`
 
-The full queue of one approach over one signal cycle, aligned with the cycle start: how far back from the signal stop line the queue reached, over the approach's whole measurement zone and across the points where its lanes merge ([KPI measurements](kpi_measurements.md), section 5.6).
+The full queue of one approach over one signal cycle, aligned with the cycle start: how far back the approach's queues reached, over its whole measurement zone and across the points where its lanes merge ([KPI measurements](kpi_measurements.md), section 5.6).
 
 Fields: `run_id`, `approach_id`, `cycle_start`, `cycle_end`, `max_queue_length_m`, `max_queue_vehicles`, `reaches_zone_end` (default false).
 
-Queued vehicles on the signal lanes and on the road behind them count; slip and bypass lanes have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the queue reached the far end of the zone during the cycle, so it may continue beyond what is measured; the real queue was then longer than the recorded one. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
+The queue is the longest of the signal queue (from the signal stop line) and each slip's or bypass's queue (from the end of its lanes), each followed back onto the shared road to the zone end; slip and bypass lanes also have their own lane queues in `CycleQueueRecord`. `reaches_zone_end` is true when the back of a queue came within 10 m of the far end of the zone during the cycle: the queue is near the measurement limit and may continue beyond it. The length is capped at the zone length, and only vehicles whose front is within the zone are counted. It requires a queue. The queue in metres and in vehicles must both be zero or both be above zero.
 
 ## 4.7 `UninsertedVehicle`
 
@@ -801,3 +801,5 @@ Together, these structures form the common data language used across the Jaadah 
 | 26 Oct 2026 (cycle queues) | Added `CycleQueueRecord.reaches_section_end` (default false; requires a queue). Cycle queues are measured from vehicle positions over each lane's section instead of lane-area detectors |
 | 27 Oct 2026 (vehicles not inserted) | Added `UninsertedVehicle`: a planned vehicle SUMO could not insert before the run ended, with its planned stop-line time. `reaches_section_end` and `reaches_zone_end` described as cut-off queues, not minimum values |
 | 10 Nov 2026 (historical analysis) | Added `RunCombination` and `KpiResult.run_combination` (default `replications`, the existing rules). Results combining days (`days`) have no standard deviation and a `replication_count` of 1 |
+| 10 Nov 2026 (movement lanes) | Removed `MovementMapping.sumo_lanes` (unused: all 18 values were empty; movement routes use `sumo_route_edge_ids`, vehicles depart with `departLane="best"`, and lane chains come from `LaneMapping.sumo_lane_ids`). `schema_version` set to `2.1`; configurations with `schema_version` `2.0` or the removed field are rejected. `mapping_version` stays `2.4-west-route-start` |
+| 13 Nov 2026 (queue boundary) | `ApproachCycleQueueRecord` also covers the approach's slips and bypasses, each followed onto the shared road to the zone end. `reaches_section_end` and `reaches_zone_end` described as queues near the measurement limit; the vehicle count stops at the same boundary as the capped length |

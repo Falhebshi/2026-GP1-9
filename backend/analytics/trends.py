@@ -346,7 +346,7 @@ def _queues(out, days, selected, every_interval, period, model):
     for unit, name in ((KpiUnit.METRES, "m"), (KpiUnit.VEHICLES, "veh")):
         rolled = queue_rollup(
             model.lanes, model.movements, lane_queues, period,
-            approach_queues=all_approaches, slip_lane_ids=model.slip_lane_ids,
+            approach_queues=all_approaches,
             blocked=blocked, unit=name,
         )
         _put_queues(out, QUEUE, unit, rolled, model)

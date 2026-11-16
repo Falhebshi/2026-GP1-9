@@ -42,6 +42,13 @@ not independently verify their geographic correctness.
 | `detector_mappings` | Source detector identities, optional approach/lane references, candidate movements, and mapping status. |
 | `movement_attributes` | HCM classification (`movement_type`) and control of each movement in the KPI analysis. |
 
+Movement routes use the ordered `MovementMapping.sumo_route_edge_ids`. Vehicles
+depart with `departLane="best"`; movement records do not specify SUMO lanes.
+`ApproachLane.served_movement_ids` identifies which movements a canonical lane
+serves, and `LaneMapping.sumo_lane_ids` supplies its ordered SUMO lane chain.
+The network validator checks route connections and lane-chain connectivity and
+eligibility separately.
+
 ## Approach sides
 
 `approach_side` describes where the approach is located. Detector descriptions
@@ -55,7 +62,7 @@ use travel directions such as EB or WB, which have a different meaning:
 | `APP_S` | south | NB | `569790079#0` |
 
 Only `east`, `west`, `north`, and `south` are accepted as approach sides.
-Schema 2.0 does not accept `direction` or `source_detectors` on approach records.
+Schema 2.1 does not accept `direction` or `source_detectors` on approach records.
 Detector associations belong in `detector_mappings`. Unknown fields and
 unsupported schema versions are rejected.
 
@@ -119,8 +126,8 @@ When that mapping is pending, network validation still checks the explicit
 SUMO lane and position, but cannot establish canonical chain membership.
 Missing exact locations remain supported, including unresolved detector
 mappings. Location availability does not change candidate/status rules.
-These optional fields extend schema 2.0 without changing the current mapping
-data revision; configurations without them remain valid.
+These optional fields were added under schema 2.0 without changing the mapping
+data revision; configurations without them remain valid under schema 2.1.
 
 For the 16 populated synthetic detectors, the approved modeled placement is
 1 m upstream of each selected lane endpoint: `sumo_position_m = lane_length - 1`.
@@ -414,9 +421,23 @@ its recorded checksum.
 ### Version identifiers
 
 `schema_version` identifies the mapping configuration's structure and validation
-contract. The repository currently accepts only `"2.0"`. `mapping_version` is a
+contract. The repository currently accepts only `"2.1"`. `mapping_version` is a
 nonempty label identifying a specific revision of the study-area mapping data;
 the current value is `"2.4-west-route-start"`. The version labels do not need to match.
+
+Schema 2.1 removes the unused `MovementMapping.sumo_lanes` field. All 18 values
+in the repository's schema 2.0 mapping were empty, so this changes no movement
+route, signal relationship, canonical lane, or SUMO lane chain. The
+`mapping_version` stays `"2.4-west-route-start"` because those mapping values
+are unchanged. Generated vehicle routes still use edge routes and
+`departLane="best"`.
+
+To migrate a schema 2.0 JSON configuration, remove `sumo_lanes` from each
+movement record and set `schema_version` to `"2.1"`. Review any nonempty
+`sumo_lanes` value before removal; the repository baseline has none. The loader
+accepts only schema 2.1 and rejects retired fields, so archived configurations
+and external consumers that expect the old serialized field must be updated
+before reuse. No compatibility layer is provided.
 
 ### Maintaining versions
 

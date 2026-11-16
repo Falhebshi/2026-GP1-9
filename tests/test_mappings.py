@@ -19,7 +19,7 @@ from jaadah.models.traffic import TrafficObservationSource
 
 def valid_config():
     return {
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "mapping_version": "1.0",
         "network": {"version": "v2", "path": "study.net.xml", "sha256": "a" * 64},
         "intersection_mapping": {
@@ -111,7 +111,6 @@ def test_optional_identifiers_reject_blank_if_supplied(model, field, blank):
     (IntersectionMapping, "source_sites"),
     (ApproachMapping, "queue_detection_lane_ids"),
     (DetectorMapping, "movement_ids"),
-    (MovementMapping, "sumo_lanes"),
 ])
 @pytest.mark.parametrize("items", [["x", "x"], ["x", " x "], ["", "y"], ["  "]])
 def test_identifier_lists_reject_invalid_entries(model, field, items):
@@ -122,7 +121,6 @@ def test_identifier_lists_reject_invalid_entries(model, field, items):
 @pytest.mark.parametrize("model,field", [
     (IntersectionMapping, "source_sites"),
     (ApproachMapping, "queue_detection_lane_ids"),
-    (MovementMapping, "sumo_lanes"),
 ])
 def test_optional_lists_default_to_independent_empty_lists(model, field):
     first, second = makes(model), makes(model)
@@ -445,10 +443,16 @@ def test_removed_approach_fields_are_rejected(field, value):
         makes(ApproachMapping, **{field: value})
 
 
-@pytest.mark.parametrize("version", ["1.0", "1.1", "3.0", "unknown"])
+@pytest.mark.parametrize("version", ["1.0", "1.1", "2.0", "3.0", "unknown"])
 def test_unsupported_mapping_schema_versions_are_rejected(version):
     with pytest.raises(ValidationError, match="schema_version"):
         makes(NetworkMappingConfig, schema_version=version)
+
+
+def test_removed_movement_sumo_lanes_field_is_rejected():
+    assert "sumo_lanes" not in makes(MovementMapping).model_dump()
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        makes(MovementMapping, sumo_lanes=[])
 
 
 @pytest.mark.parametrize("values", [[], [""], [" "], ["a_0", "a_0"], ["a_0", " a_0 "]])
