@@ -1,8 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.ingestion.adapter import adapt_synthetic_record
-from backend.ingestion.client import SyntheticTrafficClient
+from backend.ingestion.adapter import (
+    RCRC_DETECTOR_FIELD,
+    RCRC_TIME_FIELD,
+    adapt_rcrc_record,
+    adapt_synthetic_record,
+)
+from backend.ingestion.client import RcrcReplayClient, SyntheticTrafficClient
 from jaadah.models.traffic import TrafficObservation
 
 
@@ -101,6 +106,56 @@ def ingest_synthetic_observations(
             continue
 
         observations.append(observation)
+
+    return IngestionResult(
+        observations=observations,
+        errors=errors,
+    )
+
+def ingest_rcrc_observations(
+    client: RcrcReplayClient,
+    start: datetime,
+    end: datetime,
+) -> IngestionResult:
+    """
+    Fetch and standardize a batch of RCRC observations.
+
+    Valid rows are retained while invalid rows are reported separately.
+    A source failure (connection, HTTP error, malformed response) is
+    raised, never turned into an empty batch.
+    """
+
+    batch = client.fetch_observations(
+        start=start,
+        end=end,
+    )
+
+    observations: list[TrafficObservation] = []
+    errors: list[IngestionError] = []
+
+    for record_number, record in enumerate(batch.records, start=1):
+        try:
+            observations.append(
+                adapt_rcrc_record(record, site_id=batch.site_id)
+            )
+
+        except ValueError as exc:
+            record_data = record if isinstance(record, dict) else {}
+            detector_value = _optional_text(record_data.get(RCRC_DETECTOR_FIELD))
+
+            errors.append(
+                IngestionError(
+                    record_number=record_number,
+                    message=str(exc),
+                    site_id=batch.site_id,
+                    detector_id=(
+                        _optional_text(detector_value.split(":", 1)[0])
+                        if detector_value
+                        else None
+                    ),
+                    source_timestamp=_optional_text(record_data.get(RCRC_TIME_FIELD)),
+                )
+            )
 
     return IngestionResult(
         observations=observations,
