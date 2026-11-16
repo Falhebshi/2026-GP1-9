@@ -79,6 +79,17 @@ python -m uvicorn traffic_source.synthetic.server:app
 
 Check `http://127.0.0.1:8000/health`. Generated observations are stored in a local SQLite database under `data/synthetic_traffic/`.
 
+### RCRC replay source
+
+Plays back the private RCRC report for the study intersection as a live feed ([RCRC replay source](docs/rcrc_replay_source.md)). Load the report once from the private folder, then start the service:
+
+```powershell
+python -m traffic_source.rcrc_replay.load ../jaadah-private-data/raw/rcrc/site_1444/<report>.csv
+python -m uvicorn traffic_source.rcrc_replay.server:app --port 8001
+```
+
+Check `http://127.0.0.1:8001/health`. The replay runs 13 weeks behind the real clock (16 November shows 17 August, 1 December shows 1 September), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. The report and the replay database stay in `jaadah-private-data/`, never in the repository.
+
 ### Simulation
 
 For a short SUMO smoke run using the included test routes:
