@@ -13,6 +13,9 @@ For each movement and interval:
 When a vehicle that arrived in an interval had not finished its
 passage when the run ended, the interval's values are unavailable:
 its delay is unknown and leaving it out would understate the delay.
+The newest interval of a live update is the exception: its values are
+provisional and come from the vehicles that have finished
+(movement_delays, provisional).
 When no vehicle arrived, the values are not applicable.
 
 Two conditions make every movement of an approach unavailable in an
@@ -43,6 +46,7 @@ from jaadah.models.outputs import (
 
 
 NO_ARRIVALS_REASON = "no vehicles arrived in this interval"
+NONE_FINISHED_REASON = "no vehicle that arrived in this interval has finished its passage yet"
 
 
 class MovementDelay(NamedTuple):
@@ -68,12 +72,19 @@ def movement_delays(
     delay_records: list[VehicleDelayRecord],
     incomplete_passages: list[IncompletePassage],
     blocked: dict[tuple[str, AnalysisInterval], str] | None = None,
+    provisional: AnalysisInterval | None = None,
 ) -> dict[tuple[str, AnalysisInterval], MovementDelay]:
     """
     Return the delay of each movement in each interval of one run.
 
     blocked maps (movement_id, interval) to the reason that movement's
     values are unavailable in that interval (see blocked_movements).
+
+    provisional is the newest interval of a live update
+    (docs/kpi_engine.md, section 16.5). Its vehicles still in their zone
+    are left out, so its values come from the vehicles that have
+    finished; when none has finished, they are unavailable. Every other
+    interval keeps the rule above.
 
     Raises ValueError when a record belongs to another run or to a
     movement that is not analysed, or when a vehicle appears twice.
@@ -104,7 +115,10 @@ def movement_delays(
     results = {}
 
     for key, records in completed.items():
-        result = _summarise(records, incomplete_counts[key])
+        if key[1] == provisional:
+            result = _summarise_provisional(records, incomplete_counts[key])
+        else:
+            result = _summarise(records, incomplete_counts[key])
 
         if key in blocked:
             result = result._replace(
@@ -263,6 +277,28 @@ def _summarise(
     )
 
 
+def _summarise_provisional(
+    records: list[VehicleDelayRecord],
+    incomplete_vehicles: int,
+) -> MovementDelay:
+    """
+    The newest interval of a live update: the vehicles that have
+    finished, with those still in their zone counted but left out.
+    """
+
+    if not records and incomplete_vehicles > 0:
+        return MovementDelay(
+            status=KpiStatus.UNAVAILABLE,
+            completed_vehicles=0,
+            incomplete_vehicles=incomplete_vehicles,
+            mean_control_delay_s=None,
+            mean_queue_duration_s=None,
+            reason=NONE_FINISHED_REASON,
+        )
+
+    return _summarise(records, 0)._replace(incomplete_vehicles=incomplete_vehicles)
+
+
 def _check_records(
     run_id: str,
     movement_ids: list[str],
@@ -295,4 +331,4 @@ def _check_records(
                 f"vehicle {record.vehicle_id} appears more than once"
             )
 
-        seen_vehicles.add(record.vehicle_id)
+        seen_vehicles.add(record.vehicle_id)

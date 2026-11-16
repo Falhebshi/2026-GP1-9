@@ -18,8 +18,15 @@ runs the KPI engine and returns one KpiResult per KPI, element and
 Only a completed run gives KPIs. The engine itself reads no files; this
 module does the reading and writing around it.
 
+A time window limits the results to some of the analysis period's
+15-minute intervals, as the live update loop needs; each result is the
+same as in a calculation of the whole period. The window's last
+interval can be provisional: its vehicles still in their zone are left
+out (docs/kpi_engine.md, section 16.5).
+
 Usage (from the repository root):
     python -m backend.analytics.service <run folder> [--scenario baseline] [--out <folder>]
+        [--from <time> --to <time>] [--provisional]
 
 Two files are written to frontend/public/data/<intersection>/<scenario>/,
 next to the run's playback files, unless --out names another folder:
@@ -173,16 +180,20 @@ def calculate_run_kpis(
     files: RunFiles,
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
     network_path: str | Path = DEFAULT_NETWORK_PATH,
+    time_window: AnalysisInterval | None = None,
+    provisional: bool = False,
 ) -> list[KpiResult]:
     """
-    The KpiResults of one completed run.
+    The KpiResults of one completed run, for its whole analysis period or
+    for time_window (see calculate_kpis).
 
-    Raises ValueError when the run did not complete, or when it was run
-    with another version of the network mapping.
+    Raises ValueError when the run did not complete, when it was run
+    with another version of the network mapping, or when time_window is
+    not made of the analysis period's 15-minute intervals.
     """
 
     measurements = collect_measurements(files, mapping_path, network_path)
-    return calculate_kpis(measurements, mapping_path, network_path)
+    return calculate_kpis(measurements, mapping_path, network_path, time_window, provisional)
 
 
 def collect_measurements(
@@ -225,22 +236,36 @@ def calculate_kpis(
     measurements: RunMeasurements,
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
     network_path: str | Path = DEFAULT_NETWORK_PATH,
+    time_window: AnalysisInterval | None = None,
+    provisional: bool = False,
 ) -> list[KpiResult]:
     """
     The KpiResults of one run from its measurement records. Fast: the
     FCD is not read.
 
-    Raises ValueError when the run did not complete, or when it was
-    measured with another version of the network mapping.
+    time_window (start and end on the analysis period's 15-minute
+    boundaries) limits the results to its intervals; each is the same as
+    in a calculation of the whole period. The whole-period queues are
+    given only when the window covers the whole analysis period. With
+    provisional, the window's last interval leaves out the vehicles still
+    in their zone (docs/kpi_engine.md, section 16.5).
+
+    Raises ValueError when the run did not complete, when it was
+    measured with another version of the network mapping, or when
+    time_window is not made of the analysis period's intervals.
     """
 
-    return prepare_calculation(measurements, mapping_path, network_path).results()
+    return prepare_calculation(
+        measurements, mapping_path, network_path, time_window, provisional,
+    ).results()
 
 
 def prepare_calculation(
     measurements: RunMeasurements,
     mapping_path: str | Path = DEFAULT_MAPPING_PATH,
     network_path: str | Path = DEFAULT_NETWORK_PATH,
+    time_window: AnalysisInterval | None = None,
+    provisional: bool = False,
 ) -> "RunCalculation":
     """
     The engine calls of one run, ready to give its results or its
@@ -262,6 +287,7 @@ def prepare_calculation(
     return RunCalculation(
         run, measurements.window, network, program,
         measurements.passages, measurements.queues, measurements.demands,
+        time_window, provisional,
     )
 
 
@@ -284,6 +310,34 @@ def _mapping_of(run: SimulationRun, mapping_path: str | Path):
         )
 
     return config
+
+
+def window_intervals(
+    intervals: list[AnalysisInterval],
+    time_window: AnalysisInterval | None,
+) -> list[AnalysisInterval]:
+    """
+    The analysis intervals inside time_window; all of them without one.
+
+    Raises ValueError when the window does not start and end on the
+    boundaries of the analysis period's 15-minute intervals.
+    """
+
+    if time_window is None:
+        return intervals
+
+    starts = [interval.start for interval in intervals]
+    ends = [interval.end for interval in intervals]
+
+    if (time_window.start not in starts or time_window.end not in ends
+            or time_window.end <= time_window.start):
+        raise ValueError(
+            f"time window {time_window.start.isoformat()} to {time_window.end.isoformat()} "
+            "must start and end on the 15-minute boundaries of the analysis period "
+            f"({starts[0].isoformat()} to {ends[-1].isoformat()})"
+        )
+
+    return [i for i in intervals if time_window.start <= i.start and i.end <= time_window.end]
 
 
 def _program_of(run: SimulationRun, config, network_path: str | Path):
@@ -326,7 +380,8 @@ class IntervalParts(NamedTuple):
 class RunCalculation:
     """The engine calls of one run, kept together for their shared inputs."""
 
-    def __init__(self, run, window, network, program, passages, queues, demands):
+    def __init__(self, run, window, network, program, passages, queues, demands,
+                 time_window=None, provisional=False):
         self.run = run
         self.program = program
         self.demands = demands
@@ -338,8 +393,13 @@ class RunCalculation:
         self.movement_ids = list(self.attributes)
         self.approach_ids = sorted({m.approach_id for m in self.movements.values()})
         self.intersection_id = next(iter(self.movements.values())).intersection_id
-        self.intervals = analysis_intervals(window.analysis_start, window.analysis_end)
-        self.hcm_intervals = analysis_intervals(window.epoch, window.analysis_end)
+        period = analysis_intervals(window.analysis_start, window.analysis_end)
+        self.intervals = window_intervals(period, time_window)
+        self.whole_period = self.intervals == period
+        # The HCM delay chain runs from the warm-up start, so a window's
+        # first interval keeps the initial queue it inherits (section 13.4)
+        self.hcm_intervals = analysis_intervals(window.epoch, self.intervals[-1].end)
+        self.provisional = self.intervals[-1] if provisional else None
         self.slips = {
             m for m, a in self.attributes.items() if a.control == MovementControl.UNCONTROLLED
         }
@@ -358,8 +418,9 @@ class RunCalculation:
             self._hcm_results(interval, *hcm[interval])
 
         # With one interval, the period is that interval: its values are
-        # already reported, as the interval's largest cycle queue.
-        if len(self.intervals) > 1:
+        # already reported, as the interval's largest cycle queue. A
+        # window that is not the whole period has no whole-period values.
+        if self.whole_period and len(self.intervals) > 1:
             self._period_queues(signal_approaches, parts.uninserted)
 
         return self.out
@@ -383,6 +444,7 @@ class RunCalculation:
         delays = movement_delays(
             run_id, self.movement_ids, self.intervals, self.passages.records,
             self.passages.incomplete, blocked=blocked_movements(self.movements, blocked),
+            provisional=self.provisional,
         )
         counts = count_served_vehicles(
             run_id, self.movement_ids, self.intervals, self.passages.records, self.passages.incomplete,
@@ -687,10 +749,22 @@ def main() -> None:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--scenario", default="baseline")
     parser.add_argument("--out", type=Path, help="folder; default: frontend/public/data/<intersection>/<scenario>/")
+    parser.add_argument("--from", dest="window_start", type=datetime.fromisoformat,
+                        help="time window start, e.g. 2026-10-27T10:00:00+03:00")
+    parser.add_argument("--to", dest="window_end", type=datetime.fromisoformat,
+                        help="time window end")
+    parser.add_argument("--provisional", action="store_true",
+                        help="the window's last interval leaves out vehicles still in their zone")
     args = parser.parse_args()
 
+    if (args.window_start is None) != (args.window_end is None):
+        parser.error("--from and --to are given together")
+    time_window = (
+        AnalysisInterval(args.window_start, args.window_end) if args.window_start else None
+    )
+
     files = load_run(args.run_dir)
-    results = calculate_run_kpis(files)
+    results = calculate_run_kpis(files, time_window=time_window, provisional=args.provisional)
     intersection_id = next(r.intersection_id for r in results if r.intersection_id)
     out = args.out or FRONTEND_DATA_DIR / intersection_id / args.scenario
     paths = write_kpis(results, out, files.run)
