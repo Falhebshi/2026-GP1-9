@@ -85,10 +85,10 @@ Plays back the private RCRC report for the study intersection as a live feed ([R
 
 ```powershell
 python -m traffic_source.rcrc_replay.load ../jaadah-private-data/raw/rcrc/site_1444/<report>.csv
-python -m uvicorn traffic_source.rcrc_replay.server:app --port 8001
+python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
 ```
 
-Check `http://127.0.0.1:8001/health`. The replay runs 13 weeks behind the real clock (16 November shows 17 August, 1 December shows 1 September), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. The report and the replay database stay in `jaadah-private-data/`, never in the repository.
+Check `http://127.0.0.1:8002/health`. The replay uses port 8002 because the network map server uses 8001. It runs 13 weeks behind the real clock (16 November shows 17 August, 1 December shows 1 September), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. The report and the replay database stay in `jaadah-private-data/`, never in the repository.
 
 ### Simulation
 

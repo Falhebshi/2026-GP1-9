@@ -8,7 +8,7 @@ as RCRC wrote them; Jaadah converts them in its RCRC ingestion adapter.
 
 Run with:
 
-    uvicorn traffic_source.rcrc_replay.server:app --port 8001
+    uvicorn traffic_source.rcrc_replay.server:app --port 8002
 
 after loading a report with python -m traffic_source.rcrc_replay.load.
 The data shown as "now" runs a whole number of weeks behind the real

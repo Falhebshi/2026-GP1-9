@@ -13,7 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 PRIVATE_DATA_DIR = REPO_ROOT.parent / "jaadah-private-data"
 
-INPUT_FILE = PRIVATE_DATA_DIR / "rcrc_sample.xlsx"
+INPUT_FILE = PRIVATE_DATA_DIR / "raw" / "rcrc" / "site_1028" / "rcrc_sample.xlsx"
+
+# Where the workbook was kept before raw and processed data were separated
+OLD_INPUT_FILE = PRIVATE_DATA_DIR / "rcrc_sample.xlsx"
 
 OUTPUT_DIR = (
     PRIVATE_DATA_DIR
@@ -91,11 +94,21 @@ def load_rcrc_sample() -> pd.DataFrame:
     """Load the local RCRC sample without modifying the source file."""
 
     if not INPUT_FILE.exists():
+        if OLD_INPUT_FILE.exists():
+            raise FileNotFoundError(
+                "RCRC sample is in its old location.\n"
+                f"Found: {format_local_path(OLD_INPUT_FILE)}\n"
+                f"Move it to: {format_local_path(INPUT_FILE)}\n"
+                "From the repository root:\n"
+                "  mkdir -p ../jaadah-private-data/raw/rcrc/site_1028\n"
+                "  mv ../jaadah-private-data/rcrc_sample.xlsx "
+                "../jaadah-private-data/raw/rcrc/site_1028/"
+            )
         raise FileNotFoundError(
             "RCRC sample not found.\n"
             f"Expected local file at: {format_local_path(INPUT_FILE)}\n"
-            "Place rcrc_sample.xlsx inside the jaadah-private-data "
-            "folder beside the project repository."
+            "Place rcrc_sample.xlsx in raw/rcrc/site_1028/ inside the "
+            "jaadah-private-data folder beside the project repository."
         )
 
     df = pd.read_excel(

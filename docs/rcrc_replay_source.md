@@ -45,7 +45,7 @@ Load the report once, then start the service:
 
 ```bash
 python -m traffic_source.rcrc_replay.load ../jaadah-private-data/raw/rcrc/site_1444/<report>.csv
-uvicorn traffic_source.rcrc_replay.server:app --port 8001
+uvicorn traffic_source.rcrc_replay.server:app --port 8002
 ```
 
 The load command prints the report period and, for each detector, how many intervals are missing and the longest gap. Loading the same file again changes nothing. Loading a different report replaces the stored one.

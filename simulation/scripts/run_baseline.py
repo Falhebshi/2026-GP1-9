@@ -62,7 +62,7 @@ from simulation.scripts.run_scenario import generate_and_execute_scenario
 DEFAULT_SOURCE_URL = "http://127.0.0.1:8000"  # the synthetic source
 DEFAULT_SOURCE_URLS = {
     "synthetic": DEFAULT_SOURCE_URL,
-    "rcrc": "http://127.0.0.1:8001",
+    "rcrc": "http://127.0.0.1:8002",
 }
 DEFAULT_HISTORY_DAYS = {"synthetic": 0, "rcrc": 35}
 INGESTERS = {
@@ -309,7 +309,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--source", choices=sorted(INGESTERS), default="synthetic",
                         help="Traffic source to pull from (default synthetic).")
     parser.add_argument("--source-url",
-                        help="Default: http://127.0.0.1:8000 (synthetic), :8001 (rcrc)")
+                        help="Default: http://127.0.0.1:8000 (synthetic), :8002 (rcrc)")
     parser.add_argument("--history-days", type=int,
                         help="Days before the run window ingested for estimating "
                              "missing counts. Default 0 (synthetic), 35 (rcrc).")

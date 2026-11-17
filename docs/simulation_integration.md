@@ -190,7 +190,7 @@ python simulation/scripts/run_baseline.py --analysis-start 2026-10-27T08:00+03:0
 | --- | --- |
 | `--analysis-start`, `--analysis-end` | Required. Analysis period in Riyadh time (`+03:00`). |
 | `--source` | `synthetic` (default) or `rcrc` (the [RCRC replay source](rcrc_replay_source.md)). |
-| `--source-url` | Default `http://127.0.0.1:8000` (synthetic) or `http://127.0.0.1:8001` (rcrc). |
+| `--source-url` | Default `http://127.0.0.1:8000` (synthetic) or `http://127.0.0.1:8002` (rcrc; 8001 is the network map server). |
 | `--history-days` | Days before the run window ingested to estimate missing counts. Default 0 (synthetic) or 35 (rcrc). |
 | `--seed`, `--step-length` | Default 42 and 0.4 s. |
 | `--run-id` | Default `RUN_BASELINE_<date>T<start>-<end>_S<seed>`, e.g. `RUN_BASELINE_20261027T0800-0900_S42`. |
