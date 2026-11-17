@@ -331,4 +331,4 @@ def _check_records(
                 f"vehicle {record.vehicle_id} appears more than once"
             )
 
-        seen_vehicles.add(record.vehicle_id)
+        seen_vehicles.add(record.vehicle_id)

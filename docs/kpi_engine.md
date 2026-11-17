@@ -733,6 +733,8 @@ python -m backend.analytics.service simulation/outputs/baseline_runs/<run-id>
 | `--from`, `--to` | A time window: only its 15-minute intervals are calculated (section 16.5); for example `--from 2026-10-27T10:00:00+03:00 --to 2026-10-27T10:15:00+03:00` |
 | `--provisional` | The window's last interval leaves out vehicles still in their zone (section 16.5) |
 
+With `--from` and `--to`, the results are merged into the folder's existing files of the same run (section 16.4).
+
 ## 16.1 Inputs
 
 The run folder written by `run_baseline.py` ([Simulation integration](simulation_integration.md)):
@@ -784,11 +786,14 @@ The page looks results up by KPI name and interval start, so `kpis.json` must no
 {
   "run_id": "RUN_BASELINE_20261027T0800-0900_S42",
   "scenario_id": "SCN_BASELINE_20261027T0800",
+  "provisional_interval_start": null,
   "results": [ { "kpi": "control_delay", "level": "movement", "movement_id": "MOV_S_W", "...": "..." } ]
 }
 ```
 
-`run_id` matches the `run_id` of `run.json` in the same folder, so the frontend can check that the KPIs and the playback belong to the same run. Results use canonical identifiers only (`INT_001`, `APP_S`, `MOV_S_W`, `LANE_S_1`), never SUMO lane or edge IDs.
+`run_id` matches the `run_id` of `run.json` in the same folder, so the frontend can check that the KPIs and the playback belong to the same run. `provisional_interval_start` is the start of the interval whose values are provisional (section 16.5), or `null` when none is; the page marks that interval's results.
+
+**Merging.** `write_kpis(..., merge=True)` adds a time window's results to the files of the same run instead of replacing them, so a live update keeps the earlier part of the day: a result with the same KPI, method, unit, element and interval replaces the old one, and the others are kept. Files of another run are replaced. Without `merge`, the files hold exactly the results given. Results use canonical identifiers only (`INT_001`, `APP_S`, `MOV_S_W`, `LANE_S_1`), never SUMO lane or edge IDs.
 
 ## 16.5 A time window and the provisional interval
 
@@ -802,12 +807,12 @@ The live update loop simulates 15 minutes at a time and needs only the newest in
 
 **The provisional interval.** At an update, vehicles that entered their zone in the newest interval are still driving, so under section 7.4 its delay and queue duration would always be unavailable. With `provisional`, the window's last interval leaves those vehicles out:
 
-- its delay and queue duration come from the vehicles that have finished; the vehicles left out are still counted (`incomplete_vehicles`);
+- its delay and queue duration come from the vehicles that have finished. They tend to be **low**: the vehicles that finish first are the least delayed, and those still waiting are the most delayed. The values become final at the next update;
 - when none has finished, they are `unavailable`: "no vehicle that arrived in this interval has finished its passage yet";
 - blocked approaches (section 13.7) stay unavailable, as in every interval;
 - every earlier interval keeps the rule of section 7.4.
 
-The loop asks for the previous and the newest interval at each update, so a provisional interval is calculated again once its vehicles have finished, and its values become final. The page marks the newest interval as provisional. Example: at 10:30 the window is 10:00–10:30; 10:00–10:15 is final and 10:15–10:30 provisional.
+The loop asks for the previous and the newest interval at each update, so a provisional interval is calculated again once its vehicles have finished, and its values become final. `write_kpis` names the newest interval in `provisional_interval_start`, merges the window's results into the day's files (section 16.4), and the page marks that interval as provisional. Example: at 10:30 the window is 10:00–10:30; 10:00–10:15 is final and 10:15–10:30 provisional.
 
 ---
 

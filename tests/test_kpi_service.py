@@ -204,6 +204,95 @@ def test_window_outside_the_analysis_period_is_refused():
         calculate_kpis(measurements(), time_window=AnalysisInterval(next_day, next_day + timedelta(minutes=15)))
 
 
+def test_window_without_a_timezone_is_refused_with_that_reason():
+    from datetime import datetime
+    from test_history import measurements
+
+    window = AnalysisInterval(datetime(2026, 10, 22, 8), datetime(2026, 10, 22, 8, 15))
+    with pytest.raises(ValueError, match="needs a timezone"):
+        calculate_kpis(measurements(), time_window=window)
+
+
+def test_from_without_to_is_refused(monkeypatch, capsys):
+    import sys
+    from backend.analytics import service
+
+    monkeypatch.setattr(sys, "argv", ["service", "run", "--from", "2026-10-22T08:00:00+03:00"])
+    with pytest.raises(SystemExit):
+        service.main()
+    assert "--from and --to must be given together" in capsys.readouterr().err
+
+
+def written(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_files_name_the_provisional_interval(tmp_path):
+    from test_history import at, measurements
+
+    day = measurements()
+    window = AnalysisInterval(at("08:00:00"), at("08:30:00"))
+    results = calculate_kpis(day, time_window=window, provisional=True)
+    page_path, all_path = write_kpis(results, tmp_path, day.run, at("08:15:00"))
+
+    for path in (page_path, all_path):
+        assert written(path)["provisional_interval_start"] == "2026-10-22T08:15:00+03:00"
+
+    write_kpis(results, tmp_path, day.run)
+    assert written(page_path)["provisional_interval_start"] is None
+
+
+def test_merging_keeps_the_earlier_day_and_replaces_the_window(tmp_path):
+    """
+    08:00-08:30 is written, then the next update writes 08:15-08:45: the
+    08:00 results stay, 08:15 is replaced, 08:30 is added.
+    """
+
+    from test_history import at, measurements
+
+    day = measurements()
+
+    def window(start, end):
+        return calculate_kpis(day, time_window=AnalysisInterval(at(start), at(end)), provisional=True)
+
+    first = window("08:00:00", "08:30:00")
+    second = window("08:15:00", "08:45:00")
+    write_kpis(first, tmp_path, day.run, at("08:15:00"), merge=True)
+    page_path, all_path = write_kpis(second, tmp_path, day.run, at("08:30:00"), merge=True)
+
+    every = written(all_path)
+    starts = sorted({r["interval_start"] for r in every["results"]})
+    assert starts == [at(t).isoformat() for t in ("08:00:00", "08:15:00", "08:30:00")]
+    assert len(every["results"]) == len(first) + len(second) - len(
+        [r for r in first if r.interval_start == at("08:15:00")])
+    assert every["provisional_interval_start"] == at("08:30:00").isoformat()
+
+    # Each KPI, element and interval appears once on the page
+    page = written(page_path)["results"]
+    keys = [(r["kpi"], r["level"], r[f"{r['level']}_id"], r["interval_start"]) for r in page]
+    assert len(keys) == len(set(keys))
+
+    # The replaced 08:15 results are the second update's
+    later = {(r.kpi.value, r.method.value, r.unit.value, r.level.value, getattr(r, f"{r.level.value}_id"))
+             for r in second if r.interval_start == at("08:15:00")}
+    assert {(r["kpi"], r["method"], r["unit"], r["level"], r[f"{r['level']}_id"])
+            for r in every["results"] if r["interval_start"] == at("08:15:00").isoformat()} == later
+
+
+def test_merging_replaces_the_files_of_another_run(tmp_path):
+    from test_history import at, measurements
+
+    day = measurements()
+    results = calculate_kpis(day, time_window=AnalysisInterval(at("08:00:00"), at("08:15:00")))
+    write_kpis(results, tmp_path, day.run, merge=True)
+
+    other_run = day.run.model_copy(update={"run_id": "RUN_OTHER"})
+    _, all_path = write_kpis(results, tmp_path, other_run, merge=True)
+
+    assert written(all_path)["run_id"] == "RUN_OTHER"
+    assert len(written(all_path)["results"]) == len(results)
+
+
 def test_provisional_window_end_uses_the_vehicles_that_have_finished():
     """
     23:45-24:00: one North-left car finished at 23:50 and one is still in

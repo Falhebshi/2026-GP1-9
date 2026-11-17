@@ -326,6 +326,12 @@ def window_intervals(
     if time_window is None:
         return intervals
 
+    if time_window.start.tzinfo is None or time_window.end.tzinfo is None:
+        raise ValueError(
+            f"time window {time_window.start.isoformat()} to {time_window.end.isoformat()} "
+            "needs a timezone, e.g. 2026-10-27T10:00:00+03:00"
+        )
+
     starts = [interval.start for interval in intervals]
     ends = [interval.end for interval in intervals]
 
@@ -720,11 +726,31 @@ def page_results(results: list[KpiResult]) -> list[KpiResult]:
     ]
 
 
-def write_kpis(results: list[KpiResult], folder: str | Path, run: SimulationRun) -> list[Path]:
+# The fields that identify a result in kpis.json and kpis_all.json: two
+# results with the same values are the same result
+RESULT_KEY = (
+    "kpi", "method", "unit", "level", "lane_id", "movement_id", "approach_id",
+    "intersection_id", "interval_start", "interval_end",
+)
+
+
+def write_kpis(
+    results: list[KpiResult],
+    folder: str | Path,
+    run: SimulationRun,
+    provisional_interval_start: datetime | None = None,
+    merge: bool = False,
+) -> list[Path]:
     """
     Write kpis.json (page_results) and kpis_all.json (every result) into
     folder, as JSON in the dashboard form (data_models.md section 6.8:
     with the computed fields), each with the run they belong to.
+
+    provisional_interval_start names the interval whose values are
+    provisional (null when none is). With merge, the results join those
+    already in the files for the same run: a result with the same KPI,
+    method, unit, element and interval replaces the old one, and the
+    others are kept. A file of another run is replaced (section 16.4).
     """
 
     folder = Path(folder)
@@ -732,16 +758,39 @@ def write_kpis(results: list[KpiResult], folder: str | Path, run: SimulationRun)
     paths = []
 
     for name, selected in ((PAGE_FILE, page_results(results)), (ALL_FILE, results)):
+        path = folder / name
+        written = [r.model_dump(mode="json") for r in selected]
+        if merge:
+            written = _merged(path, run.run_id, written)
         payload = {
             "run_id": run.run_id,
             "scenario_id": run.scenario_id,
-            "results": [r.model_dump(mode="json") for r in selected],
+            "provisional_interval_start": (
+                provisional_interval_start.isoformat() if provisional_interval_start else None
+            ),
+            "results": written,
         }
-        path = folder / name
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         paths.append(path)
 
     return paths
+
+
+def _merged(path: Path, run_id: str, new: list[dict]) -> list[dict]:
+    """The results already in path for run_id, with new ones replacing or added, by interval."""
+
+    if not path.exists():
+        return new
+    old = json.loads(path.read_text(encoding="utf-8"))
+    if old.get("run_id") != run_id:
+        return new
+
+    def key(result):
+        return tuple(result.get(field) for field in RESULT_KEY)
+
+    merged = {key(r): r for r in old["results"]}
+    merged.update((key(r), r) for r in new)
+    return sorted(merged.values(), key=lambda r: r["interval_start"])
 
 
 def main() -> None:
@@ -758,7 +807,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if (args.window_start is None) != (args.window_end is None):
-        parser.error("--from and --to are given together")
+        parser.error("--from and --to must be given together")
     time_window = (
         AnalysisInterval(args.window_start, args.window_end) if args.window_start else None
     )
@@ -767,7 +816,11 @@ def main() -> None:
     results = calculate_run_kpis(files, time_window=time_window, provisional=args.provisional)
     intersection_id = next(r.intersection_id for r in results if r.intersection_id)
     out = args.out or FRONTEND_DATA_DIR / intersection_id / args.scenario
-    paths = write_kpis(results, out, files.run)
+    window_end = time_window.end if time_window else files.window.analysis_end
+    provisional_start = (
+        window_end - timedelta(seconds=ANALYSIS_INTERVAL_S) if args.provisional else None
+    )
+    paths = write_kpis(results, out, files.run, provisional_start, merge=time_window is not None)
 
     counts = {status: sum(r.status == status for r in results) for status in KpiStatus}
     print(f"{len(results)} results: " + ", ".join(f"{s.value} {n}" for s, n in counts.items()))
