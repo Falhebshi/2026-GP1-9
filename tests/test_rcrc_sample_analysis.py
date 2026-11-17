@@ -616,3 +616,23 @@ def test_main_saves_all_outputs_for_partial_boundary_days_without_changing_compa
         build_day_adjusted_residual_correlation_matrix(df)
     ))
     assert_frame_equal(df, before)
+
+
+def test_sample_in_its_old_location_gives_the_move_command(tmp_path, monkeypatch):
+    old = tmp_path / "rcrc_sample.xlsx"
+    old.write_bytes(b"")
+    monkeypatch.setattr(analysis, "INPUT_FILE", tmp_path / "raw" / "rcrc" / "site_1028" / "rcrc_sample.xlsx")
+    monkeypatch.setattr(analysis, "OLD_INPUT_FILE", old)
+
+    with pytest.raises(FileNotFoundError, match="old location") as error:
+        analysis.load_rcrc_sample()
+
+    assert "mv ../jaadah-private-data/rcrc_sample.xlsx" in str(error.value)
+
+
+def test_missing_sample_names_the_new_location(tmp_path, monkeypatch):
+    monkeypatch.setattr(analysis, "INPUT_FILE", tmp_path / "raw" / "rcrc" / "site_1028" / "rcrc_sample.xlsx")
+    monkeypatch.setattr(analysis, "OLD_INPUT_FILE", tmp_path / "rcrc_sample.xlsx")
+
+    with pytest.raises(FileNotFoundError, match="raw/rcrc/site_1028"):
+        analysis.load_rcrc_sample()
