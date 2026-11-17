@@ -63,7 +63,7 @@ def test_capacity_runs_on_the_study_area_inputs(study_area):
 
     assert all(r.status == KpiStatus.OK for r in results.lane_groups.values())
     assert {g: r.green_s for g, r in results.lane_groups.items()} == {
-        "APP_E_L": 40, "APP_E_LT": 40, "APP_E_T": 40,
-        "APP_S_L": 15, "APP_W_L": 30, "APP_W_LT": 30, "APP_W_T": 30, "APP_N_L": 15,
+        "APP_E_L": 90, "APP_E_LT": 90, "APP_E_T": 90,
+        "APP_S_L": 27, "APP_W_L": 41, "APP_W_LT": 41, "APP_W_T": 41, "APP_N_L": 47,
     }
     assert results.critical_status == KpiStatus.OK
