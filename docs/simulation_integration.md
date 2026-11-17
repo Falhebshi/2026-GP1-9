@@ -164,7 +164,7 @@ and intervention comparisons must reuse the same generated demand and route
 files. Intervention execution, comparison orchestration, and canonical run-state
 persistence remain future work.
 
-Use the authoritative study-area network and its existing 120 s baseline signal
+Use the authoritative study-area network and its 225 s baseline signal
 cycle. The runner adds no lane-change tuning. Avoid using the visualization
 `simulation/configs/tests/stress_test_v2.sumocfg` and
 `simulation/scene_3d/build_all.py` settings as a demand-generation baseline: they
@@ -269,7 +269,7 @@ FCD has no `edge` field; the edge is derived from the lane and network.
 `tls_states.add.xml` declares one `SaveTLSSwitchStates` event, so SUMO writes a
 `<tlsState>` line to `raw/tls_states.xml` each time a traffic light switches,
 with the time, program, phase and signal state string. A 5400 s run with the
-120 s cycle gives about 540 lines.
+225 s cycle gives about 290 lines.
 TripInfo records actual departures, arrivals and departure delays, including
 vehicles unfinished or waiting to depart at the deadline. The retained demand
 manifest supplies planned departures and vehicle identities for reconciliation.
@@ -325,7 +325,7 @@ failed demand check, and a 15-minute analysis reaches the raw SUMO outputs
 
 Live acceptance should cover execution through empty periods to the deadline,
 stopping with vehicles still expected, repeatability with a fixed seed, and
-preservation of the 120 s baseline signal cycle. Check output protection using
+preservation of the 225 s baseline signal cycle. Check output protection using
 temporary files, including non-ASCII filenames and environment-variable prefixes
 and suffixes. These checks verify the runner; end-to-end demand generation and
 output processing require separate integration tests.
