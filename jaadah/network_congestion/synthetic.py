@@ -26,7 +26,8 @@ For every segment and 15 minutes:
     speed ratio = 1 / (1 + delay)
 
 A corridor is one road in one direction (same name and class, same
-heading; an unnamed road keeps its OSM way); its segments share the
+heading; an unnamed piece joins the named road it continues, otherwise
+it keeps its OSM way); its segments share the
 factor and the variation, so congestion covers a stretch of road. The
 corridor factor follows its demand ranking: the highest-demand
 corridor gets the largest factor, the lowest the smallest, spread as
@@ -325,6 +326,84 @@ def corridor_key(segment: RoadSegment, osm_way_id: int) -> str:
     return f"{road}|{segment.road_class.value}|{heading(segment)}"
 
 
+def segment_corridors(
+    segments: list[RoadSegment],
+    way_ids: dict[str, int],
+) -> dict[str, str]:
+    """
+    Return every segment's corridor.
+
+    Some OSM ways of a named road have no name. Such a segment joins
+    the corridor of the named road it continues: a segment of the same
+    class that ends where it starts or starts where it ends. If it
+    touches more than one road, it joins the one going its way, or else
+    the one its traffic comes from, or else the one it leads into. If
+    that still leaves more than one or none, it keeps its own OSM way
+    as corridor.
+    """
+
+    corridors = {
+        segment.segment_id: corridor_key(segment, way_ids[segment.segment_id])
+        for segment in segments
+    }
+    named = {
+        segment.segment_id for segment in segments
+        if segment.name_en or segment.name_ar
+    }
+
+    starting, ending = {}, {}
+    for segment in segments:
+        starting.setdefault(tuple(segment.geometry[0]), []).append(segment)
+        ending.setdefault(tuple(segment.geometry[-1]), []).append(segment)
+
+    def named_roads(pieces, road_class):
+        """The corridors of the named pieces of this class."""
+
+        return {
+            corridors[other.segment_id] for other in pieces
+            if other.segment_id in named and other.road_class == road_class
+        }
+
+    # repeated so a run of unnamed pieces takes the name from its ends
+    changed = True
+    while changed:
+        changed = False
+
+        for segment in segments:
+            if segment.segment_id in named:
+                continue
+
+            before = named_roads(
+                ending.get(tuple(segment.geometry[0]), []), segment.road_class,
+            )
+            after = named_roads(
+                starting.get(tuple(segment.geometry[-1]), []), segment.road_class,
+            )
+            roads = before | after
+
+            # touching two roads: keep the one going the same way, such
+            # as a road whose heading changes on a bend
+            if len(roads) > 1:
+                same_way = f"|{heading(segment)}"
+                roads = {road for road in roads if road.endswith(same_way)}
+
+            # a U-turn or crossover between the two directions of a road
+            # goes neither way: it joins the road its traffic comes from
+            if len(roads) != 1 and len(before) == 1:
+                roads = before
+
+            # coming from a junction: it joins the road it leads into
+            if len(roads) != 1 and len(after) == 1:
+                roads = after
+
+            if len(roads) == 1:
+                corridors[segment.segment_id] = roads.pop()
+                named.add(segment.segment_id)
+                changed = True
+
+    return corridors
+
+
 def corridor_ranks(
     segments: list[RoadSegment],
     corridors: dict[str, str],
@@ -504,13 +583,7 @@ def load_city(
         record["segment_id"]: record["osm_way_id"]
         for record in mappings["mappings"]
     }
-    corridors = {
-        segment.segment_id: corridor_key(
-            segment,
-            way_ids[segment.segment_id],
-        )
-        for segment in segments
-    }
+    corridors = segment_corridors(segments, way_ids)
 
     if not demand_path.exists():
         raise FileNotFoundError(
