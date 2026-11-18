@@ -1,51 +1,59 @@
 """
-Road congestion from the traffic observed at the study intersection.
+Road congestion for every segment, from the city's congestion and the
+traffic observed at the study intersection.
 
 Network Overview needs a congestion level for every road segment every
-15 minutes, but traffic is counted at one intersection only. This module
-carries what is counted there to the rest of the network:
+15 minutes, but traffic is counted at one intersection only. One
+intersection cannot set the congestion of the whole city: in the
+summer holidays the study intersection has almost no morning peak,
+while the city still has one. So each source sets what it can:
 
-1. How full the study intersection is: its HCM critical volume-to-
-   capacity ratio in each 15 minutes, from the observed movement demand
-   and the intersection's lanes and signal program, calculated by the
-   KPI engine (backend/analytics/kpi/capacity.py).
-2. How full every other road is. Roads are ranked by their load in the
-   demand model (demand.py): trips over capacity, so a narrow road with
-   moderate traffic can rank above a wide road with more. A segment
-   gets the intersection's ratio, scaled by how its corridor ranks
-   against the corridors at the intersection:
+1. How congested the city is in each 15 minutes: the TomTom Traffic
+   Index congestion level for Riyadh, by day of the week and hour
+   (parameters.py). TomTom measures it from drivers' trips over the
+   whole road network, over a whole year.
+2. Whether today is busier or quieter than usual: the study
+   intersection's HCM critical volume-to-capacity ratio in that
+   15 minutes (from the observed demand, calculated by the KPI engine,
+   backend/analytics/kpi/capacity.py) over its usual ratio for the same
+   day of the week and 15 minutes. TomTom's congestion is scaled by
+   this day factor, within DAY_FACTOR_LIMITS, so one intersection
+   cannot turn the whole city green or red.
+3. Which roads are worse than others. Roads are ranked by their load
+   in the demand model (demand.py): trips over capacity. A segment's
+   v/c follows how its corridor ranks against the intersection's:
 
-       v/c = level x site v/c x exp(spread x (corridor rank - site rank))
+       v/c = level x exp(spread x (corridor rank - site rank))
 
-3. Speed: the BPR function (Bureau of Public Roads, 1964) turns a v/c
+   with the level chosen in each 15 minutes so that the network's
+   travel-time index (weighted by vehicle-kilometres, as TomTom weights
+   it by drivers' trips) equals TomTom's congestion times the day
+   factor.
+4. Speed: the BPR function (Bureau of Public Roads, 1964) turns a v/c
    ratio into travel time, and so into speed as a share of free flow:
 
        speed ratio = 1 / (1 + 0.15 x (v/c)^4)
 
-Two values are not observed directly, and each comes from its own
-source so that neither decides the other:
+The spread (how much busier busy roads are than quiet ones) is a stated
+value (NETWORK_SPREAD in parameters.py): a city average cannot set it,
+and approach_spread, which measures it from the four approaches of the
+intersection, sets it only weakly.
 
-- spread (how much busier busy roads are than quiet ones): measured at
-  the intersection, from how full its four approaches are against how
-  the demand model ranks them (approach_spread). A city average cannot
-  set it: an evenly congested city and one with green streets and red
-  corridors can have the same average.
-- level (how congested the city is overall): fitted to the TomTom
-  Traffic Index congestion level for Riyadh, on part of the days only
-  (fit_level); the other days test it (evaluate). Both sides use the
-  same measure: travel time over free-flow time, weighted by
-  vehicle-kilometres as TomTom weights it by drivers' trips.
-
-The observed counts come from the traffic source through ingestion and
-demand building (backend/ingestion, backend/demand), so missing counts
-and movements without detectors are treated exactly as for the
-simulation.
+Sections 1 to 4 below hold the parts, also used to check the method on
+the counts (fit_level, evaluate); section 5 is what the map server uses,
+through producer.py. The observed counts come from the traffic source
+through ingestion and demand building (backend/ingestion,
+backend/demand), so missing counts and movements without detectors are
+treated exactly as for the simulation.
 """
 
+import json
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -61,11 +69,20 @@ from jaadah.models.network_congestion import RoadSegment
 from jaadah.models.signals import SignalProgram
 from jaadah.models.traffic import SimulationDemand
 from jaadah.network_congestion.parameters import (
+    DAY_FACTOR_LIMITS,
     TOMTOM_CONGESTION_LEVEL_PERCENT,
     TOMTOM_HOURS,
+    segment_capacity,
 )
 from jaadah.network_congestion.segments import REPO_ROOT, line_length_m
-from jaadah.network_congestion.synthetic import heading
+from jaadah.network_congestion.synthetic import (
+    DEFAULT_DEMAND,
+    DEFAULT_MAPPINGS,
+    DEFAULT_SEGMENTS,
+    corridor_ranks,
+    evening_share,
+    segment_corridors,
+)
 
 DEFAULT_MAPPING_PATH = (
     REPO_ROOT / "data" / "processed" / "road_network" / "network_mappings.json"
@@ -73,6 +90,8 @@ DEFAULT_MAPPING_PATH = (
 DEFAULT_NETWORK_PATH = (
     REPO_ROOT / "data" / "processed" / "road_network" / "jaadah_study_area.net.xml"
 )
+# The study intersection's centre, from the same record the website uses
+INTERSECTIONS_PATH = REPO_ROOT / "frontend" / "public" / "data" / "intersections.json"
 
 # BPR volume-delay function (Bureau of Public Roads, Traffic Assignment
 # Manual, 1964): travel time = free-flow time x (1 + a x (v/c)^b)
@@ -87,16 +106,16 @@ MAX_VOLUME_TO_CAPACITY = 3.0
 # are the intersection's own approaches
 SITE_RADIUS_M = 120
 
-# The approach a segment arrives on, from the direction it travels:
-# travelling west means arriving from the east
-APPROACH_BY_HEADING = {"W": "APP_E", "E": "APP_W", "S": "APP_N", "N": "APP_S"}
-
 # The spread needs at least this many approaches with a ratio
 MIN_SPREAD_APPROACHES = 3
 
 # Where the level is searched, and how finely
 LEVEL_SEARCH = (0.1, 5.0)
 LEVEL_TOLERANCE = 0.001
+
+# The levels of the index table (index_table): 400 steps, closer
+# together at low levels, up to where every road is at the v/c limit
+LEVEL_TABLE = np.geomspace(0.01, 20.0, 400)
 
 INTERVALS_PER_HOUR = 4
 
@@ -272,17 +291,48 @@ def site_rank(
     return total / sum(lengths)
 
 
+def approach_ways(mapping_path: Path = DEFAULT_MAPPING_PATH) -> dict[int, str]:
+    """
+    The OSM way of each approach's lanes, from the network mappings.
+
+    SUMO names its edges after the OSM ways they were built from
+    ("713369663#2" is part of way 713369663), so the mapped SUMO lanes
+    of an approach tell which OSM ways arrive on it. The approach is
+    not guessed from the compass: the intersection does not face north.
+    """
+
+    config = load_network_mappings(mapping_path)
+    approach_of_lane = {lane.lane_id: lane.approach_id for lane in config.approach_lanes}
+    ways: dict[int, str] = {}
+
+    for lane in config.lane_mappings:
+        for sumo_lane_id in lane.sumo_lane_ids:
+            edge_id = sumo_lane_id.rsplit("_", 1)[0]
+            way_id = int(re.match(r"-?(\d+)", edge_id).group(1))
+            ways[way_id] = approach_of_lane[lane.lane_id]
+
+    return ways
+
+
 def approach_ranks(
     segments: list[RoadSegment],
     corridors: dict[str, str],
     ranks: dict[str, float],
+    way_ids: dict[str, int],
+    ways: dict[int, str],
 ) -> dict[str, float]:
-    """The rank of each approach, from the intersection's segments arriving on it."""
+    """
+    The rank of each approach, from the intersection's segments on its
+    OSM ways (approach_ways).
+    """
 
     by_approach: dict[str, list[RoadSegment]] = defaultdict(list)
 
     for segment in segments:
-        by_approach[APPROACH_BY_HEADING[heading(segment)]].append(segment)
+        approach_id = ways.get(way_ids[segment.segment_id])
+
+        if approach_id is not None:
+            by_approach[approach_id].append(segment)
 
     return {
         approach_id: site_rank(arriving, corridors, ranks)
@@ -523,3 +573,219 @@ def evaluate(
         mean_difference=float(np.mean(difference)),
         shape_correlation=float(np.corrcoef(model, target)[0, 1]),
     )
+
+
+# ============================================================
+# 5. THE MODEL THE MAP SERVER USES
+# ============================================================
+
+def slot_of(moment: datetime) -> int:
+    """The 15 minutes of the day a time falls in, 0 to 95."""
+
+    return moment.hour * INTERVALS_PER_HOUR + moment.minute // 15
+
+
+def site_centre(path: Path = INTERSECTIONS_PATH) -> tuple[float, float]:
+    """The study intersection's centre (lon, lat)."""
+
+    record = json.loads(path.read_text(encoding="utf-8"))[0]
+
+    return record["center_longitude"], record["center_latitude"]
+
+
+@dataclass(frozen=True)
+class RoadNetwork:
+    """Every segment, with what the model needs of it."""
+
+    segments: list[RoadSegment]
+    capacities: dict[str, float]
+    capacity_array: np.ndarray
+    length_array: np.ndarray
+    # each segment's rank offset in every 15 minutes of the day: the
+    # morning ranks (trips to activities) before 11:00, the evening ranks
+    # (trips home) from 13:00, blended in between, as synthetic.py does
+    offsets: list[np.ndarray]
+
+
+def load_road_network(
+    segments_path: Path = DEFAULT_SEGMENTS,
+    mappings_path: Path = DEFAULT_MAPPINGS,
+    demand_path: Path = DEFAULT_DEMAND,
+    centre: tuple[float, float] | None = None,
+) -> RoadNetwork:
+    """Read the segments and the demand model, and rank every corridor."""
+
+    segments = [
+        RoadSegment(**record)
+        for record in json.loads(segments_path.read_text(encoding="utf-8"))["segments"]
+    ]
+    way_ids = {
+        record["segment_id"]: record["osm_way_id"]
+        for record in json.loads(mappings_path.read_text(encoding="utf-8"))["mappings"]
+    }
+    demand = json.loads(demand_path.read_text(encoding="utf-8"))
+    capacities = {s.segment_id: segment_capacity(s) for s in segments}
+    corridors = segment_corridors(segments, way_ids)
+    at_site = site_segments(segments, centre or site_centre())
+
+    offsets = {}
+    for part, key in (("morning", "to_activities"), ("evening", "to_homes")):
+        ranks = corridor_ranks(segments, corridors, segment_loads(segments, demand[key], capacities))
+        offsets[part] = rank_offsets(segments, corridors, ranks, site_rank(at_site, corridors, ranks))
+
+    return RoadNetwork(
+        segments=segments,
+        capacities=capacities,
+        capacity_array=np.array([capacities[s.segment_id] for s in segments]),
+        length_array=np.array([line_length_m(s.geometry) for s in segments]),
+        offsets=[
+            (1 - evening_share(slot)) * offsets["morning"]
+            + evening_share(slot) * offsets["evening"]
+            for slot in range(24 * INTERVALS_PER_HOUR)
+        ],
+    )
+
+
+def calibration_samples(
+    levels: dict[datetime, float],
+    network: RoadNetwork,
+) -> list[CalibrationSample]:
+    """One sample for every interval with the intersection's v/c."""
+
+    return [
+        CalibrationSample(
+            moment=moment,
+            site_level=level,
+            offsets=network.offsets[slot_of(moment)],
+            tomtom_index=tomtom_index(moment.date())[slot_of(moment)],
+        )
+        for moment, level in levels.items()
+    ]
+
+
+def usual_site_levels(levels: dict[datetime, float]) -> dict[tuple[int, int], float]:
+    """
+    The intersection's usual v/c for each day of the week (Monday = 0)
+    and 15 minutes: the mean over the given intervals.
+    """
+
+    by_time: dict[tuple[int, int], list[float]] = defaultdict(list)
+
+    for moment, level in levels.items():
+        by_time[(moment.weekday(), slot_of(moment))].append(level)
+
+    return {key: float(np.mean(values)) for key, values in by_time.items()}
+
+
+@dataclass(frozen=True)
+class IndexTable:
+    """
+    The network's travel-time index for a range of levels, in one 15
+    minutes of the day (its rank offsets), so the level giving any
+    index is read off instead of searched for each time.
+    """
+
+    levels: np.ndarray
+    indices: np.ndarray     # rising with the level
+
+
+def index_table(
+    offsets: np.ndarray,
+    spread: float,
+    network: RoadNetwork,
+    levels: np.ndarray = LEVEL_TABLE,
+) -> IndexTable:
+    """The travel-time index at every level of the table."""
+
+    return IndexTable(
+        levels=levels,
+        indices=np.array([
+            travel_time_index(
+                segment_volume_to_capacity(1.0, offsets, spread, level),
+                network.capacity_array, network.length_array,
+            )
+            for level in levels
+        ]),
+    )
+
+
+@dataclass(frozen=True)
+class ObservedModel:
+    """
+    The study intersection and the road network, with the spread, the
+    intersection's usual v/c and the index table of every 15 minutes.
+    """
+
+    site: SiteInputs
+    network: RoadNetwork
+    spread: float
+    usual: dict[tuple[int, int], float]
+    tables: list[IndexTable]
+
+
+def build_model(
+    site: SiteInputs,
+    network: RoadNetwork,
+    levels: dict[datetime, float],
+    spread: float,
+) -> ObservedModel:
+    """The model, with the intersection's usual v/c taken from the given intervals."""
+
+    return ObservedModel(
+        site=site,
+        network=network,
+        spread=spread,
+        usual=usual_site_levels(levels),
+        tables=[index_table(offsets, spread, network) for offsets in network.offsets],
+    )
+
+
+def day_factor(model: ObservedModel, moment: datetime, site_level: float) -> float:
+    """
+    How much busier the intersection is than usual at this day of the
+    week and 15 minutes, within DAY_FACTOR_LIMITS; 1 when there is no
+    usual value to compare with.
+    """
+
+    usual = model.usual.get((moment.weekday(), slot_of(moment)))
+
+    if not usual:
+        return 1.0
+
+    low, high = DAY_FACTOR_LIMITS
+
+    return min(max(site_level / usual, low), high)
+
+
+@lru_cache(maxsize=16)
+def _tomtom_day(day: date) -> tuple[float, ...]:
+    return tuple(tomtom_index(day))
+
+
+def target_index(model: ObservedModel, moment: datetime, site_level: float) -> float:
+    """TomTom's travel-time index at this time, its congestion scaled by the day factor."""
+
+    usual_index = _tomtom_day(moment.date())[slot_of(moment)]
+
+    return 1 + (usual_index - 1) * day_factor(model, moment, site_level)
+
+
+def interval_speeds(
+    model: ObservedModel,
+    moment: datetime,
+    site_level: float,
+) -> tuple[list[int], float]:
+    """
+    Every segment's speed (percent of free flow) in one interval, and
+    the network speed for the timeline (their mean, as synthetic.py).
+    The level is the one whose network index equals the target index.
+    """
+
+    slot = slot_of(moment)
+    table = model.tables[slot]
+    level = float(np.interp(target_index(model, moment, site_level), table.indices, table.levels))
+    speeds = speed_percent(segment_volume_to_capacity(
+        1.0, model.network.offsets[slot], model.spread, level,
+    ))
+
+    return speeds.tolist(), round(float(speeds.mean()), 1)

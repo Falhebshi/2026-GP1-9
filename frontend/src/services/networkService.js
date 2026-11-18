@@ -1,6 +1,7 @@
 // Where the Network Traffic Overview page gets its data.
 //
-// The intersections are sample data; the road congestion is synthetic (see below). When the
+// The intersections are sample data; the road congestion comes from the network map server (see
+// below). When the
 // backend is ready, only the inside of these functions changes; the page stays the same as long
 // as the data keeps these shapes:
 //
@@ -15,9 +16,11 @@
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 
 // Road segment congestion comes from the network map server (jaadah/network_congestion/server.py),
-// through the Vite proxy at /api/network (vite.config.js). Like the synthetic traffic source, it
-// adds every completed 15 minutes by itself and keeps today plus the 6 days before. Start it next
-// to `npm run dev` with `uvicorn jaadah.network_congestion.server:app --port 8001`.
+// through the Vite proxy at /api/network (vite.config.js). It works the speeds out from the RCRC
+// counts at the study intersection, so it follows the RCRC replay's clock and shows the data's own
+// dates; it adds every completed 15 minutes by itself and keeps the latest day plus the 6 days
+// before. Start the RCRC replay (port 8002), then the server next to `npm run dev` with
+// `uvicorn jaadah.network_congestion.server:app --port 8001`.
 //
 //   /days              the days with data and the speed limits of the levels
 //   /segments          every segment's line, name, road class and lanes
@@ -85,18 +88,28 @@ function slotTime(day, slot) {
 }
 
 // The days with network data, oldest first: [] while the server is filling its first interval,
-// null when the server is not running
+// null when the server is not running. Also where the speeds come from: 'rcrc' (modelled from
+// the RCRC counts at the study intersection) or 'synthetic', null without the server.
 export async function getAvailableDays() {
   const index = await loadInfo()
   return index ? index.days : null
 }
 
-// Where the page opens: null (the latest data) when the data reaches today; otherwise the current
-// time of day on the newest day with data. Also null when the server is not running.
+export async function getNetworkSource() {
+  const index = await loadInfo()
+  return index?.source ?? null
+}
+
+// Where the page opens: null (the latest data) when the data is live, that is it reaches today or,
+// for a source that runs whole weeks behind (the RCRC replay), its latest 15 minutes reach the
+// current time of day; otherwise the current time of day on the newest day with data. Also null
+// when the server is not running.
 export async function getOpeningTime() {
   const index = await loadInfo()
   const now = riyadhSlot(Date.now())
   if (!index || !index.days.length || index.days.includes(now.day)) return null
+  const latest = index.latest_interval_end && riyadhSlot(Date.parse(index.latest_interval_end))
+  if (latest && latest.slot >= now.slot - 1) return null
   return slotTime(index.days.at(-1), now.slot)
 }
 

@@ -11,6 +11,7 @@ import Select from '../components/Select'
 import {
   getAvailableDays,
   getNetwork,
+  getNetworkSource,
   getNetworkTimeline,
   getOpeningTime,
   getSegments,
@@ -117,6 +118,7 @@ function NetworkOverview() {
   const [segments, setSegments] = useState(null)
   // days with network data: [] while the server fills its first interval, null when it is not running
   const [availableDays, setAvailableDays] = useState([])
+  const [source, setSource] = useState(null) // 'rcrc' or 'synthetic', from the network server
   const [timelineOpen, setTimelineOpen] = useState(false) // closed, so the map gets the room
   const timelineRef = useRef(null)
   const sideRef = useRef(null)
@@ -158,6 +160,9 @@ function NetworkOverview() {
     let cancelled = false
     getAvailableDays().then((days) => {
       if (!cancelled) setAvailableDays(days)
+    })
+    getNetworkSource().then((name) => {
+      if (!cancelled) setSource(name)
     })
     return () => {
       cancelled = true
@@ -287,9 +292,11 @@ function NetworkOverview() {
           <Notice variant="warning">
             {availableDays === null
               ? 'Road congestion is not available: the network map server is not running.'
-              : availableDays.length
-                ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
-                : 'Loading road congestion: the network map server is preparing the last 7 days.'}
+              : !availableDays.length
+                ? 'Loading road congestion: the network map server is preparing the last 7 days.'
+                : source === 'rcrc'
+                  ? 'Modelled data: road congestion is estimated from the traffic counted at one intersection (RCRC), not measured on these roads.'
+                  : 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'}
           </Notice>
         )}
 

@@ -25,10 +25,10 @@ For every segment and 15 minutes:
     delay       = city delay x corridor factor x (1 + variation)
     speed ratio = 1 / (1 + delay)
 
-A corridor is one road in one direction (same name and class, same
-heading; an unnamed piece joins the named road it continues, otherwise
-it keeps its OSM way); its segments share the
-factor and the variation, so congestion covers a stretch of road. The
+A corridor is one road in one direction (same name and class, going
+with or against the road's main line; an unnamed piece joins the named
+road it continues, otherwise it keeps its OSM way); its segments share
+the factor and the variation, so congestion covers a stretch of road. The
 corridor factor follows its demand ranking: the highest-demand
 corridor gets the largest factor, the lowest the smallest, spread as
 the peak v/c of the sample's approaches is (highest / lowest), with an
@@ -307,23 +307,61 @@ def seeded_random(*parts) -> random.Random:
     return random.Random(int.from_bytes(digest[:8], "big"))
 
 
-def heading(segment: RoadSegment) -> str:
-    """Return the segment's overall direction: N, E, S or W."""
+def bearing(segment: RoadSegment) -> float:
+    """Return the segment's overall direction in degrees from north."""
 
     (lon1, lat1), (lon2, lat2) = segment.geometry[0], segment.geometry[-1]
     east = (lon2 - lon1) * math.cos(math.radians(lat1))
-    degrees = math.degrees(math.atan2(east, lat2 - lat1)) % 360
 
-    return "NESW"[int((degrees + 45) // 90) % 4]
+    return math.degrees(math.atan2(east, lat2 - lat1)) % 360
 
 
-def corridor_key(segment: RoadSegment, osm_way_id: int) -> str:
-    """Return the corridor of a segment: its road in its direction."""
+def road_key(segment: RoadSegment, osm_way_id: int) -> str:
+    """Return the road of a segment: its name (or OSM way) and class."""
 
     name = segment.name_en or segment.name_ar
     road = name if name else f"way {osm_way_id}"
 
-    return f"{road}|{segment.road_class.value}|{heading(segment)}"
+    return f"{road}|{segment.road_class.value}"
+
+
+def road_axes(
+    segments: list[RoadSegment],
+    roads: dict[str, str],
+) -> dict[str, float]:
+    """
+    Return every road's main line in degrees (0 to 180): the
+    length-weighted mean of its segments' directions, taken as lines,
+    so that the two directions of a two-way road add up instead of
+    cancelling.
+    """
+
+    sums = {}
+
+    for segment in segments:
+        angle = math.radians(2 * bearing(segment))
+        length = line_length_m(segment.geometry)
+        x, y = sums.get(roads[segment.segment_id], (0.0, 0.0))
+        sums[roads[segment.segment_id]] = (
+            x + length * math.cos(angle), y + length * math.sin(angle),
+        )
+
+    return {
+        road: math.degrees(math.atan2(y, x)) / 2 % 180
+        for road, (x, y) in sums.items()
+    }
+
+
+def along(segment_bearing: float, axis: float) -> str:
+    """Whether a direction goes with the road's main line or against it."""
+
+    return "with" if math.cos(math.radians(segment_bearing - axis)) >= 0 else "against"
+
+
+def same_way(first: float, second: float) -> bool:
+    """Whether two directions are within 45 degrees of each other."""
+
+    return math.cos(math.radians(first - second)) > math.cos(math.radians(45))
 
 
 def segment_corridors(
@@ -331,24 +369,54 @@ def segment_corridors(
     way_ids: dict[str, int],
 ) -> dict[str, str]:
     """
-    Return every segment's corridor.
+    Return every segment's corridor: its road in one direction.
+
+    The direction is taken from the road itself, not from the compass:
+    each road gets a main line (road_axes) and a segment goes with it
+    or against it. A road that runs diagonally, such as one at 45
+    degrees, so stays one corridor in each direction.
 
     Some OSM ways of a named road have no name. Such a segment joins
     the corridor of the named road it continues: a segment of the same
-    class that ends where it starts or starts where it ends. If it
-    touches more than one road, it joins the one going its way, or else
-    the one its traffic comes from, or else the one it leads into. If
-    that still leaves more than one or none, it keeps its own OSM way
-    as corridor.
+    class that ends where it starts or starts where it ends. First only
+    roads going its way (within 45 degrees) are joined, so a run of
+    pieces follows its own road. Then, if it touches more than one
+    road, it joins the one its traffic comes from (a U-turn), or else
+    the one it leads into (out of a junction). If that still leaves
+    more than one or none, it keeps its own OSM way as corridor.
     """
 
+    roads = {
+        segment.segment_id: road_key(segment, way_ids[segment.segment_id])
+        for segment in segments
+    }
+    axes = road_axes(segments, roads)
+    bearings = {segment.segment_id: bearing(segment) for segment in segments}
     corridors = {
-        segment.segment_id: corridor_key(segment, way_ids[segment.segment_id])
+        segment.segment_id: (
+            f"{roads[segment.segment_id]}|"
+            f"{along(bearings[segment.segment_id], axes[roads[segment.segment_id]])}"
+        )
         for segment in segments
     }
     named = {
         segment.segment_id for segment in segments
         if segment.name_en or segment.name_ar
+    }
+
+    # the direction of each named corridor, to compare a piece with
+    direction = {}
+    for segment in segments:
+        if segment.segment_id in named:
+            angle = math.radians(bearings[segment.segment_id])
+            length = line_length_m(segment.geometry)
+            x, y = direction.get(corridors[segment.segment_id], (0.0, 0.0))
+            direction[corridors[segment.segment_id]] = (
+                x + length * math.sin(angle), y + length * math.cos(angle),
+            )
+    direction = {
+        corridor: math.degrees(math.atan2(x, y)) % 360
+        for corridor, (x, y) in direction.items()
     }
 
     starting, ending = {}, {}
@@ -364,42 +432,46 @@ def segment_corridors(
             if other.segment_id in named and other.road_class == road_class
         }
 
-    # repeated so a run of unnamed pieces takes the name from its ends
-    changed = True
-    while changed:
-        changed = False
+    def join(segment, fall_back: bool) -> str | None:
+        before = named_roads(
+            ending.get(tuple(segment.geometry[0]), []), segment.road_class,
+        )
+        after = named_roads(
+            starting.get(tuple(segment.geometry[-1]), []), segment.road_class,
+        )
+        choice = {
+            road for road in before | after
+            if same_way(bearings[segment.segment_id], direction[road])
+        }
 
-        for segment in segments:
-            if segment.segment_id in named:
-                continue
-
-            before = named_roads(
-                ending.get(tuple(segment.geometry[0]), []), segment.road_class,
-            )
-            after = named_roads(
-                starting.get(tuple(segment.geometry[-1]), []), segment.road_class,
-            )
-            roads = before | after
-
-            # touching two roads: keep the one going the same way, such
-            # as a road whose heading changes on a bend
-            if len(roads) > 1:
-                same_way = f"|{heading(segment)}"
-                roads = {road for road in roads if road.endswith(same_way)}
-
+        if fall_back:
             # a U-turn or crossover between the two directions of a road
             # goes neither way: it joins the road its traffic comes from
-            if len(roads) != 1 and len(before) == 1:
-                roads = before
+            if len(choice) != 1 and len(before) == 1:
+                choice = before
 
             # coming from a junction: it joins the road it leads into
-            if len(roads) != 1 and len(after) == 1:
-                roads = after
+            if len(choice) != 1 and len(after) == 1:
+                choice = after
 
-            if len(roads) == 1:
-                corridors[segment.segment_id] = roads.pop()
-                named.add(segment.segment_id)
-                changed = True
+        return choice.pop() if len(choice) == 1 else None
+
+    # repeated so a run of unnamed pieces takes the name from its ends
+    for fall_back in (False, True):
+        changed = True
+        while changed:
+            changed = False
+
+            for segment in segments:
+                if segment.segment_id in named:
+                    continue
+
+                corridor = join(segment, fall_back)
+
+                if corridor is not None:
+                    corridors[segment.segment_id] = corridor
+                    named.add(segment.segment_id)
+                    changed = True
 
     return corridors
 
@@ -509,8 +581,9 @@ def slot_speed(
 def segments_geojson(
     segments: list[RoadSegment],
     capacities: dict[str, float],
+    source: str = "synthetic",
 ) -> dict:
-    """Return the segments as GeoJSON lines."""
+    """Return the segments as GeoJSON lines, with where their speeds come from."""
 
     return {
         "type": "FeatureCollection",
@@ -532,7 +605,7 @@ def segments_geojson(
                     "is_link": segment.is_link,
                     "lanes": segment.lane_count,
                     "capacity_veh_h": round(capacities[segment.segment_id]),
-                    "source": "synthetic",
+                    "source": source,
                 },
             }
             for segment in segments

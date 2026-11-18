@@ -9,6 +9,7 @@ from jaadah.network_congestion.observed import (
     CalibrationSample,
     approach_ranks,
     approach_spread,
+    approach_ways,
     approach_volume_to_capacity,
     bpr_travel_ratio,
     distance_m,
@@ -144,14 +145,31 @@ def test_loads_divide_trips_by_capacity():
     assert loads == {"narrow": pytest.approx(0.3), "wide": pytest.approx(0.15)}
 
 
-def test_approach_ranks_follow_the_travel_direction():
-    westbound = segment("west", [0.0, 0.0], start=[0.001, 0.0])   # arrives from the east
-    northbound = segment("north", [0.0, 0.0], start=[0.0, -0.001])  # arrives from the south
-    corridors = {"west": "A", "north": "B"}
+def test_approach_ways_come_from_the_mapped_sumo_lanes():
+    ways = approach_ways()
 
-    ranks = approach_ranks([westbound, northbound], corridors, {"A": 0.8, "B": 0.2})
+    assert set(ways.values()) == {"APP_E", "APP_W", "APP_N", "APP_S"}
+    # the first signal entry edges in docs/network_mapping.md
+    assert ways[713369663] == "APP_E"
+    assert ways[133793906] == "APP_W"
+    assert ways[569788806] == "APP_N"
+    assert ways[569790079] == "APP_S"
 
-    assert ranks == {"APP_E": pytest.approx(0.8), "APP_S": pytest.approx(0.2)}
+
+def test_approach_ranks_follow_the_mapped_ways_not_the_compass():
+    # a diagonal road arriving from the north-west is still APP_N
+    diagonal = segment("diagonal", [0.0, 0.0], start=[-0.001, 0.001])
+    other = segment("other", [0.0, 0.0], start=[0.001, 0.0])
+    unmapped = segment("unmapped", [0.0, 0.0], start=[0.0, -0.001])
+    corridors = {"diagonal": "A", "other": "B", "unmapped": "C"}
+    way_ids = {"diagonal": 1, "other": 2, "unmapped": 3}
+
+    ranks = approach_ranks(
+        [diagonal, other, unmapped], corridors, {"A": 0.8, "B": 0.2, "C": 0.5},
+        way_ids, {1: "APP_N", 2: "APP_E"},
+    )
+
+    assert ranks == {"APP_N": pytest.approx(0.8), "APP_E": pytest.approx(0.2)}
 
 
 def test_approach_spread_is_the_slope_of_log_ratio_on_rank():
