@@ -6,11 +6,13 @@ from datetime import timedelta
 
 import pytest
 
+from backend.analytics.kpi.intervals import AnalysisInterval
 from backend.analytics.service import (
     DEFAULT_MAPPING_PATH,
     RunMeasurements,
     calculate_kpis,
     calculate_run_kpis,
+    collect_measurements,
     prepare_calculation,
     load_run,
     page_results,
@@ -150,6 +152,178 @@ def test_interval_parts_keep_the_vehicle_count_behind_each_value():
 
 
 # ============================================================
+# A TIME WINDOW (THE LIVE UPDATE LOOP)
+# ============================================================
+
+def by_key(results):
+    return {(r.kpi, r.method, r.unit, r.level, r.lane_id, r.movement_id, r.approach_id,
+             r.intersection_id, r.interval_start, r.interval_end): r for r in results}
+
+
+def test_window_results_are_the_same_as_in_the_whole_period():
+    """The live loop's newest intervals equal the same intervals calculated with the whole day."""
+
+    from test_history import at, measurements
+
+    window = AnalysisInterval(at("08:00:00"), at("08:30:00"))
+    whole = by_key(calculate_kpis(measurements()))
+    windowed = by_key(calculate_kpis(measurements(), time_window=window))
+
+    assert {(k[-2], k[-1]) for k in windowed} == {
+        (at("08:00:00"), at("08:15:00")), (at("08:15:00"), at("08:30:00")),
+    }
+    assert windowed == {k: whole[k] for k in windowed}
+
+
+def test_window_has_no_whole_period_queues():
+    from test_history import at, measurements
+
+    window = AnalysisInterval(at("08:00:00"), at("09:00:00"))
+    results = calculate_kpis(measurements(), time_window=window)
+
+    assert all((r.interval_end - r.interval_start) == timedelta(minutes=15) for r in results)
+
+
+@pytest.mark.parametrize("start, end", [
+    ("08:05:00", "08:30:00"),   # not on an interval boundary
+    ("08:30:00", "08:15:00"),   # ends before it starts
+    ("08:00:00", "08:00:00"),   # empty
+])
+def test_window_off_the_interval_boundaries_is_refused(start, end):
+    from test_history import at, measurements
+
+    with pytest.raises(ValueError, match="15-minute boundaries of the analysis period"):
+        calculate_kpis(measurements(), time_window=AnalysisInterval(at(start), at(end)))
+
+
+def test_window_outside_the_analysis_period_is_refused():
+    from test_history import at, measurements
+
+    next_day = at("00:00:00") + timedelta(days=1)
+    with pytest.raises(ValueError, match="15-minute boundaries of the analysis period"):
+        calculate_kpis(measurements(), time_window=AnalysisInterval(next_day, next_day + timedelta(minutes=15)))
+
+
+def test_window_without_a_timezone_is_refused_with_that_reason():
+    from datetime import datetime
+    from test_history import measurements
+
+    window = AnalysisInterval(datetime(2026, 10, 22, 8), datetime(2026, 10, 22, 8, 15))
+    with pytest.raises(ValueError, match="needs a timezone"):
+        calculate_kpis(measurements(), time_window=window)
+
+
+def test_from_without_to_is_refused(monkeypatch, capsys):
+    import sys
+    from backend.analytics import service
+
+    monkeypatch.setattr(sys, "argv", ["service", "run", "--from", "2026-10-22T08:00:00+03:00"])
+    with pytest.raises(SystemExit):
+        service.main()
+    assert "--from and --to must be given together" in capsys.readouterr().err
+
+
+def written(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_files_name_the_provisional_interval(tmp_path):
+    from test_history import at, measurements
+
+    day = measurements()
+    window = AnalysisInterval(at("08:00:00"), at("08:30:00"))
+    results = calculate_kpis(day, time_window=window, provisional=True)
+    page_path, all_path = write_kpis(results, tmp_path, day.run, at("08:15:00"))
+
+    for path in (page_path, all_path):
+        assert written(path)["provisional_interval_start"] == "2026-10-22T08:15:00+03:00"
+
+    write_kpis(results, tmp_path, day.run)
+    assert written(page_path)["provisional_interval_start"] is None
+
+
+def test_merging_keeps_the_earlier_day_and_replaces_the_window(tmp_path):
+    """
+    08:00-08:30 is written, then the next update writes 08:15-08:45: the
+    08:00 results stay, 08:15 is replaced, 08:30 is added.
+    """
+
+    from test_history import at, measurements
+
+    day = measurements()
+
+    def window(start, end):
+        return calculate_kpis(day, time_window=AnalysisInterval(at(start), at(end)), provisional=True)
+
+    first = window("08:00:00", "08:30:00")
+    second = window("08:15:00", "08:45:00")
+    write_kpis(first, tmp_path, day.run, at("08:15:00"), merge=True)
+    page_path, all_path = write_kpis(second, tmp_path, day.run, at("08:30:00"), merge=True)
+
+    every = written(all_path)
+    starts = sorted({r["interval_start"] for r in every["results"]})
+    assert starts == [at(t).isoformat() for t in ("08:00:00", "08:15:00", "08:30:00")]
+    assert len(every["results"]) == len(first) + len(second) - len(
+        [r for r in first if r.interval_start == at("08:15:00")])
+    assert every["provisional_interval_start"] == at("08:30:00").isoformat()
+
+    # Each KPI, element and interval appears once on the page
+    page = written(page_path)["results"]
+    keys = [(r["kpi"], r["level"], r[f"{r['level']}_id"], r["interval_start"]) for r in page]
+    assert len(keys) == len(set(keys))
+
+    # The replaced 08:15 results are the second update's
+    later = {(r.kpi.value, r.method.value, r.unit.value, r.level.value, getattr(r, f"{r.level.value}_id"))
+             for r in second if r.interval_start == at("08:15:00")}
+    assert {(r["kpi"], r["method"], r["unit"], r["level"], r[f"{r['level']}_id"])
+            for r in every["results"] if r["interval_start"] == at("08:15:00").isoformat()} == later
+
+
+def test_merging_replaces_the_files_of_another_run(tmp_path):
+    from test_history import at, measurements
+
+    day = measurements()
+    results = calculate_kpis(day, time_window=AnalysisInterval(at("08:00:00"), at("08:15:00")))
+    write_kpis(results, tmp_path, day.run, merge=True)
+
+    other_run = day.run.model_copy(update={"run_id": "RUN_OTHER"})
+    _, all_path = write_kpis(results, tmp_path, other_run, merge=True)
+
+    assert written(all_path)["run_id"] == "RUN_OTHER"
+    assert len(written(all_path)["results"]) == len(results)
+
+
+def test_provisional_window_end_uses_the_vehicles_that_have_finished():
+    """
+    23:45-24:00: one North-left car finished at 23:50 and one is still in
+    its zone. The whole-day calculation reports the interval unavailable;
+    a provisional window gives the finished car's delay.
+    """
+
+    from test_history import RUN_ID, at, measurements
+    from jaadah.models.outputs import VehicleDelayRecord
+
+    day = measurements()
+    finished = VehicleDelayRecord(
+        run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2345__001", movement_id="MOV_N_E",
+        zone_entry_time=at("23:46:00"), stop_line_time=at("23:47:00"), zone_exit_time=at("23:47:20"),
+        zone_distance_m=565.0, free_flow_travel_time_s=40.0, halted_time_s=30.0,
+    )
+    day = day._replace(passages=day.passages._replace(records=[*day.passages.records, finished]))
+    last = AnalysisInterval(at("23:45:00"), at("00:00:00") + timedelta(days=1))
+
+    def north_delay(results):
+        return next(r for r in results if r.kpi == KpiName.CONTROL_DELAY and r.movement_id == "MOV_N_E"
+                    and r.method.value == "simulation" and r.interval_start == last.start)
+
+    assert north_delay(calculate_kpis(day, time_window=last)).status == KpiStatus.UNAVAILABLE
+
+    provisional = north_delay(calculate_kpis(day, time_window=last, provisional=True))
+    assert provisional.status == KpiStatus.OK
+    assert provisional.value == pytest.approx(40.0)   # 80 s in the zone - 40 s free flow
+
+
+# ============================================================
 # WHAT THE CURRENT-TRAFFIC PAGE SHOWS
 # ============================================================
 
@@ -244,6 +418,12 @@ def test_baseline_run_gives_every_kpi_for_every_element(source, tmp_path):  # no
     assert all(r.run_ids in ([], ["RUN_TEST"]) for r in results)
     assert all(r.reason for r in results if r.status != KpiStatus.OK)
     assert any(r.status == KpiStatus.OK for r in results)
+
+    # A time window gives the same results for its intervals, from the
+    # same measurements (the live update loop's newest intervals)
+    measurements = collect_measurements(files)
+    second = by_key(calculate_kpis(measurements, time_window=AnalysisInterval(middle, analysis_end)))
+    assert second == {k: r for k, r in by_key(results).items() if k[-2:] == (middle, analysis_end)}
 
     # kpis_all.json holds every result; kpis.json what the page shows.
     # Both name the run and hold no SUMO identifiers.

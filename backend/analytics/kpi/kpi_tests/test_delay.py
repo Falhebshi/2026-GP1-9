@@ -4,6 +4,7 @@ import pytest
 
 from backend.analytics.kpi.delay import (
     NO_ARRIVALS_REASON,
+    NONE_FINISHED_REASON,
     MovementDelay,
     blocked_movements,
     blocks_over_period,
@@ -78,7 +79,7 @@ def unfinished(vehicle_id, entry, **overrides):
     return IncompletePassage(**data)
 
 
-def delays(delay_records=(), incomplete_passages=(), run_id="RUN_1", blocked=None):
+def delays(delay_records=(), incomplete_passages=(), run_id="RUN_1", blocked=None, provisional=None):
     return movement_delays(
         run_id=run_id,
         movement_ids=MOVEMENTS,
@@ -86,6 +87,7 @@ def delays(delay_records=(), incomplete_passages=(), run_id="RUN_1", blocked=Non
         delay_records=list(delay_records),
         incomplete_passages=list(incomplete_passages),
         blocked=blocked,
+        provisional=provisional,
     )
 
 
@@ -236,6 +238,65 @@ def test_unfinished_vehicle_that_arrived_in_warmup_ignored():
     )
 
     assert result[("MOV_E_T", FIRST)].status == KpiStatus.OK
+
+
+# ============================================================
+# THE PROVISIONAL INTERVAL OF A LIVE UPDATE
+# ============================================================
+
+def test_provisional_interval_uses_the_vehicles_that_have_finished():
+    result = delays(
+        [passage("v1", at(8, 20), 30, 20), passage("v2", at(8, 22), 10, 0)],
+        [unfinished("v9", at(8, 28))],
+        provisional=SECOND,
+    )
+
+    summary = result[("MOV_E_T", SECOND)]
+
+    assert summary.status == KpiStatus.OK
+    assert summary.mean_control_delay_s == pytest.approx(20.0)
+    assert summary.mean_queue_duration_s == pytest.approx(10.0)
+    assert (summary.completed_vehicles, summary.incomplete_vehicles) == (2, 1)
+    assert summary.reason is None
+
+
+def test_provisional_interval_with_no_finished_vehicle_is_unavailable():
+    result = delays(incomplete_passages=[unfinished("v9", at(8, 28))], provisional=SECOND)
+
+    summary = result[("MOV_E_T", SECOND)]
+
+    assert summary.status == KpiStatus.UNAVAILABLE
+    assert summary.mean_control_delay_s is None
+    assert summary.reason == NONE_FINISHED_REASON
+
+
+def test_provisional_interval_with_no_arrivals_is_not_applicable():
+    result = delays(provisional=SECOND)
+
+    assert result[("MOV_E_T", SECOND)].status == KpiStatus.NOT_APPLICABLE
+
+
+def test_only_the_provisional_interval_leaves_out_unfinished_vehicles():
+    result = delays(
+        [passage("v1", at(8, 1), 15, 5)],
+        [unfinished("v8", at(8, 10)), unfinished("v9", at(8, 25))],
+        provisional=SECOND,
+    )
+
+    assert result[("MOV_E_T", FIRST)].status == KpiStatus.UNAVAILABLE
+    assert "had not finished" in result[("MOV_E_T", FIRST)].reason
+
+
+def test_blocked_provisional_interval_stays_unavailable():
+    reason = "the queue is near the end of the measurement zone"
+    result = delays(
+        [passage("v1", at(8, 20), 15, 5)],
+        provisional=SECOND,
+        blocked={("MOV_E_T", SECOND): reason},
+    )
+
+    assert result[("MOV_E_T", SECOND)].status == KpiStatus.UNAVAILABLE
+    assert result[("MOV_E_T", SECOND)].reason == reason
 
 
 # ============================================================
