@@ -130,17 +130,17 @@ def test_green_written_as_two_identical_steps_is_one_green(tmp_path):
 
 
 def test_study_area_plan():
-    """East 40 s, South 15 s, West 30 s, North 15 s; 3 s yellow and 2 s all-red each."""
+    """East 90 s, South 27 s, West 41 s, North 47 s; 3 s yellow and 2 s all-red each."""
     program = build(load_network_mappings(MAPPING_PATH), NETWORK_PATH)
 
     assert [(p.served_movement_ids, p.green_time_s, p.yellow_time_s, p.all_red_time_s)
             for p in program.phases] == [
-        (["MOV_E_W", "MOV_E_S"], 40, 3, 2),
-        (["MOV_S_W"], 15, 3, 2),
-        (["MOV_W_E", "MOV_W_N"], 30, 3, 2),
-        (["MOV_N_E"], 15, 3, 2),
+        (["MOV_E_W", "MOV_E_S"], 90, 3, 2),
+        (["MOV_S_W"], 27, 3, 2),
+        (["MOV_W_E", "MOV_W_N"], 41, 3, 2),
+        (["MOV_N_E"], 47, 3, 2),
     ]
-    assert program.cycle_length_s == 120
+    assert program.cycle_length_s == 225
 
 
 # ============================================================

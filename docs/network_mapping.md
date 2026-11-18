@@ -453,8 +453,8 @@ Windows and Linux checkouts, giving the same network text a different raw
 checksum. `network_checksum_matches` accepts the original bytes and their
 LF/CRLF variants. All other bytes, including spaces and XML values, matter.
 
-For this network, the CRLF checksum starts `08b1dc40` and the LF checksum starts
-`b7fa6b5d`. Both identify the same content. Generate checksums from LF-normalized
+For this network, the LF checksum starts `49d546ae` and the CRLF checksum starts
+`3397a678`. Both identify the same content. Generate checksums from LF-normalized
 bytes:
 
 ```python
@@ -473,8 +473,10 @@ its recorded checksum.
 `schema_version` identifies the mapping configuration's structure and validation
 contract. The repository currently accepts only `"2.1"`. `mapping_version` is a
 nonempty label identifying a specific revision of the study-area mapping data;
-the current value is `"2.5-rcrc-site-1444"`, which added the RCRC site 1444
-detectors (see [RCRC site 1444 detectors](#rcrc-site-1444-detectors)). The
+the current value is `"2.6-webster-signal-plan"`. `2.5-rcrc-site-1444` added the
+RCRC site 1444 detectors (see [RCRC site 1444 detectors](#rcrc-site-1444-detectors));
+`2.6-webster-signal-plan` records the network checksum after the signal plan
+changed to the Webster plan ([SUMO network](sumo_network.md#signal-program)). The
 version labels do not need to match.
 
 Schema 2.1 removes the unused `MovementMapping.sumo_lanes` field. All 18 values

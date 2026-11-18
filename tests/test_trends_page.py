@@ -233,8 +233,8 @@ def test_peak_vc_keeps_the_shared_lane_group_of_its_interval():
     per 15 minutes, and 300 left + 50 through at 17:30. The engine gives:
 
                          light intervals          17:30 (the peak)
-        left  MOV_E_W    0.166, no lane group     0.663 on APP_E_LT
-        thru  MOV_E_S    0.164 on APP_E_LT        0.332, no lane group
+        left  MOV_E_W    0.138, no lane group     0.553 on APP_E_LT
+        thru  MOV_E_S    0.137 on APP_E_LT        0.276, no lane group
 
     The period's peak v/c must carry the attribution of the peak
     interval itself, after aggregation and after compact expansion.
@@ -263,12 +263,12 @@ def test_peak_vc_keeps_the_shared_lane_group_of_its_interval():
     for payload, unpack in ((trends, lambda r: r), (packed, lambda r: expand_result(r, packed["resultDefaults"]))):
         left, through = unpack(peak_vc(payload, "MOV_E_W")), unpack(peak_vc(payload, "MOV_E_S"))
 
-        assert left["value"] == pytest.approx(0.663, abs=0.001)
+        assert left["value"] == pytest.approx(0.553, abs=0.001)
         assert left["interval_start"] == "2026-11-03T17:30:00+03:00"
         assert left["measured_on_lane_group_id"] == "APP_E_LT"
         assert left["is_shared_value"] is True
 
-        assert through["value"] == pytest.approx(0.332, abs=0.001)
+        assert through["value"] == pytest.approx(0.276, abs=0.001)
         assert through["measured_on_lane_group_id"] is None
         assert through["is_shared_value"] is False
 
