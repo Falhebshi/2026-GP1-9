@@ -128,7 +128,7 @@ def password_problem(password: str, name: str, email: str) -> str | None:
         return "This password is too common. Choose another one."
 
     if made_of_words(letters_only(password), context_words(name, email)):
-        return "Do not build the password from the engineer's name, email or Jaadah."
+        return "Do not build the password from the person's name, email or Jaadah."
 
     return None
 
