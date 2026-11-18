@@ -79,7 +79,10 @@ GitHub/
 │           └── rcrc_sample_analysis.py
 │
 └── jaadah-private-data/
-    ├── rcrc_sample.xlsx
+    ├── raw/
+    │   └── rcrc/
+    │       └── site_1028/
+    │           └── rcrc_sample.xlsx
     └── processed/
         └── rcrc_sample/
 ```
@@ -526,8 +529,10 @@ Generator loader changes are not part of this analysis PR.
 The private workbook must first exist at:
 
 ```text
-../jaadah-private-data/rcrc_sample.xlsx
+../jaadah-private-data/raw/rcrc/site_1028/rcrc_sample.xlsx
 ```
+
+Raw and processed private data are kept apart, as for the site 1444 report (`raw/rcrc/site_1444/`). If the workbook is still at the top of `jaadah-private-data/` (its location before November 2026), the script stops and prints the command to move it.
 
 From the repository root, run:
 
