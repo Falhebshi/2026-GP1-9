@@ -1,6 +1,6 @@
 {
   "schema_version": "2.1",
-  "mapping_version": "2.4-west-route-start",
+  "mapping_version": "2.5-rcrc-site-1444",
   "network": {
     "version": "jaadah_network_v2",
     "path": "data/processed/road_network/jaadah_study_area.net.xml",
@@ -537,6 +537,188 @@
       "mapping_status": "usable",
       "sumo_lane_id": "133973513_0",
       "sumo_position_m": 110.71
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144409",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_1",
+      "movement_ids": [
+        "MOV_S_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569790079#0_1",
+      "sumo_position_m": 13.63,
+      "mapping_note": "RCRC P2-NB-L1-L-STB stop-bar detector; same lane as synthetic detector 7. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144410",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_S",
+      "lane_id": "LANE_S_2",
+      "movement_ids": [
+        "MOV_S_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569790079#0_0",
+      "sumo_position_m": 13.63,
+      "mapping_note": "RCRC P2-NB-L2-L-STB stop-bar detector; same lane as synthetic detector 8. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144411",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_1",
+      "movement_ids": [
+        "MOV_W_N"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133793906#2_2",
+      "sumo_position_m": 20.15,
+      "mapping_note": "RCRC P4-EB-L1-L-STB stop-bar detector; same lane as synthetic detector 1. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144412",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_2",
+      "movement_ids": [
+        "MOV_W_N",
+        "MOV_W_E"
+      ],
+      "mapping_status": "requires_allocation",
+      "sumo_lane_id": "133793906#2_1",
+      "sumo_position_m": 20.15,
+      "mapping_note": "RCRC P4-EB-L2-TL-STB stop-bar detector; same lane as synthetic detector 2. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144413",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_W",
+      "lane_id": "LANE_W_3",
+      "movement_ids": [
+        "MOV_W_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "133793906#2_0",
+      "sumo_position_m": 20.15,
+      "mapping_note": "RCRC P4-EB-L3-T-STB stop-bar detector; same lane as synthetic detector 3. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144414",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_1",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_2",
+      "sumo_position_m": 31.23,
+      "mapping_note": "RCRC P6-SB-L1-L-STB stop-bar detector; same lane as synthetic detector 4. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144415",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_2",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_1",
+      "sumo_position_m": 31.23,
+      "mapping_note": "RCRC P6-SB-L2-L-STB stop-bar detector; same lane as synthetic detector 5. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144416",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_N",
+      "lane_id": "LANE_N_3",
+      "movement_ids": [
+        "MOV_N_E"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "569788806_0",
+      "sumo_position_m": 31.23,
+      "mapping_note": "RCRC P6-SB-L3-L-STB stop-bar detector; same lane as synthetic detector 6. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144417",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_1",
+      "movement_ids": [
+        "MOV_E_S"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_3",
+      "sumo_position_m": 1.27,
+      "mapping_note": "RCRC P8-WB-L1-L-STB stop-bar detector; same lane as synthetic detector 9. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144418",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_2",
+      "movement_ids": [
+        "MOV_E_S",
+        "MOV_E_W"
+      ],
+      "mapping_status": "requires_allocation",
+      "sumo_lane_id": "713369663#2_2",
+      "sumo_position_m": 1.27,
+      "mapping_note": "RCRC P8-WB-L2-TL-STB stop-bar detector; same lane as synthetic detector 10. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144419",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_3",
+      "movement_ids": [
+        "MOV_E_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_1",
+      "sumo_position_m": 1.27,
+      "mapping_note": "RCRC P8-WB-L3-T-STB stop-bar detector; same lane as synthetic detector 11. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
+    },
+    {
+      "source": "rcrc",
+      "site_id": "1444",
+      "detector_id": "144420",
+      "intersection_id": "INT_001",
+      "approach_id": "APP_E",
+      "lane_id": "LANE_E_4",
+      "movement_ids": [
+        "MOV_E_W"
+      ],
+      "mapping_status": "usable",
+      "sumo_lane_id": "713369663#2_0",
+      "sumo_position_m": 1.27,
+      "mapping_note": "RCRC P8-WB-L4-T-STB stop-bar detector; same lane as synthetic detector 12. Position copied from the synthetic stop-bar placement (1 m before the lane end), not surveyed."
     }
   ],
   "movement_mappings": [

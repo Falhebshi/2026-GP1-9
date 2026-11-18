@@ -374,8 +374,14 @@ def test_slip_approaches_are_tagged():
 NEXT_INTERVAL = AnalysisInterval(INTERVAL.end, INTERVAL.end + timedelta(minutes=15))
 
 
-def demand(movement_id, source="rcrc", interval=INTERVAL, allocated=False, imputed=False):
-    """One demand record; optionally split from a shared lane or estimated."""
+def demand(
+    movement_id, source="rcrc", interval=INTERVAL, allocated=False, imputed=False,
+    share_estimated=False,
+):
+    """
+    One demand record; optionally split from a shared lane, estimated
+    for a missing detector, or estimated by a ratio (no detector).
+    """
 
     values = dict(
         demand_id=f"DEM_{movement_id}_{interval.start:%H%M}",
@@ -392,6 +398,14 @@ def demand(movement_id, source="rcrc", interval=INTERVAL, allocated=False, imput
         values["imputed_detectors"] = [
             {"site_id": "9", "detector_id": "6", "method": "neighbour_regression"}
         ]
+    if share_estimated:
+        values["source_observation_ids"] = []
+        values["share_estimate"] = {
+            "ratio": 0.2,
+            "scenario": "central",
+            "share_origin": "assumed",
+            "basis_demand_ids": ["DEM_BASIS"],
+        }
     return SimulationDemand(**values)
 
 
@@ -435,7 +449,7 @@ def test_measured_rcrc_demand_is_observed(surveyed_geometry):
     assert result == [InputOrigin.OBSERVED, InputOrigin.SIMULATED]
 
 
-@pytest.mark.parametrize("marker", ["allocated", "imputed"])
+@pytest.mark.parametrize("marker", ["allocated", "imputed", "share_estimated"])
 def test_allocated_or_imputed_demand_is_a_modelled_assumption(surveyed_geometry, marker):
     """Whatever the source: part of the count is not measured."""
 

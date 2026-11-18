@@ -592,7 +592,7 @@ Example (East delay): baseline 40, 50, 60 s; intervention 35, 44, 56 s; differen
 
 | Input | Origin |
 | --- | --- |
-| Demand | `SimulationDemand.source`: `rcrc` → observed; `synthetic`, `forecast` → modelled assumption. Demand that is **allocated** (`is_allocated`: part of a shared-lane detector count, split between movements) or **imputed** (`is_imputed`: an estimated count for a detector that did not report) also adds modelled assumption, whatever its source |
+| Demand | `SimulationDemand.source`: `rcrc` → observed; `synthetic`, `forecast` → modelled assumption. Demand that is **allocated** (`is_allocated`: part of a shared-lane detector count, split between movements) or **imputed** (`is_imputed`: an estimated count for a detector that did not report) or **share-estimated** (`is_share_estimated`: a movement no detector counts) also adds modelled assumption, whatever its source |
 | Signal timing | `SignalProgram.source`: `observed` → observed; otherwise modelled assumption (section 9.8) |
 | Lane geometry | modelled assumption (`GEOMETRY_INPUT_ORIGIN`): widths and storage lengths are SUMO defaults or modelled values |
 

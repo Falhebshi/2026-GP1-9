@@ -104,7 +104,7 @@ def test_review_changes_preserve_all_original_movement_records():
 
 def test_approved_lane_catalog_and_deferred_collections(config):
     assert config.schema_version == '2.1'
-    assert config.mapping_version == '2.4-west-route-start'
+    assert config.mapping_version == '2.5-rcrc-site-1444'
     expected_ids = {item[0] for item in APPROVED_LANES}
     assert len(config.approach_lanes) == len(config.lane_mappings) == 16
     assert {lane.lane_id for lane in config.approach_lanes} == expected_ids
@@ -117,14 +117,48 @@ def test_approved_lane_catalog_and_deferred_collections(config):
 
 
 def test_populated_synthetic_detector_catalog(config):
-    identities = [(d.source.value, d.site_id, d.detector_id) for d in config.detector_mappings]
+    synthetic = [d for d in config.detector_mappings if d.source.value == 'synthetic']
+    identities = [(d.source.value, d.site_id, d.detector_id) for d in synthetic]
     assert len(identities) == len(set(identities)) == 16
     assert set(identities) == {('synthetic', '9', str(i)) for i in range(1, 17)}
-    assert Counter(d.mapping_status.value for d in config.detector_mappings) == {
+    assert Counter(d.mapping_status.value for d in synthetic) == {
         'usable': 14, 'requires_allocation': 2,
     }
-    assert {d.detector_id for d in config.detector_mappings
+    assert {d.detector_id for d in synthetic
             if d.mapping_status.value == 'requires_allocation'} == {'2', '10'}
+
+
+# RCRC site 1444 stop-bar detectors (Site 1444 report, Jul-Oct 2026) and the
+# synthetic detector on the same lane: same approach, travel direction and
+# median-based lane number. The report has no slip or bypass detectors.
+RCRC_SITE_1444 = {
+    '144409': '7', '144410': '8',
+    '144411': '1', '144412': '2', '144413': '3',
+    '144414': '4', '144415': '5', '144416': '6',
+    '144417': '9', '144418': '10', '144419': '11', '144420': '12',
+}
+
+
+def test_rcrc_site_1444_detector_catalog(config):
+    rcrc = {d.detector_id: d for d in config.detector_mappings if d.source.value == 'rcrc'}
+    synthetic = {d.detector_id: d for d in config.detector_mappings
+                 if d.source.value == 'synthetic'}
+    assert set(rcrc) == set(RCRC_SITE_1444)
+    assert {d.site_id for d in rcrc.values()} == {'1444'}
+    for rcrc_id, synthetic_id in RCRC_SITE_1444.items():
+        detector, twin = rcrc[rcrc_id], synthetic[synthetic_id]
+        assert detector.lane_id == twin.lane_id
+        assert detector.approach_id == twin.approach_id
+        assert detector.movement_ids == twin.movement_ids
+        assert detector.mapping_status == twin.mapping_status
+        assert (detector.sumo_lane_id, detector.sumo_position_m) == (
+            twin.sumo_lane_id, twin.sumo_position_m,
+        )
+    # The two TL (left and through) lanes are the shared lanes.
+    assert {i for i, d in rcrc.items()
+            if d.mapping_status.value == 'requires_allocation'} == {'144412', '144418'}
+    slip_movements = {'MOV_W_S_SLIP', 'MOV_N_W_SLIP', 'MOV_S_E_BYPASS'}
+    assert not slip_movements & {m for d in rcrc.values() for m in d.movement_ids}
 
 
 @pytest.fixture(scope='module')

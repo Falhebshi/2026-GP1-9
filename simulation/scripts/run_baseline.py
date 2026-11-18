@@ -1,5 +1,5 @@
 """
-Run one baseline simulation from the synthetic traffic source.
+Run one baseline simulation from a traffic source (synthetic or RCRC).
 
 The run covers the analysis period plus 15 minutes of warm-up before it
 and 15 minutes of clearance after it, as one continuous SUMO run. For an
@@ -11,7 +11,10 @@ Steps:
    whole run window is not available yet;
 2. fetch and ingest the observations of the run window; stop if any
    record is rejected;
-3. turn them into movement demand; stop if any demand cannot be built;
+3. turn them into movement demand; stop if any demand cannot be built.
+   With --history-days (default 35 for RCRC), the days before the
+   window are ingested too, so missing detectors and short outages can
+   be estimated (backend/demand/imputation.py);
 4. generate the SUMO demand, check it and run SUMO once.
 
 Nothing is written before step 4, so a run that stops early leaves no
@@ -37,8 +40,11 @@ if str(PROJECT_ROOT) not in sys.path:
 import httpx2
 
 from backend.demand.service import build_simulation_demand
-from backend.ingestion.client import SyntheticTrafficClient
-from backend.ingestion.service import ingest_synthetic_observations
+from backend.ingestion.client import RcrcReplayClient, SyntheticTrafficClient
+from backend.ingestion.service import (
+    ingest_rcrc_observations,
+    ingest_synthetic_observations,
+)
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.scenario import (
     ControlMode,
@@ -53,7 +59,16 @@ from jaadah.sumo_demand.planner import DemandPlanningError, build_run_window
 from jaadah.sumo_demand.writer import DemandWritingError
 from simulation.scripts.run_scenario import generate_and_execute_scenario
 
-DEFAULT_SOURCE_URL = "http://127.0.0.1:8000"
+DEFAULT_SOURCE_URL = "http://127.0.0.1:8000"  # the synthetic source
+DEFAULT_SOURCE_URLS = {
+    "synthetic": DEFAULT_SOURCE_URL,
+    "rcrc": "http://127.0.0.1:8002",
+}
+DEFAULT_HISTORY_DAYS = {"synthetic": 0, "rcrc": 35}
+INGESTERS = {
+    "synthetic": ingest_synthetic_observations,
+    "rcrc": ingest_rcrc_observations,
+}
 DEFAULT_MAPPING = PROJECT_ROOT / "data/processed/road_network/network_mappings.json"
 DEFAULT_NETWORK = PROJECT_ROOT / "data/processed/road_network/jaadah_study_area.net.xml"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "simulation/outputs/baseline_runs"
@@ -125,7 +140,7 @@ def run_baseline(
     analysis_start: datetime,
     analysis_end: datetime,
     *,
-    client: SyntheticTrafficClient,
+    client: SyntheticTrafficClient | RcrcReplayClient,
     output_dir: str | Path,
     run_id: str,
     seed: int = 42,
@@ -133,11 +148,15 @@ def run_baseline(
     mapping_path: str | Path = DEFAULT_MAPPING,
     network_path: str | Path = DEFAULT_NETWORK,
     sumo_bin: str = "sumo",
+    source: str = "synthetic",
+    history_days: int = 0,
 ) -> dict:
     """
     Run one baseline simulation and return its summary; raise
     BaselineNotStarted when the run cannot start.
     """
+
+    ingest = INGESTERS[source]
 
     output_dir = Path(output_dir).expanduser().resolve()
     if output_dir.exists():
@@ -167,19 +186,32 @@ def run_baseline(
         ])
 
     # 2. Ingestion: every source record must be accepted.
-    ingestion = ingest_synthetic_observations(client, start=window.epoch, end=window.run_end)
+    ingestion = ingest(client, start=window.epoch, end=window.run_end)
     if ingestion.errors:
         raise BaselineNotStarted(
             ["Source records were rejected during ingestion:"]
             + _ingestion_problems(ingestion.errors)
         )
+    # History is only used to estimate missing counts; rejected history
+    # records are left out of the estimates and do not stop the run.
+    history = (
+        ingest(
+            client,
+            start=window.epoch - timedelta(days=history_days),
+            end=window.epoch,
+        ).observations
+        if history_days > 0
+        else None
+    )
 
     # 3. Demand: every movement and interval must be built.
     transformation = build_simulation_demand(
         ingestion.observations,
         mapping_path=mapping_path,
+        history=history,
         window_start=window.epoch,
         window_end=window.run_end,
+        available_until=latest,
     )
     if transformation.errors:
         raise BaselineNotStarted(
@@ -239,7 +271,9 @@ def run_baseline(
             "duration_s": window.duration_s,
         },
         "source": {
+            "type": source,
             "url": client.base_url,
+            "history_days": history_days,
             "latest_available_timestamp": latest.isoformat(),
             "records_accepted": ingestion.accepted_count,
         },
@@ -272,7 +306,13 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="Start of the analysis period, e.g. 2026-10-20T08:00+03:00")
     parser.add_argument("--analysis-end", required=True, type=datetime.fromisoformat,
                         help="End of the analysis period, e.g. 2026-10-20T09:00+03:00")
-    parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
+    parser.add_argument("--source", choices=sorted(INGESTERS), default="synthetic",
+                        help="Traffic source to pull from (default synthetic).")
+    parser.add_argument("--source-url",
+                        help="Default: http://127.0.0.1:8000 (synthetic), :8002 (rcrc)")
+    parser.add_argument("--history-days", type=int,
+                        help="Days before the run window ingested for estimating "
+                             "missing counts. Default 0 (synthetic), 35 (rcrc).")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--step-length", type=float, default=0.4)
     parser.add_argument("--run-id", help="Default: RUN_BASELINE_<date>T<start>-<end>_S<seed>")
@@ -292,7 +332,15 @@ def main(argv=None) -> int:
     try:
         summary = run_baseline(
             args.analysis_start, args.analysis_end,
-            client=SyntheticTrafficClient(args.source_url),
+            client=(RcrcReplayClient if args.source == "rcrc" else SyntheticTrafficClient)(
+                args.source_url or DEFAULT_SOURCE_URLS[args.source]
+            ),
+            source=args.source,
+            history_days=(
+                args.history_days
+                if args.history_days is not None
+                else DEFAULT_HISTORY_DAYS[args.source]
+            ),
             output_dir=output_dir, run_id=run_id, seed=args.seed,
             step_length_s=args.step_length, mapping_path=args.mapping,
             network_path=args.net, sumo_bin=args.sumo_bin,

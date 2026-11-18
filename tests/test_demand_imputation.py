@@ -259,15 +259,24 @@ def test_neighbour_line_needs_five_days_of_common_intervals() -> None:
     ) is None
 
 
-def test_missing_run_counts_both_directions() -> None:
+def test_missing_run_counts_back_to_the_last_report() -> None:
+    """Live, only the silence so far is known, not when it will end."""
+
     present = {NOW - 3 * INTERVAL, NOW + 2 * INTERVAL}
 
     assert missing_run_length(
         present=present,
         interval_start=NOW,
         first_known=NOW - 10 * INTERVAL,
-        last_known=NOW + 10 * INTERVAL,
-    ) == 4
+    ) == 3
+
+
+def test_missing_run_without_earlier_data_is_unknown() -> None:
+    assert missing_run_length(
+        present={NOW + 2 * INTERVAL},
+        interval_start=NOW,
+        first_known=NOW - 10 * INTERVAL,
+    ) is None
 
 
 def test_missing_detector_is_estimated_from_its_neighbours() -> None:
@@ -318,7 +327,7 @@ def test_estimate_is_the_median_of_the_neighbour_estimates() -> None:
     ) // 2
 
 
-def test_detector_without_neighbours_uses_its_historical_average() -> None:
+def test_detector_without_neighbours_uses_its_time_slot_average() -> None:
     result = transform_observations(
         observations=[
             make_observation(detector_id="4", vehicle_count=14),
@@ -336,12 +345,73 @@ def test_detector_without_neighbours_uses_its_historical_average() -> None:
         if demand.movement_id == "MOV_W_S_SLIP"
     )
 
+    # The hour before was typical (ratio 1), so the average is kept.
     assert demand.vehicle_count == 7
     assert demand.source_observation_ids == []
     assert [
         (detector.detector_id, detector.method)
         for detector in demand.imputed_detectors
-    ] == [("13", ImputationMethod.HISTORICAL_AVERAGE)]
+    ] == [("13", ImputationMethod.LEVEL_ADJUSTED_AVERAGE)]
+
+
+def slip_estimate(history) -> tuple[int, ImputationMethod]:
+    """Estimate detector 13 at NOW, with detector 4 reporting."""
+
+    result = transform_observations(
+        observations=[make_observation(detector_id="4", vehicle_count=14)],
+        config=make_config(),
+        history=history,
+    )
+    demand = next(d for d in result.demands if d.movement_id == "MOV_W_S_SLIP")
+
+    return demand.vehicle_count, demand.imputed_detectors[0].method
+
+
+def test_busy_hour_before_the_gap_scales_the_average() -> None:
+    """The hour before counted 40 per interval where 20 is typical: x2."""
+
+    history = [
+        make_observation(
+            detector_id=o.detector_id,
+            vehicle_count=40,
+            interval_start=o.interval_start,
+        )
+        if o.detector_id == "13" and o.interval_start >= NOW - 4 * INTERVAL
+        else o
+        for o in make_history(days=22, detector_ids=("4", "13"))
+    ]
+
+    assert slip_estimate(history) == (14, ImputationMethod.LEVEL_ADJUSTED_AVERAGE)
+
+
+def test_incomplete_hour_before_the_gap_uses_the_plain_average() -> None:
+    history = [
+        o
+        for o in make_history(days=22, detector_ids=("4", "13"))
+        if not (o.detector_id == "13" and o.interval_start == NOW - 3 * INTERVAL)
+    ]
+
+    # The gap now starts at NOW only, but the hour before it has a hole.
+    assert slip_estimate(history) == (7, ImputationMethod.HISTORICAL_AVERAGE)
+
+
+def test_level_is_measured_before_the_whole_gap() -> None:
+    """Two missing intervals: the level comes from the hour before both."""
+
+    history = [
+        make_observation(
+            detector_id=o.detector_id,
+            vehicle_count=10,
+            interval_start=o.interval_start,
+        )
+        if o.detector_id == "13" and NOW - 5 * INTERVAL <= o.interval_start < NOW - INTERVAL
+        else o
+        for o in make_history(days=22, detector_ids=("4", "13"))
+        if not (o.detector_id == "13" and o.interval_start == NOW - INTERVAL)
+    ]
+
+    # 10 where 20 is typical: x0.5 of 7 = 3.5, rounded half up.
+    assert slip_estimate(history) == (4, ImputationMethod.LEVEL_ADJUSTED_AVERAGE)
 
 
 def test_historical_average_uses_the_same_day_type() -> None:
@@ -643,3 +713,204 @@ def test_history_without_valid_observations_gives_window_errors() -> None:
         ("MOV_W_N", "no observation from detector(s) 1, 2"),
         ("MOV_W_S_SLIP", "no observation from detector(s) 13"),
     ]
+
+
+# ============================================================
+# SITE-WIDE OUTAGES
+# ============================================================
+
+def make_site_history(days: int) -> list[TrafficObservation]:
+    """
+    Return the past observations of every detector of the test site.
+    Detector 2 (the west shared lane) always counts 20, detector 1
+    always 10 and detector 3 always 30.
+    """
+
+    history = make_history(days=days, detector_ids=("1", "3", "4", "5", "6", "13"))
+    first = NOW - timedelta(days=days)
+
+    history += [
+        make_observation(
+            detector_id="2",
+            vehicle_count=20,
+            interval_start=first + step * INTERVAL,
+        )
+        for step in range(days * 96)
+    ]
+
+    return history
+
+
+def after_now(days: int) -> list[TrafficObservation]:
+    """Return the site history moved a day later, so data follows NOW."""
+
+    return [
+        make_observation(
+            detector_id=observation.detector_id,
+            vehicle_count=observation.vehicle_count,
+            interval_start=observation.interval_start + timedelta(days=days),
+        )
+        for observation in make_site_history(days=days)
+    ]
+
+
+def outage_at_now() -> list[TrafficObservation]:
+    """Site history before and after NOW, with nothing at NOW itself."""
+
+    return make_site_history(days=22) + [
+        observation
+        for observation in after_now(days=1)
+        if observation.interval_start != NOW
+    ]
+
+
+def test_site_wide_outage_in_a_window_is_estimated_from_history() -> None:
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=outage_at_now(),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+    )
+
+    demands = {demand.movement_id: demand for demand in result.demands}
+
+    assert result.errors == []
+    assert set(demands) == {"MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP"}
+    assert demands["MOV_W_S_SLIP"].vehicle_count == 7
+
+    for demand in demands.values():
+        assert demand.source_observation_ids == []
+        assert {d.method for d in demand.imputed_detectors} == {
+            ImputationMethod.LEVEL_ADJUSTED_AVERAGE
+        }
+
+
+def test_outage_estimates_the_shared_lane_and_splits_it() -> None:
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=outage_at_now(),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+    )
+
+    demands = {demand.movement_id: demand for demand in result.demands}
+
+    # Detector 2's average (20) is split 10:30 like detectors 1 and 3.
+    assert demands["MOV_W_N"].vehicle_count == 10 + 5
+    assert demands["MOV_W_E"].vehicle_count == 30 + 15
+    assert not demands["MOV_W_N"].is_allocated
+    assert sorted(d.detector_id for d in demands["MOV_W_N"].imputed_detectors) == [
+        "1", "2", "3",
+    ]
+
+
+def test_outage_is_not_estimated_without_a_window() -> None:
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=outage_at_now(),
+    )
+
+    assert result.demands == []
+
+
+def test_outage_longer_than_the_gap_limit_stays_missing() -> None:
+    gap_start = NOW - MAX_GAP_INTERVALS * INTERVAL
+    history = [
+        observation
+        for observation in make_site_history(days=22) + after_now(days=1)
+        if not gap_start <= observation.interval_start <= NOW
+    ]
+
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=history,
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+    )
+
+    assert result.demands == []
+    assert {error.movement_id for error in result.errors} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+
+
+def test_gap_limit_is_the_evaluated_value() -> None:
+    """
+    Set by analysis/rcrc_site_1444/gap_limit_evaluation.py on the RCRC
+    site 1444 report. Change both together.
+    """
+
+    assert MAX_GAP_INTERVALS == 5
+
+
+def test_window_after_the_last_data_is_not_estimated() -> None:
+    """An interval after the data ends is outside the data, not an outage."""
+
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=make_site_history(days=22),
+        window_start=NOW + 4 * INTERVAL,
+        window_end=NOW + 5 * INTERVAL,
+    )
+
+    assert result.demands == []
+
+
+def test_live_outage_at_the_newest_interval_is_estimated() -> None:
+    """
+    Live, nothing follows the newest interval yet. The source says it
+    has delivered through NOW + 15 min, so the silent interval is
+    missing, not still to come.
+    """
+
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=make_site_history(days=22),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+    )
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+
+
+def test_interval_not_yet_delivered_is_not_estimated() -> None:
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=make_site_history(days=22),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW,
+    )
+
+    assert result.demands == []
+
+
+def test_live_outage_stops_being_estimated_after_the_gap_limit() -> None:
+    """The site has been silent for MAX_GAP_INTERVALS before NOW."""
+
+    history = [
+        observation
+        for observation in make_site_history(days=22)
+        if observation.interval_start < NOW - MAX_GAP_INTERVALS * INTERVAL
+    ]
+
+    result = transform_observations(
+        observations=[],
+        config=make_config(),
+        history=history,
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+    )
+
+    assert result.demands == []

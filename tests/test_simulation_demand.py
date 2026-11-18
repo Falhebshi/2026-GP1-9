@@ -485,3 +485,66 @@ def test_is_imputed_cannot_be_passed_in():
 
     with pytest.raises(ValidationError):
         SimulationDemand(**data)
+
+
+# ============================================================
+# SHARE-ESTIMATED DEMAND
+# ============================================================
+
+def share_estimated_data():
+    data = valid_demand_data()
+    data["movement_id"] = "MOV_W_S_SLIP"
+    data["source_observation_ids"] = []
+    data["share_estimate"] = {
+        "ratio": 0.2,
+        "scenario": "central",
+        "share_origin": "assumed",
+        "basis_demand_ids": ["DEM_RCRC_MOV_W_N_20261010T0815"],
+    }
+    return data
+
+
+def test_share_estimated_demand_needs_no_source_observation():
+    demand = SimulationDemand(**share_estimated_data())
+
+    assert demand.is_share_estimated is True
+    assert demand.share_estimate.share_origin.value == "assumed"
+    assert demand.model_dump()["is_share_estimated"] is True
+
+
+def test_measured_demand_is_not_share_estimated():
+    assert SimulationDemand(**valid_demand_data()).is_share_estimated is False
+
+
+def test_share_estimated_demand_cannot_list_source_observations():
+    data = share_estimated_data()
+    data["source_observation_ids"] = ["OBS_001"]
+
+    with pytest.raises(ValidationError, match="share-estimated demand has no source"):
+        SimulationDemand(**data)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"ratio": -0.1},
+        {"basis_demand_ids": []},
+        {"basis_demand_ids": ["DEM_1", "DEM_1"]},
+        {"scenario": "worst"},
+        {"share_origin": "guess"},
+    ],
+)
+def test_invalid_share_estimate_is_rejected(change):
+    data = share_estimated_data()
+    data["share_estimate"] = data["share_estimate"] | change
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
+
+
+def test_is_share_estimated_cannot_be_passed_in():
+    data = valid_demand_data()
+    data["is_share_estimated"] = True
+
+    with pytest.raises(ValidationError):
+        SimulationDemand(**data)
