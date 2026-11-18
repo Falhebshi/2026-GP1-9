@@ -1,4 +1,5 @@
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { HOME_BY_ROLE, logOut } from '../services/authService'
 import './NavBar.css'
 
 // The pages shown in the bar. To add or rename a link, edit this list only.
@@ -14,18 +15,24 @@ function NavBar() {
   const navigate = useNavigate()
   const { pathname } = useLocation() // the current URL path, e.g. "/trends"
 
-  // On Network Overview no intersection is selected yet, so the bar shows
-  // only the brand and Log out.
-  const showLinks = pathname !== '/overview'
+  // The logged-in user from RequireRole (none on the /preview gallery)
+  const user = useOutletContext()?.user
+  const isAdmin = user?.role === 'admin'
 
-  function handleLogout() {
-    // Real logout (ending the session) is added when the backend exists.
-    navigate('/login')
+  // On Network Overview no intersection is selected yet, so the bar shows
+  // only the brand and Log out. Administrators never see the traffic
+  // links: they only have the Admin Dashboard.
+  const showLinks = !isAdmin && pathname !== '/overview'
+
+  async function handleLogout() {
+    // Ends the session on the server and removes its cookie (PBI 32)
+    await logOut()
+    navigate('/login', { replace: true })
   }
 
   return (
     <header className="nav-bar">
-      <Link to="/overview" className="nav-brand">
+      <Link to={isAdmin ? HOME_BY_ROLE.admin : HOME_BY_ROLE.engineer} className="nav-brand">
         Jaadah
       </Link>
 
