@@ -57,7 +57,7 @@ RIYADH_OFFSET = timedelta(hours=3)
 ONE_DAY = timedelta(days=1)
 
 # Computed fields of SimulationDemand: in its dump, not accepted back
-DEMAND_COMPUTED_FIELDS = {"is_allocated", "is_imputed"}
+DEMAND_COMPUTED_FIELDS = {"is_allocated", "is_imputed", "is_share_estimated"}
 
 
 class HistoryError(ValueError):

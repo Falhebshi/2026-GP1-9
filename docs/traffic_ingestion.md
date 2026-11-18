@@ -6,7 +6,10 @@ Jaadah's traffic-ingestion layer retrieves traffic observations from an external
 
 The ingestion layer forms the boundary between source-specific data formats and the rest of the Jaadah application. Its purpose is to ensure that downstream components do not depend directly on the field names, response structure, or implementation details of a particular traffic-data provider.
 
-The current implementation integrates with Jaadah's standalone synthetic traffic source, which acts as a development substitute for a future external traffic-data provider.
+The implementation supports two sources:
+
+- Jaadah's standalone synthetic traffic source, read over HTTP, which acts as a development substitute for an external provider;
+- the RCRC replay source, which plays back RCRC reports for the study intersection (site 1444) as a live feed (see [RCRC Source](#rcrc-source)).
 
 The ingestion flow is:
 
@@ -53,7 +56,8 @@ tests/
 ├── test_ingestion_adapter.py
 ├── test_ingestion_client.py
 ├── test_ingestion_service.py
-└── test_ingestion_integration.py
+├── test_ingestion_integration.py
+└── test_rcrc_ingestion.py          RCRC client, adapter, and replay source to ingestion
 ```
 
 Each module has a separate responsibility:
@@ -647,9 +651,109 @@ IngestionResult
 
 ---
 
+## RCRC Source
+
+### A Live Feed, Replayed
+
+Jaadah is a digital twin: traffic data arrives continuously and is simulated as it comes in. RCRC delivers reports as files, so the RCRC data is played back by the **RCRC replay source** (`traffic_source/rcrc_replay/`, see [RCRC replay source](rcrc_replay_source.md)), a separate service with the same kind of API as the synthetic source. It releases one 15-minute interval at a time as its clock advances. Jaadah pulls from it exactly as it would from a live RCRC feed:
+
+```text
+Private RCRC report (CSV)
+        |
+        v
+RCRC replay source        releases intervals over time, serves rows as RCRC wrote them
+        |
+        | HTTP: /health, /observations
+        v
+RcrcReplayClient
+        |
+        v
+RCRC adapter              RCRC row -> TrafficObservation
+        |
+        v
+IngestionResult
+```
+
+A live RCRC feed would replace only the replay source. The client, adapter and everything after them stay the same.
+
+### Client
+
+`RcrcReplayClient` (`backend/ingestion/client.py`) has the same two calls as `SyntheticTrafficClient`:
+
+- `fetch_observations(start, end)` returns an `RcrcBatch`: the rows as RCRC wrote them and the `site_id` of the response, because RCRC rows do not name their site;
+- `fetch_latest_available_timestamp()` reads `/health`. An interval ending at or before this time that has no rows is **missing data**, not data still to come. The demand transformation uses this to fill the newest interval during an outage (see [Traffic demand transformation](traffic_demand_transformation.md#site-wide-outages)).
+
+A response without an `observations` list or a `site_id`, an HTTP error or a connection failure is raised, never turned into an empty batch.
+
+### Converting a Row
+
+`ingest_rcrc_observations(client, start, end)` (`backend/ingestion/service.py`) adapts every row with `adapt_rcrc_record` (`backend/ingestion/adapter.py`) and returns the same `IngestionResult` as the synthetic ingestion.
+
+| RCRC field | Canonical representation |
+|---|---|
+| `site_id` of the response | `site_id` |
+| `Detector ID : Description` before the colon | `detector_id` |
+| `Detector ID : Description` after the colon | `description` |
+| `Time Stamp` | `interval_end` |
+| `Volume (Vehicles)` | `vehicle_count` |
+| `Occupancy (Seconds)` | `occupancy_s` |
+| `Occupancy (Percent)` | `occupancy_percent` |
+
+Detector IDs are kept exactly as RCRC sends them (`144409`, ...). A `TrafficObservation` records what the source supplied and is never rewritten; Jaadah's own names are the lanes and movements the mapping links each detector to. Observation IDs use the `RCRC` code: `OBS_RCRC_1444_144409_20260713T0015`.
+
+The RCRC export format is **not** the format of the site 1028 sample that the synthetic source imitates (`Site ID`, `Date  & Time`, `volume`), so the two sources have separate adapters.
+
+### Time Stamps
+
+RCRC time stamps have no timezone. They are read as Riyadh time (UTC+03:00) and as the **end** of the 15-minute interval, the convention used in the [RCRC sample analysis](rcrc_sample_analysis.md). A `00:00` time stamp therefore closes the previous day's last interval.
+
+This convention is not stated in the report, and the first site 1444 report has a record at both its start (`Jul 13 00:00`) and its end (`Oct 13 00:00`), one interval more than the period holds. **It should be confirmed with RCRC.** If RCRC uses interval starts, only `parse_rcrc_interval_end()` and the interval-start calculation in `adapt_rcrc_record()` change.
+
+### Row Validation
+
+A row is rejected, and reported in `IngestionResult.errors` without stopping the batch, when:
+
+- a field is missing, or the row is not an object;
+- the detector value is not `<numeric ID>: <description>`;
+- the time stamp does not look like `Jul 13, 2026 00:15:00` or is not on a 15-minute boundary;
+- the volume is not a non-negative whole number;
+- an occupancy value is present but not a non-negative finite number, the occupied seconds are longer than the interval, or the percentage is above 100.
+
+A row with a valid volume but invalid occupancy is rejected as a whole, because a damaged occupancy value suggests the row itself is damaged. Blank occupancy values are allowed and stored as `None`. A volume of zero is a valid count.
+
+### Occupancy
+
+A loop detector reports, for each interval, how many vehicles passed over it (volume) and how long a vehicle was over it (occupancy). An interval is 15 × 60 = 900 seconds, so occupancy is between 0 and 900 seconds, or 0–100 %. The percentage is the seconds divided by 900, rounded.
+
+Occupancy is stored on `TrafficObservation` (optional, because the synthetic source has none) but is not used by the demand transformation, which uses volume only. It is kept for:
+
+- calibration, by comparing it with occupancy from SUMO detectors placed at the same stop bars;
+- recognising oversaturation, when volume levels off while occupancy keeps rising, so the counts understate demand;
+- anomaly detection and detector fault checks.
+
+These are stop-bar detectors, so occupancy also rises with red time and changes with the signal plan. It should be compared within the same timing plan and time of day, and is not a user-facing KPI.
+
+### Detectors
+
+All 12 site 1444 detectors are stop-bar (`STB`) detectors. Their descriptions read `<phase>-<travel direction>-<lane>-<turns>-STB-<ring/phase>`, for example `P4-EB-L2-TL-STB-RP4`: phase 4, eastbound, lane 2, left and through. Lanes are numbered from the median, as in Jaadah (confirmed with RCRC's numbering of the westbound approach). The report has no detectors on the right-turn slips or the south bypass. See [Network mapping](network_mapping.md#rcrc-site-1444-detectors).
+
+### Missing-Data Policy
+
+| Case | Handling | Marked as |
+|---|---|---|
+| Invalid row | Rejected at ingestion and reported | `IngestionError` |
+| One detector silent while others report | Estimated from neighbouring detectors, or its time-slot average scaled by the hour before | `imputed_detectors` |
+| Whole site silent, for up to 5 intervals | Estimated from time-slot averages scaled by the hour before, including shared lanes | `imputed_detectors` |
+| Silent for longer | Left missing and reported; the run does not start | Demand transformation error |
+| Movement with no detector (slips, bypass) | Ratio of the counted movements on the same approach | `share_estimate` |
+
+The 5-interval limit was chosen by evaluation on the site 1444 report (`analysis/rcrc_site_1444/gap_limit_evaluation.py`). Every estimated value is labelled, and the KPI engine reports results that use one as a *modelled assumption*.
+
+---
+
 ## Current Scope
 
-The ingestion layer currently supports Jaadah's synthetic traffic source.
+The ingestion layer currently supports Jaadah's synthetic traffic source and RCRC sources (the replay source today).
 
 Its architecture is intentionally source-oriented so that additional adapters and clients can be introduced later when other traffic-data providers are integrated.
 

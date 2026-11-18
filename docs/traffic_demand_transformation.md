@@ -40,7 +40,8 @@ backend/
     ├── __init__.py
     ├── imputation.py
     ├── mapper.py
-    └── service.py
+    ├── service.py
+    └── share_estimates.py
 ```
 
 Tests are located under:
@@ -51,7 +52,8 @@ tests/
 ├── test_demand_service.py
 ├── test_demand_imputation.py
 ├── test_demand_integration.py
-└── test_demand_ingestion_integration.py
+├── test_demand_ingestion_integration.py
+└── test_share_estimates.py
 ```
 
 Each module has a separate responsibility:
@@ -61,6 +63,7 @@ Each module has a separate responsibility:
 | `mapper.py` | Finds the detector mapping of one observation and returns its movement ID, or rejects it |
 | `imputation.py` | Estimates the count of a detector that did not report, from its neighbours or its past counts |
 | `service.py` | Groups mapped observations by movement and interval, builds `SimulationDemand`, and reports everything that could not become demand. Also loads the network mappings for a batch |
+| `share_estimates.py` | Estimates the demand of movements that no detector counts (the RCRC slips and bypass) as a ratio of observed movements on the same approach |
 
 This separation keeps the decision for a single observation independent of the batch-level checks.
 
@@ -427,24 +430,50 @@ Detector 6   missing       estimate = median(27.6, 28.0) = 28
 
 A line needs at least 480 intervals in which both detectors reported (five days, the history length used by Chen et al.) and a neighbour count that is not constant.
 
-### Historical Average Second
+### Time-Slot Average Second, Adjusted to the Day
 
-When no neighbour gives an estimate, for example a detector that is the only lane of its movement, the estimate is the average of the detector's past counts in the same 15-minute time slot and day type. The day types are those of the RCRC sample analysis: workday (Sunday to Thursday), Friday and Saturday. At least three past values are needed, so about three weeks of history cover Fridays and Saturdays.
+When no neighbour gives an estimate, for example a detector that is the only lane of its movement or a site-wide outage, the estimate starts from the detector's average count in the same 15-minute time slot and day type on other days. The day types are those of the RCRC sample analysis: workday (Sunday to Thursday), Friday and Saturday. At least three values are needed, so about three weeks of history cover Fridays and Saturdays.
+
+The average describes a typical day, but traffic on a given day runs above or below typical, and the deviation persists for a while. So the average is scaled by how busy the hour before the gap was:
+
+```text
+level ratio = (counts of the 4 intervals before the gap) / (their time-slot averages)
+estimate    = time-slot average x level ratio
+```
+
+Example: the hour before the gap counted 120 vehicles where 100 is typical, so the ratio is 1.2 and a time-slot average of 30 becomes 36. The method is recorded as `level_adjusted_average`. If any of the 4 intervals before the gap is missing, the plain average is used and recorded as `historical_average`.
 
 ### Limits
 
 | Limit | Value | Reason |
 |---|---|---|
-| Longest gap | 4 intervals (1 hour) | Chosen by the team; longer gaps stay missing |
-| Shared-lane detectors | Never estimated | Their count is split by an assumption; estimating it first would stack two estimates |
+| Longest gap | 5 intervals (75 minutes), counted back from the interval being estimated | Evaluated on the RCRC site 1444 data by `analysis/rcrc_site_1444/gap_limit_evaluation.py`: the longest gap for which the hour before still improves the estimate. Longer gaps stay missing |
+| Shared-lane detectors | Not estimated, except in a site-wide outage | Their count is split by an assumption; estimating it first would stack two estimates. See [Site-Wide Outages](#site-wide-outages) |
 | Regression history | 480 common intervals | Five days (Chen et al., 2003) |
 | Average history | 3 values per time slot and day type | Chosen by the team |
 
+The gap is counted **back** from the interval being estimated to the detector's last report, because a live twin only knows how long a detector has been silent so far, not when it will report again. In a 6-interval gap, the first 5 intervals are estimated and the sixth is reported as missing, exactly as the twin would have done live. A detector with no earlier data is never estimated.
+
 Estimates are rounded to whole vehicles and are never negative. An estimated exclusive-lane count may be used to split a shared lane; both movements of that lane then list the estimated detector.
+
+### Site-Wide Outages
+
+In a site-wide outage all detectors of a site are silent together. No neighbour reports, so the adjusted time-slot average is used.
+
+When a requested window and `history` are both given, a mapped site that sent nothing at all in an interval of the window is estimated too:
+
+- every usable detector of the site, from its adjusted time-slot average;
+- the site's shared-lane detectors, the same way, and then split like a reported count.
+
+Estimating a shared-lane detector stacks two estimates (the count and the split). This is accepted only in a site-wide outage, where there is no measured count to protect and the alternative is no demand for the whole intersection. When any detector of the site reported, shared-lane detectors are still never estimated.
+
+A silent interval is only an outage if the source has already delivered it. `available_until` is the source's `latest_available_timestamp`: a silent interval ending by then is missing, which is how the **newest** interval is estimated live, when nothing has arrived after it yet. Without `available_until`, only gaps followed by data are estimated. An interval before the first known data is outside the data and is never filled. Outages are not estimated without a window, because without one the service cannot tell which silent intervals were requested. The gap limit above still applies, so after 5 silent intervals the twin reports the site's demand as missing; the baseline runner then does not start.
+
+Time slots that often fall in outages have fewer past values, so their averages are based on fewer weeks than other slots.
 
 ### Marking Imputed Demand
 
-Every demand that contains an estimated count lists the detector in `imputed_detectors`, with its site, detector ID and method (`neighbour_regression` or `historical_average`), and its computed `is_imputed` is true (see [Data models](data_models.md), section 1.2). A demand whose detectors were all estimated has no source observation IDs. The KPI engine must use `is_imputed` to label its results *modelled assumption*. This is a requirement for the KPI engine, which does not read these fields yet.
+Every demand that contains an estimated count lists the detector in `imputed_detectors`, with its site, detector ID and method (`neighbour_regression`, `level_adjusted_average` or `historical_average`), and its computed `is_imputed` is true (see [Data models](data_models.md), section 1.2). A demand whose detectors were all estimated has no source observation IDs. The KPI engine must use `is_imputed` to label its results *modelled assumption*. This is a requirement for the KPI engine, which does not read these fields yet.
 
 With synthetic data, the regression lines describe how the synthetic generator relates its detectors, not real drivers. They should be fitted again on RCRC history.
 
@@ -452,6 +481,95 @@ With synthetic data, the regression lines describe how the synthetic generator r
 
 - Chen, C., Kwon, J., Rice, J., Skabardonis, A., and Varaiya, P. (2003). Detecting errors and imputing missing data for single-loop surveillance systems. *Transportation Research Record*, 1855, 160–167.
 - National Academies of Sciences, Engineering, and Medicine (2024). *Guide on Methods for Assigning Counts to Adjustment Factor Groups*, Chapter 2. The National Academies Press.
+
+---
+
+## Movements Without a Detector
+
+### Which Movements
+
+At RCRC site 1444 only the 12 stop-bar detectors report. The three uncontrolled right turns have no detector:
+
+| Movement | Approach | Basis movements |
+|---|---|---|
+| `MOV_W_S_SLIP` | West | `MOV_W_N`, `MOV_W_E` |
+| `MOV_N_W_SLIP` | North | `MOV_N_E` |
+| `MOV_S_E_BYPASS` | South | `MOV_S_W` |
+
+Synthetic site 9 has detectors on these movements, so synthetic demand is unchanged.
+
+### Ratio Estimate
+
+The demand of an undetected movement is estimated from the observed movements of the same approach in the same interval (its basis movements):
+
+```text
+estimated demand = ratio x (sum of the basis movements' demand)
+```
+
+The ratio is defined so that a turning count gives it directly: the counted slip volume divided by the counted volume of the basis movements over the same period. Estimates are rounded to whole vehicles, half up.
+
+An estimate is made only when every basis movement has a demand in that interval. Otherwise the movement gets an error such as `no estimate: basis movement(s) MOV_N_E have no demand`. With a requested window, every interval of the window gets an estimate or an error.
+
+If a basis demand contains imputed detectors, the estimate lists them in `imputed_detectors` too, because it depends on them.
+
+### The Ratios Are Assumptions
+
+The ratios are kept in:
+
+```text
+data/processed/traffic_demand/undetected_movement_shares.json
+```
+
+Each entry has a `low`, `central` and `high` value, a `share_origin` (`assumed` for all of them) and a note.
+
+No measurement of the slips exists: the site has no slip detectors, TomTom could not be used, and RCRC has been asked for turning counts. So the central value follows one stated rule: **each slip lane carries the average per-lane volume of the counted stop-bar lanes beside it**, so
+
+```text
+central ratio = slip lanes / counted lanes on the approach
+```
+
+Example (invented numbers): if the north approach counts 240 vehicles on its three left-turn lanes, 80 per lane, its one slip lane is estimated at 80 (ratio 1/3).
+
+| Movement | Lanes | Low | Central | High |
+|---|---|---:|---:|---:|
+| `MOV_W_S_SLIP` | 1 slip lane, 3 counted | 1/6 | 1/3 | 2/3 |
+| `MOV_N_W_SLIP` | 1 slip lane, 3 counted | 1/6 | 1/3 | 2/3 |
+| `MOV_S_E_BYPASS` | 2 bypass lanes, 2 counted | 0.5 | 1 | 2 |
+
+This is an **assumption**, not an established method. It is informed by the HCM convention of distributing a volume evenly over parallel lanes, but no source applies it across movements, from counted left turns to an uncounted right turn. It follows the same reasoning as the shared-lane split, where a shared lane is assumed to behave like the lanes beside it. It may underestimate the slips, which never stop at a red light; the high value (double) covers that, and the low value (half) the opposite. Results that depend on the slips should be reported for all three values.
+
+The rule applies only to lanes running side by side with the counted lanes at the stop line, as the three slips do. A test checks that the file's values match the rule and the lane counts in the mapping.
+
+If RCRC turning counts arrive, the ratios are replaced in the file and a new `share_origin` value is added for them, without other code changes. If they do not arrive before calibration, the assumption is the final method and is reported as a limitation.
+
+The file is checked against the network mapping: every movement and basis movement must exist on the same approach, the estimated movement must have no detector for the source (a counted movement is never estimated), and every basis movement must have one.
+
+The central value is used by default. `share_scenario` selects the low or high value for sensitivity runs:
+
+```python
+from jaadah.models.traffic import ShareScenario
+
+result = build_simulation_demand(
+    observations=batch.observations,
+    share_scenario=ShareScenario.HIGH,
+)
+```
+
+If calibration (PBI 9) is done before turning counts arrive, it must be repeated after the ratios are replaced, because a model calibrated around wrong slip volumes compensates with other parameters.
+
+### Marking Share-Estimated Demand
+
+An estimated demand has no source observations. Instead, `share_estimate` records the ratio, the scenario, the `share_origin` and the `basis_demand_ids` it was applied to, and its computed `is_share_estimated` is true (see [Data models](data_models.md), section 1.2). The KPI engine adds *modelled assumption* to `input_origins` for any KPI that uses it, whatever its source.
+
+`share_config_path=None` turns the estimates off.
+
+### U-Turns and the Tunnel
+
+These movements receive no demand, by decision:
+
+- **Unsignalised U-turns** (`MOV_W_W_UTURN`, `MOV_S_S_UTURN`, `MOV_N_N_UTURN`) leave the approach on their own single-lane connector before the stop-bar lanes begin. They are a branch, not a lane beside the counted ones, so the lane rule does not apply and no data supports another value. Leaving them out means slightly less traffic upstream on those approaches than in reality.
+- **The east U-turn** (`MOV_E_E_UTURN`) is signalised and its vehicles are already inside the east through counts; they are simulated as through traffic (see [SUMO demand generation](sumo_demand_generation.md)).
+- **The tunnel** (`MOV_N_S_TUNNEL`, `MOV_S_N_TUNNEL`, `MOV_TUNNEL_ONRAMP`) is grade-separated, passes no signal and has no data. To check: `MOV_TUNNEL_ONRAMP` starts on the same road as the south approach (`E3`); if it leaves that road inside the south measurement zone, its absence makes the south approach look less busy.
 
 ---
 
@@ -581,6 +699,18 @@ result = build_simulation_demand(
 )
 ```
 
+For live operation, also pass the source's latest available timestamp, so that a silent newest interval is treated as missing (and estimated, within the gap limit) rather than as not yet delivered:
+
+```python
+result = build_simulation_demand(
+    observations=batch.observations,
+    history=history.observations,
+    window_start=window_start,
+    window_end=window_end,
+    available_until=client.fetch_latest_available_timestamp(),
+)
+```
+
 For a simulation, the window including warm-up and clearance is ingested and passed on, so that every interval is accounted for (see [Time Window and Interval Length](#time-window-and-interval-length)):
 
 ```python
@@ -652,7 +782,8 @@ python -m pytest -v \
   tests/test_demand_service.py \
   tests/test_demand_imputation.py \
   tests/test_demand_integration.py \
-  tests/test_demand_ingestion_integration.py
+  tests/test_demand_ingestion_integration.py \
+  tests/test_share_estimates.py
 ```
 
 The mapper, service and imputation tests use small mapping configurations built inside the test files. The integration tests use the real mapping file with one observation from each of the 16 synthetic detectors. The ingestion integration tests run the real synthetic source, its storage and API, and the ingestion client, with the artificial profiles of the ingestion tests, and pass the ingested batch and history to the transformation. No test needs the SUMO network.
@@ -679,7 +810,10 @@ The tests cover:
 - the real mappings: demand for all nine movements with detectors, the four shared-lane movements marked as allocated, and sensitivity runs that keep the approach totals;
 - every observation either used in demand or reported;
 - estimating a missing detector from its neighbours, using the median, or from its average in the same time slot and day type;
-- the history minimums, the one-hour gap limit, and shared-lane detectors never being estimated;
+- the history minimums, the 75-minute gap limit counted back from the interval, and shared-lane detectors never being estimated while their site reports;
+- the time-slot average scaled by the hour before the gap, and the plain average when that hour is incomplete;
+- site-wide outages in a window, including the shared lanes and the newest interval when the source has delivered it, but not without a window, not beyond the gap limit, not before the data starts and not before the source has delivered the interval;
+- ratio estimates for movements without a detector: the low, central and high values, rounding, missing basis movements, window coverage, carried imputed detectors, checks of the ratio file against the mapping, and the lane rule;
 - rejected and conflicting observations never used for estimates, in any input order, and history with no valid observation;
 - conflicts reporting every observation withheld with the movement interval;
 - marking imputed demand, including an estimated lane used by the shared-lane split;
@@ -702,6 +836,7 @@ The following decisions are open and are not implemented:
 | Observed turning proportions for the shared lanes (Gholami and Tian, 2016, Section 3.4) | Not available; the proportional split is used |
 | East and west through detectors also counting ramp and U-turn traffic | Each through movement is one local maneuver; how it is turned into SUMO routes is decided in SUMO input generation (M8) |
 | Movements with no detector (U-turns, tunnel, tunnel on-ramp) | No demand produced |
+| Slips and bypass without a detector (RCRC site 1444) | Estimated from the lane rule until RCRC turning counts arrive, if ever (see [Movements Without a Detector](#movements-without-a-detector)) |
 
 When a decision is adopted, it should be added as a separate documented rule with its own tests, without changing how usable detectors are handled.
 
