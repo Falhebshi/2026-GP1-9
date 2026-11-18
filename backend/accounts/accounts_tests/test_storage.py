@@ -10,6 +10,7 @@ from backend.accounts.storage import (
     ROLE_ENGINEER,
     LOGIN_PAUSE,
     MAX_FAILED_LOGINS,
+    SESSION_IDLE_LIMIT,
     SESSION_LIFETIME,
     STATUS_ACTIVE,
     AccountStorage,
@@ -229,16 +230,37 @@ def test_an_unknown_token_gives_none(storage):
     assert storage.get_session_account("not-a-token") is None
 
 
-def test_a_session_lasts_8_hours(storage, clock):
+def test_a_busy_session_lasts_8_hours(storage, clock):
     sara = add_sara(storage)
     token = storage.create_session(sara.id)               # 09:00
 
     assert SESSION_LIFETIME == timedelta(hours=8)
 
-    clock.moment = START + timedelta(hours=7, minutes=59)  # 16:59
-    assert storage.get_session_account(token) == sara
+    # A request every 20 minutes keeps it from going idle
+    for minutes in range(20, 8 * 60, 20):
+        clock.moment = START + timedelta(minutes=minutes)
+        assert storage.get_session_account(token) == sara, minutes
 
     clock.moment = START + timedelta(hours=8)              # 17:00
+    assert storage.get_session_account(token) is None
+
+
+def test_30_minutes_without_a_request_end_a_session(storage, clock):
+    sara = add_sara(storage)
+    token = storage.create_session(sara.id)               # 09:00
+
+    assert SESSION_IDLE_LIMIT == timedelta(minutes=30)
+
+    # 09:29:59: 29:59 idle, still on; this request resets the idle time
+    clock.moment = START + timedelta(minutes=29, seconds=59)
+    assert storage.get_session_account(token) == sara
+
+    # 09:59:58: 29:59 after the last request, still on
+    clock.moment = START + timedelta(minutes=59, seconds=58)
+    assert storage.get_session_account(token) == sara
+
+    # 10:29:58: exactly 30:00 after the last request, ended
+    clock.moment = START + timedelta(minutes=89, seconds=58)
     assert storage.get_session_account(token) is None
 
 
@@ -267,14 +289,14 @@ def test_logout_ends_only_that_session(storage):
 
 def test_delete_expired_sessions_keeps_the_valid_ones(storage, clock):
     sara = add_sara(storage)
-    storage.create_session(sara.id)                       # expires 17:00
+    storage.create_session(sara.id)                       # last request 09:00
 
-    clock.moment = START + timedelta(hours=2)
-    later = storage.create_session(sara.id)               # expires 19:00
+    clock.moment = START + timedelta(minutes=20)
+    recent = storage.create_session(sara.id)              # last request 09:20
 
-    clock.moment = START + timedelta(hours=8)             # 17:00
+    clock.moment = START + timedelta(minutes=30)          # 09:30
     assert storage.delete_expired_sessions() == 1
-    assert storage.get_session_account(later) == sara
+    assert storage.get_session_account(recent) == sara
 
 
 def test_an_inactive_account_has_no_valid_session(storage):

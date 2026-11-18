@@ -251,14 +251,28 @@ def test_logout_without_a_session_is_harmless(client):
     assert client.post("/auth/logout").status_code == 204
 
 
-def test_a_session_ends_after_8_hours(client, clock):
+def test_a_busy_session_ends_after_8_hours(client, clock):
     log_in(client, **SARA)
 
-    clock.moment = START + timedelta(hours=7, minutes=59)
-    assert client.get("/auth/me").status_code == 200
+    # The website asks /auth/me on every page change; here every 20 minutes
+    for minutes in range(20, 8 * 60, 20):
+        clock.moment = START + timedelta(minutes=minutes)
+        assert client.get("/auth/me").status_code == 200, minutes
 
     clock.moment = START + timedelta(hours=8)
     assert client.get("/auth/me").status_code == 401
+
+
+def test_30_minutes_without_a_request_end_the_session(client, clock):
+    log_in(client, **SARA)                                  # 09:00
+
+    clock.moment = START + timedelta(minutes=29, seconds=59)
+    assert client.get("/auth/me").status_code == 200
+
+    clock.moment = START + timedelta(minutes=59, seconds=59)  # 30:00 later
+    response = client.get("/auth/me")
+    assert response.status_code == 401
+    assert response.json()["detail"] == NOT_LOGGED_IN
 
 
 def test_a_made_up_token_is_refused(client):

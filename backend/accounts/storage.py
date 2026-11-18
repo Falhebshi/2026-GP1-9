@@ -9,7 +9,7 @@ afterwards. Two tables:
               Argon2id string of the password (passwords.py), never
               the password itself
     sessions  one row per logged-in browser: the SHA-256 of its token,
-              the account, and when it expires
+              the account, when it expires, and its last request
 
 The database is not committed (see .gitignore): it holds password
 hashes. Why each choice was made is explained in docs/accounts.md.
@@ -33,8 +33,10 @@ ROLE_ENGINEER = "engineer"
 STATUS_ACTIVE = "active"
 STATUS_INACTIVE = "inactive"
 
-# A session lasts one working day, then the user logs in again
+# A session ends at whichever comes first: one working day after login,
+# or 30 minutes without any request (NFR-03)
 SESSION_LIFETIME = timedelta(hours=8)
+SESSION_IDLE_LIMIT = timedelta(minutes=30)
 
 # 32 random bytes: 256 bits, written as 43 URL-safe characters
 TOKEN_BYTES = 32
@@ -178,7 +180,8 @@ class AccountStorage:
                     token_digest TEXT PRIMARY KEY,
                     account_id TEXT NOT NULL
                         REFERENCES accounts (id) ON DELETE CASCADE,
-                    expires_at TEXT NOT NULL
+                    expires_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
                 )
                 """
             )
@@ -329,15 +332,21 @@ class AccountStorage:
         """
 
         token = secrets.token_urlsafe(TOKEN_BYTES)
-        expires_at = self.now() + SESSION_LIFETIME
+        now = self.now()
 
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO sessions (token_digest, account_id, expires_at)
-                VALUES (?, ?, ?)
+                INSERT INTO sessions
+                    (token_digest, account_id, expires_at, last_seen_at)
+                VALUES (?, ?, ?, ?)
                 """,
-                (token_digest(token), account_id, _utc_text(expires_at)),
+                (
+                    token_digest(token),
+                    account_id,
+                    _utc_text(now + SESSION_LIFETIME),
+                    _utc_text(now),
+                ),
             )
 
         return token
@@ -345,16 +354,20 @@ class AccountStorage:
     def get_session_account(self, token: str) -> Account | None:
         """Return the account of a valid session, or None.
 
-        Valid means: the session exists, has not expired, and its
-        account is active. An expired session is deleted.
+        Valid means: the session exists, is less than 8 hours old, had a
+        request in the last 30 minutes, and its account is active. A
+        valid session counts this call as its latest request; an
+        expired one is deleted.
         """
 
         digest = token_digest(token)
+        now = self.now()
 
         with self._connect() as connection:
             row = connection.execute(
                 f"""
-                SELECT sessions.expires_at, {ACCOUNT_COLUMNS_JOINED}
+                SELECT sessions.expires_at, sessions.last_seen_at,
+                       {ACCOUNT_COLUMNS_JOINED}
                 FROM sessions
                 JOIN accounts ON accounts.id = sessions.account_id
                 WHERE sessions.token_digest = ?
@@ -365,16 +378,26 @@ class AccountStorage:
             if row is None:
                 return None
 
-            if datetime.fromisoformat(row[0]) <= self.now():
+            expires_at = datetime.fromisoformat(row[0])
+            last_seen_at = datetime.fromisoformat(row[1])
+
+            if now >= expires_at or now - last_seen_at >= SESSION_IDLE_LIMIT:
                 connection.execute(
                     "DELETE FROM sessions WHERE token_digest = ?",
                     (digest,),
                 )
                 return None
 
-        account = _account(row[1:])
+            account = _account(row[2:])
+            if account.status != STATUS_ACTIVE:
+                return None
 
-        return account if account.status == STATUS_ACTIVE else None
+            connection.execute(
+                "UPDATE sessions SET last_seen_at = ? WHERE token_digest = ?",
+                (_utc_text(now), digest),
+            )
+
+        return account
 
     def delete_session(self, token: str) -> None:
         """End one session (logout). Nothing happens if it does not exist."""
@@ -386,12 +409,14 @@ class AccountStorage:
             )
 
     def delete_expired_sessions(self) -> int:
-        """Delete every expired session; return how many."""
+        """Delete every expired or idle session; return how many."""
+
+        now = self.now()
 
         with self._connect() as connection:
             cursor = connection.execute(
-                "DELETE FROM sessions WHERE expires_at <= ?",
-                (_utc_text(self.now()),),
+                "DELETE FROM sessions WHERE expires_at <= ? OR last_seen_at <= ?",
+                (_utc_text(now), _utc_text(now - SESSION_IDLE_LIMIT)),
             )
 
         return cursor.rowcount
