@@ -133,6 +133,21 @@ TOMTOM_TRAVEL_TIME_10KM_S = {
           "16:50 20:00 23:20 21:30 16:30 15:00"),
 }
 
+# Congestion level in Riyadh (city area), 2025, by day of the week and
+# hour, in percent: how much longer trips took than in free-flow
+# conditions, as TomTom measures it from drivers' trips. Same page and
+# grid as the travel times above (Congestion level tab, read 18 Nov
+# 2026). The network map is calibrated against these values.
+TOMTOM_CONGESTION_LEVEL_PERCENT = {
+    0: (14, 7, 0, 27, 50, 49, 44, 67, 89, 77, 47, 34),
+    1: (18, 8, 0, 26, 49, 48, 44, 65, 84, 76, 49, 36),
+    2: (19, 10, 0, 26, 45, 44, 43, 64, 84, 77, 51, 39),
+    3: (19, 8, 0, 23, 37, 41, 45, 68, 86, 73, 58, 56),
+    4: (40, 17, 3, 0, 0, 0, 4, 13, 25, 33, 47, 46),
+    5: (33, 13, 3, 5, 5, 14, 17, 25, 42, 46, 45, 34),
+    6: (15, 8, 0, 27, 49, 45, 42, 63, 83, 74, 41, 30),
+}
+
 # Free flow: the quickest time in the table (early morning), so the
 # extra time at any hour is the delay caused by traffic
 TOMTOM_FREE_FLOW_10KM_S = min(
