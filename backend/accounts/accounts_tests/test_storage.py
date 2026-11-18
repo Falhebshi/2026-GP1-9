@@ -8,6 +8,8 @@ from backend.accounts.storage import (
     REPO_ROOT,
     ROLE_ADMIN,
     ROLE_ENGINEER,
+    LOGIN_PAUSE,
+    MAX_FAILED_LOGINS,
     SESSION_LIFETIME,
     STATUS_ACTIVE,
     AccountStorage,
@@ -118,7 +120,10 @@ def test_an_unknown_role_is_refused(storage):
 def test_find_login_returns_the_account_and_its_hash(storage):
     sara = add_sara(storage)
 
-    assert storage.find_login("Sara.Q@moh.gov.sa") == (sara, SARA_HASH)
+    record = storage.find_login("Sara.Q@moh.gov.sa")
+
+    assert (record.account, record.password_hash) == (sara, SARA_HASH)
+    assert record.paused_until is None
     assert storage.find_login("nobody@moh.gov.sa") is None
 
 
@@ -130,6 +135,60 @@ def test_the_account_itself_never_carries_the_hash(storage):
 
 def test_an_unknown_id_gives_none(storage):
     assert storage.get_account("0" * 32) is None
+
+
+# ============================================================
+# FAILED LOGINS
+# ============================================================
+
+def test_the_limit_is_5_wrong_passwords_then_30_minutes():
+    assert (MAX_FAILED_LOGINS, LOGIN_PAUSE) == (5, timedelta(minutes=30))
+
+
+def test_the_5th_wrong_password_in_a_row_starts_the_pause(storage):
+    sara = add_sara(storage)
+
+    for _ in range(4):
+        assert storage.record_failed_login(sara.id) is None
+    assert storage.find_login(sara.email).paused_until is None
+
+    # 5th at 09:00 Riyadh (06:00 UTC): paused until 09:30 (06:30 UTC)
+    until = storage.record_failed_login(sara.id)
+    assert until == START + timedelta(minutes=30)
+    assert storage.find_login(sara.email).paused_until == until
+
+
+def test_after_a_pause_the_count_starts_again(storage, clock):
+    sara = add_sara(storage)
+    for _ in range(5):
+        storage.record_failed_login(sara.id)
+
+    clock.moment = START + timedelta(minutes=31)
+    for _ in range(4):
+        assert storage.record_failed_login(sara.id) is None
+    assert storage.record_failed_login(sara.id) == clock.moment + LOGIN_PAUSE
+
+
+def test_a_correct_password_resets_the_count(storage):
+    sara = add_sara(storage)
+    for _ in range(4):
+        storage.record_failed_login(sara.id)
+
+    storage.record_successful_login(sara.id)
+
+    # 4 more wrong ones are not enough for a pause
+    for _ in range(4):
+        assert storage.record_failed_login(sara.id) is None
+
+
+def test_failed_logins_of_one_account_do_not_touch_another(storage):
+    sara = add_sara(storage)
+    omar = storage.create_account("Omar", "omar@ksu.edu.sa", OMAR_HASH, ROLE_ENGINEER)
+
+    for _ in range(5):
+        storage.record_failed_login(sara.id)
+
+    assert storage.find_login(omar.email).paused_until is None
 
 
 # ============================================================

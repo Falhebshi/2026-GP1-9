@@ -39,9 +39,23 @@ SESSION_LIFETIME = timedelta(hours=8)
 # 32 random bytes: 256 bits, written as 43 URL-safe characters
 TOKEN_BYTES = 32
 
+# After this many wrong passwords in a row, the account's login pauses
+# (NIST asks for a limit of at most 100; these values are Jaadah's)
+MAX_FAILED_LOGINS = 5
+LOGIN_PAUSE = timedelta(minutes=30)
+
 
 class DuplicateEmailError(ValueError):
     """An account with this email already exists."""
+
+
+@dataclass(frozen=True)
+class LoginRecord:
+    """What login needs to know about an account; only for checking a password."""
+
+    account: "Account"
+    password_hash: str
+    paused_until: datetime | None    # None when login is not paused
 
 
 @dataclass(frozen=True)
@@ -152,7 +166,9 @@ class AccountStorage:
                     status TEXT NOT NULL
                         CHECK (status IN ('{STATUS_ACTIVE}', '{STATUS_INACTIVE}')),
                     password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    failed_logins INTEGER NOT NULL DEFAULT 0,
+                    login_paused_until TEXT
                 )
                 """
             )
@@ -229,16 +245,13 @@ class AccountStorage:
 
         return None if row is None else _account(row)
 
-    def find_login(self, email: str) -> tuple[Account, str] | None:
-        """Return the account with this email and its stored password hash.
-
-        Only for checking a password at login; None if no such account.
-        """
+    def find_login(self, email: str) -> LoginRecord | None:
+        """Return what login needs for the account with this email, or None."""
 
         with self._connect() as connection:
             row = connection.execute(
                 f"""
-                SELECT {ACCOUNT_COLUMNS}, password_hash
+                SELECT {ACCOUNT_COLUMNS}, password_hash, login_paused_until
                 FROM accounts
                 WHERE email = ?
                 """,
@@ -248,7 +261,61 @@ class AccountStorage:
         if row is None:
             return None
 
-        return _account(row[:-1]), row[-1]
+        paused_until = row[-1]
+
+        return LoginRecord(
+            account=_account(row[:-2]),
+            password_hash=row[-2],
+            paused_until=(
+                None if paused_until is None
+                else datetime.fromisoformat(paused_until)
+            ),
+        )
+
+    def record_failed_login(self, account_id: str) -> datetime | None:
+        """Count one wrong password; return when the pause ends if this one starts it.
+
+        The 5th wrong password in a row pauses login for 30 minutes and
+        starts the count again from 0.
+        """
+
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE accounts SET failed_logins = failed_logins + 1 WHERE id = ?",
+                (account_id,),
+            )
+            row = connection.execute(
+                "SELECT failed_logins FROM accounts WHERE id = ?",
+                (account_id,),
+            ).fetchone()
+
+            if row is None or row[0] < MAX_FAILED_LOGINS:
+                return None
+
+            paused_until = self.now() + LOGIN_PAUSE
+            connection.execute(
+                """
+                UPDATE accounts
+                SET failed_logins = 0, login_paused_until = ?
+                WHERE id = ?
+                """,
+                (_utc_text(paused_until), account_id),
+            )
+
+        return paused_until
+
+    def record_successful_login(self, account_id: str) -> None:
+        """A correct password: the count of wrong ones starts again from 0."""
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE accounts
+                SET failed_logins = 0, login_paused_until = NULL
+                WHERE id = ?
+                """,
+                (account_id,),
+            )
 
     # ============================================================
     # SESSIONS
