@@ -23,23 +23,14 @@ import './NetworkMap.css'
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
-// Heatmap view: hexagon tiles of about 350 m over the city, in four colors by the speed of the
-// roads around them (HCM urban street level of service: A-B green, C yellow, D orange, E-F red).
+// Heatmap view: hexagon tiles of about 350 m over the city, in the same three levels as the road
+// segments, by the speed of the roads around them (HCM urban street level of service: A-B low,
+// C-D moderate, E-F high).
 // Every road adds its speed to a grid of about 150 m, the grid is blurred (Gaussian, about
 // 300 m), and each tile takes the speed at its center; tiles with little road nearby are left
 // out. It is for reading the city at a glance, not a measurement.
 const HEAT_GRID = { cellLat: 0.00135, cellLon: 0.0015, sigma: 2 }
 const HEX_RADIUS_M = 350
-
-// [r, g, b] of a CSS color
-function rgbOf(color) {
-  const context = document.createElement('canvas').getContext('2d')
-  context.fillStyle = color
-  const hex = context.fillStyle // the browser turns any color into #rrggbb
-  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-}
-
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
 
 // the area the map can show, which the hexagons cover: maxBounds, or a margin around bounds
 function extentOf(bounds, maxBounds) {
@@ -112,7 +103,7 @@ function speedField(segments, extent, style) {
   return { width, height, roads, speeds, full, west, north, cellLat, cellLon }
 }
 
-// The hexagon tiles: four classes by speed (LOS A-B, C, D, E-F), only where there is road nearby
+// The hexagon tiles: the three levels by speed (LOS A-B, C-D, E-F), only where there is road nearby
 function hexagons(segments, extent) {
   const limits = segments?.limits
   if (!limits) return EMPTY
@@ -121,7 +112,6 @@ function hexagons(segments, extent) {
   const [[, south], [east]] = extent
   const rLon = HEX_RADIUS_M / 101000
   const rLat = HEX_RADIUS_M / 111000
-  const middle = (limits.lowAboveSpeed + limits.moderateAboveSpeed) / 2
   const features = []
 
   // pointy-top hexagons: rows 1.5 R apart, columns sqrt(3) R apart, every other row shifted
@@ -137,11 +127,9 @@ function hexagons(segments, extent) {
       const band =
         speed > limits.lowAboveSpeed
           ? 'low'
-          : speed > middle
-            ? 'fair'
-            : speed > limits.moderateAboveSpeed
-              ? 'moderate'
-              : 'high'
+          : speed > limits.moderateAboveSpeed
+            ? 'moderate'
+            : 'high'
       const ring = []
       for (let k = 0; k <= 6; k++) {
         const angle = (Math.PI / 180) * (60 * k - 30)
@@ -240,14 +228,12 @@ function NetworkMap({
       const low = themeColor('--congestion-low')
       const moderate = themeColor('--congestion-moderate')
       const high = themeColor('--congestion-high')
-      const none = themeColor('--congestion-none')
       const selected = themeColor('--color-selected')
 
       // draw our layers under the basemap's place names, so district names stay readable
       const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
 
       map.addSource('segments', { type: 'geojson', data: EMPTY })
-      const yellow = `rgb(${mix(rgbOf(moderate), [255, 221, 87], 0.6).join(',')})`
       map.addSource('heat', { type: 'geojson', data: EMPTY })
       map.addSource('intersections', { type: 'geojson', data: EMPTY })
 
@@ -256,19 +242,11 @@ function NetworkMap({
           id: 'segments',
           type: 'line',
           source: 'segments',
+          // roads without data are not drawn, so they stay as the basemap shows them
+          filter: ['in', ['get', 'level'], ['literal', ['low', 'moderate', 'high']]],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': [
-              'match',
-              ['get', 'level'],
-              'low',
-              low,
-              'moderate',
-              moderate,
-              'high',
-              high,
-              none,
-            ],
+            'line-color': ['match', ['get', 'level'], 'low', low, 'moderate', moderate, high],
             'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 4, 17, 8],
             'line-opacity': 0.9,
           },
@@ -287,8 +265,6 @@ function NetworkMap({
               ['get', 'band'],
               'low',
               low,
-              'fair',
-              yellow,
               'moderate',
               moderate,
               high,

@@ -53,6 +53,68 @@
   box-shadow: var(--shadow-float);
 }
 
+/* what the colors mean, under the view switch */
+.network-overview-legend {
+  padding: var(--space-sm) var(--space-md);
+}
+
+.network-legend {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.network-legend-title {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.network-legend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.network-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.network-legend-swatch {
+  flex-shrink: 0;
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.network-legend-low {
+  background: var(--congestion-low);
+}
+
+.network-legend-moderate {
+  background: var(--congestion-moderate);
+}
+
+.network-legend-high {
+  background: var(--congestion-high);
+}
+
+/* white like the basemap roads, with a thin edge so it shows on the card */
+.network-legend-none {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.network-legend-label {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
 /* timeline along the bottom; the strip itself lets clicks through to the map */
 .network-overview-timeline {
   position: absolute;

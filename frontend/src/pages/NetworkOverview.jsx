@@ -35,6 +35,11 @@ const PEAKS = [
 const DAY = 24 * 60 * 60 * 1000
 const pad = (n) => String(n).padStart(2, '0')
 const hourLabel = (h) => `${pad(h)}:00`
+// "17:15" of a moment, in Riyadh time
+const timeLabel = (ms) => {
+  const { hour, minute } = riyadhParts(ms)
+  return `${pad(hour)}:${pad(minute)}`
+}
 
 // "Sat 14 Nov" of a Riyadh day (YYYY-MM-DD)
 const dayLabel = (day) =>
@@ -62,6 +67,30 @@ function dayOptions(now, availableDays) {
     options.push({ value: day, label: dayLabel(day) })
   }
   return options
+}
+
+// What the map colors mean. Roads and areas without data are left as the basemap shows them.
+const LEGEND_ROWS = [
+  { level: 'low', label: 'Low' },
+  { level: 'moderate', label: 'Moderate' },
+  { level: 'high', label: 'High' },
+  { level: 'none', label: 'No data' },
+]
+
+function CongestionLegend() {
+  return (
+    <div className="network-legend">
+      <span className="network-legend-title">Congestion</span>
+      <ul>
+        {LEGEND_ROWS.map((row) => (
+          <li key={row.level}>
+            <span className={`network-legend-swatch network-legend-${row.level}`} />
+            <span className="network-legend-label">{row.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 // ours first, then the ones without a simulation yet (shown greyed out)
@@ -246,6 +275,14 @@ function NetworkOverview() {
           <h1>Network Traffic Overview</h1>
         </Card>
 
+        {segments && !segments.hasSpeeds && (
+          <Notice variant="info">
+            {time
+              ? `No congestion data for ${dayLabel(riyadhParts(shown.getTime()).day)}, ${timeLabel(shown.getTime())}.`
+              : 'No congestion data has been stored yet.'}
+          </Notice>
+        )}
+
         {network.isSample && (
           <Notice variant="warning">
             {availableDays === null
@@ -279,6 +316,11 @@ function NetworkOverview() {
           value={view}
           onChange={setView}
         />
+        {segments && (
+          <Card floating className="network-overview-legend">
+            <CongestionLegend />
+          </Card>
+        )}
       </div>
 
       <div

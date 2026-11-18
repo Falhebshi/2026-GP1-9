@@ -35,7 +35,8 @@ import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 //   id, name, road_class, lanes, source  from /segments
 //   speed       percent of free-flow speed
 //   level       'low', 'moderate' or 'high' (sets the line color), or null with no data
-// and `limits`, the level limits in percent of free flow, for the Heatmap view
+// and `limits`, the level limits in percent of free flow, for the Heatmap view, and `hasSpeeds`,
+// false when the server has no stored 15 minutes for the requested time (every level is then null)
 const API = '/api/network'
 const QUARTER_HOUR = 15 * 60 * 1000
 
@@ -112,6 +113,7 @@ export async function getSegments(time = null) {
 
   return {
     type: 'FeatureCollection',
+    hasSpeeds: speeds !== null,
     // the level limits in percent of free flow, for the Heatmap view's areas
     limits: {
       lowAboveSpeed: index.low_above_speed_ratio * 100,
