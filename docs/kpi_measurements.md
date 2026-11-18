@@ -167,12 +167,12 @@ A plan the engine cannot use correctly is rejected with every problem listed, ra
 
 | Phase | Movements | Green | Yellow | All-red |
 | --- | --- | --- | --- | --- |
-| `PHASE_1` | `MOV_E_W`, `MOV_E_S` | 40 s | 3 s | 2 s |
-| `PHASE_2` | `MOV_S_W` | 15 s | 3 s | 2 s |
-| `PHASE_3` | `MOV_W_E`, `MOV_W_N` | 30 s | 3 s | 2 s |
-| `PHASE_4` | `MOV_N_E` | 15 s | 3 s | 2 s |
+| `PHASE_1` | `MOV_E_W`, `MOV_E_S` | 90 s | 3 s | 2 s |
+| `PHASE_2` | `MOV_S_W` | 27 s | 3 s | 2 s |
+| `PHASE_3` | `MOV_W_E`, `MOV_W_N` | 41 s | 3 s | 2 s |
+| `PHASE_4` | `MOV_N_E` | 47 s | 3 s | 2 s |
 
-Cycle length: 120 s. The slips are unsignalised and appear in no phase.
+Cycle length: 225 s, from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)). The slips are unsignalised and appear in no phase.
 
 ---
 
@@ -230,7 +230,7 @@ When the back of a lane's queue is less than 10 m from the start of its section,
 
 ## 5.5 Records
 
-One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (120 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue came near the section end during the cycle. A cycle without a queue is a measured 0.
+One `CycleQueueRecord` (data model section 4.5) is written for every canonical lane and every whole signal cycle of the run, aligned with the cycle start (KPI engine section 6.1). The cycle is the signal program's (225 s, section 3), and the signal's offset must be a whole number of cycles. The record holds the longest queue of the cycle in metres and in vehicles, each the largest of the cycle, and whether the queue came near the section end during the cycle. A cycle without a queue is a measured 0.
 
 ## 5.6 Approach queue
 

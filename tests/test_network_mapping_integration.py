@@ -104,7 +104,7 @@ def test_review_changes_preserve_all_original_movement_records():
 
 def test_approved_lane_catalog_and_deferred_collections(config):
     assert config.schema_version == '2.1'
-    assert config.mapping_version == '2.5-rcrc-site-1444'
+    assert config.mapping_version == '2.6-webster-signal-plan'
     expected_ids = {item[0] for item in APPROVED_LANES}
     assert len(config.approach_lanes) == len(config.lane_mappings) == 16
     assert {lane.lane_id for lane in config.approach_lanes} == expected_ids

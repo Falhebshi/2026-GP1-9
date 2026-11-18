@@ -220,7 +220,7 @@ Lanes and movements report the lane queues; shared lanes are reported as describ
 
 ## 6.2 Cycles that span an interval boundary
 
-With a 120 s cycle, a 15-minute interval holds 7.5 cycles, so every second interval boundary falls inside a cycle. A cycle belongs to the interval that **contains its `cycle_start`**, giving 7 or 8 cycles per interval. A cycle that starts during the warm-up or clearance is not used, even if it ends inside the analysis period.
+The cycle need not divide the interval: with a 120 s cycle, a 15-minute interval holds 7.5 cycles, so every second interval boundary falls inside a cycle. A cycle belongs to the interval that **contains its `cycle_start`**, giving 7 or 8 cycles per interval in that case. The current 225 s cycle divides 900 s and starts at the run's warm-up start, a 15-minute boundary, so each interval holds exactly 4 cycles. A cycle that starts during the warm-up or clearance is not used, even if it ends inside the analysis period.
 
 ## 6.3 Queue per interval
 
@@ -452,7 +452,7 @@ The demand v of a movement in an interval is its `SimulationDemand` vehicle coun
 
 The `input_origins` of capacity and volume-to-capacity results follow `SignalProgram.source`: a program with source `observed` is labelled *observed*; `baseline_model` and `intervention` are labelled *modelled assumption*.
 
-The baseline signal program (`data/processed/traffic_signals/jaadah_tls_program.xml`: four phases, greens of 40, 15, 30 and 15 s, cycle 120 s) was built for the model; its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
+The baseline signal program (`data/processed/traffic_signals/jaadah_tls_program.xml`: four phases, greens of 90, 27, 41 and 47 s, cycle 225 s) was derived from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)); its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
 
 ## 9.9 Scope limitation: passenger cars only
 
