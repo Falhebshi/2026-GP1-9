@@ -349,9 +349,9 @@ def test_a_day_without_an_approach_s_cycles_makes_its_queue_unavailable():
 def test_volume_to_capacity_is_the_highest_interval_with_its_time():
     """
     North left at 07:30: 100 vehicles on day A, 200 on day B. Its HCM
-    capacity is 1,900 x 3 lanes x 0.971 / 1.05 x 15 s / 120 s = 658.9
-    veh/h, so v/c is 400 / 658.9 = 0.61 on day A and 800 / 658.9 = 1.21
-    on day B. The peak is day B's, with its interval.
+    capacity is 1,900 x 3 lanes x 0.971 / 1.05 x 47 s / 225 s = 1,101.1
+    veh/h, so v/c is 400 / 1,101.1 = 0.36 on day A and 800 / 1,101.1 =
+    0.73 on day B. The peak is day B's, with its interval.
     """
 
     day_a = stored_day(DAY_A, demands=[demand(DAY_A, "MOV_N_E", 30, 100)])
@@ -359,7 +359,7 @@ def test_volume_to_capacity_is_the_highest_interval_with_its_time():
 
     vc = period_values([day_a, day_b], frozenset({30}))[(VC, KpiUnit.RATIO, MOV, "MOV_N_E")]
 
-    capacity = 1900 * 3 * 0.971 / 1.05 * 15 / 120
+    capacity = 1900 * 3 * 0.971 / 1.05 * 47 / 225
     assert vc.status == KpiStatus.OK
     assert vc.value == pytest.approx(800 / capacity, rel=1e-3)
     assert vc.peak_interval.start == at(DAY_B, "07:30:00")

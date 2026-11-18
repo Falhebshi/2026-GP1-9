@@ -56,7 +56,7 @@ The current implementation contains **25 canonical models**:
 
 | File | Models |
 | --- | --- |
-| `traffic.py` | `TrafficObservation`, `ImputedDetector`,`SimulationDemand` |
+| `traffic.py` | `TrafficObservation`, `ImputedDetector`, `ShareEstimate`, `SimulationDemand` |
 | `network.py` | `Intersection`, `Approach`, `Movement`, `MovementAttributes`, `ApproachLane` |
 | `scenario.py` | `Scenario`, `SimulationRun`, `SimulationConfig`, `ReplicationPair`, `ReplicationSet` |
 | `outputs.py` | `VehicleState`, `EdgeTrafficState`, `VehicleDelayRecord`, `IncompletePassage`, `UninsertedVehicle`, `CycleQueueRecord`, `ApproachCycleQueueRecord` |
@@ -75,7 +75,9 @@ The traffic models deliberately separate **what a source reports** from **what J
 
 One standardized traffic observation received through Jaadah's ingestion boundary: what the external source actually supplied.
 
-Fields: `observation_id`, `source`, `site_id`, `detector_id`, `interval_start`, `interval_end`, `vehicle_count`, optional `description`, optional `average_speed_kmh`, optional `travel_time_s`.
+Fields: `observation_id`, `source`, `site_id`, `detector_id`, `interval_start`, `interval_end`, `vehicle_count`, optional `description`, optional `average_speed_kmh`, optional `travel_time_s`, optional `occupancy_s`, optional `occupancy_percent`.
+
+`occupancy_s` is the time the detector was occupied in the interval, in seconds, and cannot be longer than the interval. `occupancy_percent` is between 0 and 100. RCRC reports supply both; the synthetic source supplies neither (see [Traffic ingestion](traffic_ingestion.md#occupancy)).
 
 A `TrafficObservation` intentionally does **not** contain Jaadah movement or intersection IDs, or SUMO edge, lane or route IDs. Those relationships are established separately through mapping and demand-transformation logic. This preserves the distinction between **source truth** and **Jaadah interpretation**.
 
@@ -83,18 +85,20 @@ A `TrafficObservation` intentionally does **not** contain Jaadah movement or int
 
 The movement-level traffic demand that Jaadah intends SUMO to simulate.
 
-Fields: `demand_id`, `interval_start`, `interval_end`, `movement_id`, `vehicle_count`, `source`, `source_observation_ids`, `allocated_observation_ids`, `imputed_detectors`; computed: `is_allocated`, `is_imputed`.
+Fields: `demand_id`, `interval_start`, `interval_end`, `movement_id`, `vehicle_count`, `source`, `source_observation_ids`, `allocated_observation_ids`, `imputed_detectors`, optional `share_estimate`; computed: `is_allocated`, `is_imputed`, `is_share_estimated`.
 
-The intersection is found through `movement_id` (`Movement`), not stored here. RCRC and synthetic demand must reference at least one source observation or imputed detector; forecast demand may reference none.
+The intersection is found through `movement_id` (`Movement`), not stored here. RCRC and synthetic demand must reference at least one source observation, imputed detector or share estimate; forecast demand may reference none.
 
 **Allocated demand.** A shared-lane detector counts two movements together, so its count is split between them by the demand transformation (see [Traffic demand transformation](traffic_demand_transformation.md)). `allocated_observation_ids` lists the observations whose count was split; it is empty when nothing was split, and every ID must also be in `source_observation_ids`. Detector IDs are not stored again; they are reached through each `TrafficObservation`. `is_allocated` is true when the list is not empty. Part of an allocated demand is a modelled assumption, not a measured count, so the KPI engine must add *modelled assumption* to `input_origins` for KPIs that use it, whatever the `source`. This is a requirement for the KPI engine, which does not read the field yet.
 
-**Imputed demand.** When a detector did not report, the demand transformation may estimate its count (see [Traffic demand transformation](traffic_demand_transformation.md)). Such a detector has no observation to reference, so `imputed_detectors` lists it directly as an `ImputedDetector`: `site_id`, `detector_id` and `method` (`ImputationMethod`: `neighbour_regression` or `historical_average`). The same detector may appear only once. `is_imputed` is true when the list is not empty. A demand may consist of imputed detectors only, with no source observation. Like allocated demand, imputed demand is a modelled assumption, and the KPI engine must add *modelled assumption* to `input_origins` for KPIs that use it.
+**Imputed demand.** When a detector did not report, the demand transformation may estimate its count (see [Traffic demand transformation](traffic_demand_transformation.md)). Such a detector has no observation to reference, so `imputed_detectors` lists it directly as an `ImputedDetector`: `site_id`, `detector_id` and `method` (`ImputationMethod`: `neighbour_regression`, `level_adjusted_average` or `historical_average`). The same detector may appear only once. `is_imputed` is true when the list is not empty. A demand may consist of imputed detectors only, with no source observation. Like allocated demand, imputed demand is a modelled assumption, and the KPI engine must add *modelled assumption* to `input_origins` for KPIs that use it.
 
-`is_allocated` and `is_imputed` are computed fields, like those of `KpiResult` (section 6.8): they appear in `model_dump()` and JSON output but cannot be passed in. For storage, dump without them:
+**Share-estimated demand.** A movement that no detector counts (the RCRC slips and bypass) may be estimated as a ratio of the demand of observed movements on the same approach (see [Traffic demand transformation](traffic_demand_transformation.md#movements-without-a-detector)). Such a demand has no source observations; `share_estimate` (`ShareEstimate`) records the `ratio`, the `scenario` (`ShareScenario`: `low`, `central` or `high`), the `share_origin` (`ShareOrigin`: only `assumed` today; a value is added when measured ratios become available) and the `basis_demand_ids` it was applied to. `is_share_estimated` is true when it is set. A share-estimated demand is a modelled assumption, and the KPI engine adds *modelled assumption* to `input_origins` for KPIs that use it.
+
+`is_allocated`, `is_imputed` and `is_share_estimated` are computed fields, like those of `KpiResult` (section 6.8): they appear in `model_dump()` and JSON output but cannot be passed in. For storage, dump without them:
 
 ```python
-demand.model_dump(exclude={"is_allocated", "is_imputed"})
+demand.model_dump(exclude={"is_allocated", "is_imputed", "is_share_estimated"})
 ```
 
 Unlike `TrafficObservation`, `SimulationDemand` is **derived simulation input**:
@@ -605,7 +609,7 @@ Rules that need several objects at once cannot live inside one model, and are ch
 
 ## 7.7 Calculated values are properties, not inputs
 
-Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`,`value_computation`, `is_shared_value`, `percent_change`, `is_partial_sample`, `is_allocated`, `is_imputed`.
+Values that can always be calculated from a model's own fields are properties or computed fields, so they cannot disagree with the fields they come from: `time_loss_s`, `zone_travel_time_s`, `crossed_stop_line`, `replication_count`,`value_computation`, `is_shared_value`, `percent_change`, `is_partial_sample`, `is_allocated`, `is_imputed`, `is_share_estimated`.
 ---
 
 # 8. Why Pydantic Is Used
@@ -803,3 +807,5 @@ Together, these structures form the common data language used across the Jaadah 
 | 10 Nov 2026 (historical analysis) | Added `RunCombination` and `KpiResult.run_combination` (default `replications`, the existing rules). Results combining days (`days`) have no standard deviation and a `replication_count` of 1 |
 | 10 Nov 2026 (movement lanes) | Removed `MovementMapping.sumo_lanes` (unused: all 18 values were empty; movement routes use `sumo_route_edge_ids`, vehicles depart with `departLane="best"`, and lane chains come from `LaneMapping.sumo_lane_ids`). `schema_version` set to `2.1`; configurations with `schema_version` `2.0` or the removed field are rejected. `mapping_version` stays `2.4-west-route-start` |
 | 13 Nov 2026 (queue boundary) | `ApproachCycleQueueRecord` also covers the approach's slips and bypasses, each followed onto the shared road to the zone end. `reaches_section_end` and `reaches_zone_end` described as queues near the measurement limit; the vehicle count stops at the same boundary as the capped length |
+| 16 Nov 2026 (RCRC site 1444) | Added optional `TrafficObservation.occupancy_s` and `occupancy_percent`. Added `ImputationMethod.level_adjusted_average`. Added `ShareOrigin` (`assumed`), `ShareScenario`, `ShareEstimate`, `SimulationDemand.share_estimate` and the computed `is_share_estimated`, marking demand estimated by a ratio for a movement with no detector. Populated 12 RCRC detector mappings at site `"1444"` on the lanes of synthetic detectors 1–12. `mapping_version` set to `2.5-rcrc-site-1444`; `schema_version` stays `2.1` |
+| 17 Nov 2026 (Webster signal plan) | The network's signal program changed to the all-day Webster plan (225 s; greens 90, 27, 41, 47 s), so the network checksum in `network_mappings.json` changed and `mapping_version` is `2.6-webster-signal-plan`. No model changed; runs and stored days made with an earlier mapping version are refused by the KPI service and must be rerun |

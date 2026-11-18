@@ -21,16 +21,28 @@ The mapping file currently defines four approaches, 18 complete movement routes,
 
 ### Signal program
 
-The central signal has one fixed 120-second program (`programID="0"`) inside the network. It serves one approach at a time in this order:
+The central signal has one fixed 225-second program (`programID="0"`) inside the network, used all day. It serves one approach at a time in this order:
 
 | Approach | Green | Yellow | All-red |
 | --- | ---: | ---: | ---: |
-| East | 40 s | 3 s | 2 s |
-| South | 15 s | 3 s | 2 s |
-| West | 30 s | 3 s | 2 s |
-| North | 15 s | 3 s | 2 s |
+| East | 90 s | 3 s | 2 s |
+| South | 27 s | 3 s | 2 s |
+| West | 41 s | 3 s | 2 s |
+| North | 47 s | 3 s | 2 s |
 
-Those 12 phases sum to 120 seconds. The separate `jaadah_tls_program.xml` is useful for inspection, but a SUMO config that loads only the `.net.xml` uses the network's embedded program. Pedestrian actuation on the real South-to-East movement is outside the current baseline model; the signal is fixed-time here. Signal changes affect both SUMO runs and the KPI engine's signal inputs, so check both after an edit.
+Those 12 phases sum to 225 seconds.
+
+**Where the timings come from.** The real controller is actuated ("free"): within each of its time-of-day plans, every phase has a minimum and a maximum green, and the controller extends or ends each green from its detectors, so its cycle length changes from cycle to cycle. Jaadah's KPI engine needs one fixed plan per run, so Release 1 uses a fixed-time plan instead. The plan above is derived from the RCRC site 1444 counts with Webster's method, by `analysis/rcrc_site_1444/webster_plan.py` (run it on the private report to reproduce it):
+
+1. Each lane's hourly count divided by its saturation flow, with the KPI engine's values (1,900 veh/h per lane; left and shared left-through lanes divided by the left-turn equivalent 1.05), gives its flow ratio. A phase's critical flow ratio is that of its busiest lane.
+2. The cycle is Webster's optimum, (1.5 L + 5) / (1 − Y), with L = 20 s lost per cycle (4 phases × 5 s, as in the KPI engine) and Y the sum of the critical flow ratios, at the workday morning peak (07:00–09:00): the busiest typical period, where Y is still clearly below 1 and the formula holds (in the busiest afternoon hours Y comes so close to 1 that it asks for unrealistic cycles). It gives about 235–252 s. The plan uses the nearest cycle length that divides 900 s, 225 s. Any cycle length would work for one all-day plan; dividing 900 s means every 15-minute interval holds whole cycles, and fixed time-of-day plans can later switch on 15-minute boundaries without cutting a cycle. Webster's delay changes little near the optimum, so the rounding costs little, and 225 s is within the cycle lengths the real controller's plans allow.
+3. The effective green, 225 − 20 = 205 s, is split in proportion to each phase's critical flow ratio added up over every complete hour of the report, all days and times included (Webster's equal-saturation rule). Busy hours weigh more because they carry more traffic; no hours are picked by hand. With the KPI engine's lost times, effective green equals displayed green.
+
+**The cycle-length trade-off.** One fixed plan serves busy and quiet times alike. A longer cycle gives each approach more green per cycle, so busy hours overflow less, but at quiet times vehicles wait through long reds for nothing; a shorter cycle does the opposite. The plan favours the busy times, because an overflowing queue makes delay and level of service unavailable, while extra delay at quiet times is still measured and reported. On RCRC demand (11 August 2026, morning and afternoon peaks) the plan removed every queue that reached the end of the measurement zone under the earlier 120 s plan; in the early morning its delay is somewhat higher.
+
+**Compared with the real controller.** The plan was derived from the counts alone, without the controller's settings. It ranks the approaches as the real controller's maximum greens do: East most, West second. North's green, however, is above the real controller's maximum for North in two of its time-of-day plans. The real controller serves North's traffic within that maximum, so the model's capacity for North, from the textbook saturation flow, is probably too low; calibration (PBI 9) is where to check it, and the script can then be rerun.
+
+**Limits.** One fixed plan cannot follow the actuated controller, which moves green between approaches cycle by cycle and changes plan during the day. In the busiest hours some approaches still get less green than their counted flow needs, so queues there can still reach the end of the measurement zone and those results are unavailable, with their reason. At quieter times the long cycle adds some delay. Webster's method also takes the counts as demand: stop-line counts cannot exceed what the signal served, so in saturated hours they understate the real demand, and the plan inherits that. This is a modelled assumption, and the KPI engine labels results that use the signal timing accordingly (KPI engine section 9.8). The plan is replaced by RCRC's own timing sheet if it arrives, or complemented by time-of-day plans. The separate `jaadah_tls_program.xml` is useful for inspection, but a SUMO config that loads only the `.net.xml` uses the network's embedded program. Pedestrian actuation on the real South-to-East movement is outside the current baseline model; the signal is fixed-time here. Signal changes affect both SUMO runs and the KPI engine's signal inputs, so check both after an edit; a signal edit changes the network checksum, so `network_mappings.json` and its `mapping_version` change with it.
 
 ### Network geometry versus measurement scope
 
@@ -44,7 +56,7 @@ The 16 synthetic detectors have modeled positions near selected lane endpoints. 
 - Commit `2092709` (16 October 2026) edited the `.net.xml` in NetEdit, changing junction/internal-lane geometry and some road-lane shapes and connections, and added the `stress_test_v2` assets. For example, its diff changes the north off-ramp connections from `133973525#0` and the south approach fan-out from `539502456#7` to `539502456#8`. These are lane-connection edits, not merely drawing changes. Treat the current `.net.xml` as authoritative rather than rebuilding it from the OSM extract.
 - Commit `51191b7` (28 October 2026) changed the **mapping routes**, not the network geometry: five West-origin routes now begin at `133793906#0` instead of `133793727#0`. At 600 vehicles/hour in the documented demand check, the earlier start caused up to about 22 seconds of insertion delay; the revised start reduced that to about 1.4 seconds. See [KPI measurements](kpi_measurements.md) for the measurement context. The old `stress_test_v2.rou.xml` still starts some routes on the earlier edge, so it does not represent the current generated-demand routes.
 
-The mapping currently labels the network `jaadah_network_v2` and its own data revision `2.4-west-route-start`. If a network edit changes edge or lane IDs, geometry used for measurements, connections, or signal phases, review the mapping, routes, network checksum, and downstream KPI assumptions together. [Network mapping](network_mapping.md) explains the checksum and version rules.
+The mapping currently labels the network `jaadah_network_v2` and its own data revision `2.6-webster-signal-plan`. If a network edit changes edge or lane IDs, geometry used for measurements, connections, or signal phases, review the mapping, routes, network checksum, and downstream KPI assumptions together. [Network mapping](network_mapping.md) explains the checksum and version rules.
 
 The October network diff gives two concrete examples of why this review matters. On the north off-ramp, the direct connections from `133973525#0` to `133973525#0-AddedOffRampEdge` were reduced from four to three and their lane targets changed. At the south approach split, the connections from `539502456#7` toward `539502456#8` and `569790078` changed their lane assignments. The same commit also changed internal connector shapes and lengths. A vehicle's ability to follow a turn depends on those connection records, while measured travel distance and queue positions can depend on the edited geometry. The commit does not by itself prove that every possible route was revalidated; use the checks below after future edits.
 

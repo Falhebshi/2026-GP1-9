@@ -1837,16 +1837,16 @@
     </edge>
 
     <tlLogic id="clustercluster_448837014_5479208874_cluster_5479208872_5481716880" type="static" programID="0" offset="0">
-        <phase duration="40" state="GGGGGGrrrrrrrrrrr"/>
+        <phase duration="90" state="GGGGGGrrrrrrrrrrr"/>
         <phase duration="3"  state="yyyyyyrrrrrrrrrrr"/>
         <phase duration="2"  state="rrrrrrrrrrrrrrrrr"/>
-        <phase duration="15" state="rrrrrrGGGrrrrrrrr"/>
+        <phase duration="27" state="rrrrrrGGGrrrrrrrr"/>
         <phase duration="3"  state="rrrrrryyyrrrrrrrr"/>
         <phase duration="2"  state="rrrrrrrrrrrrrrrrr"/>
-        <phase duration="30" state="rrrrrrrrrGGGGGrrr"/>
+        <phase duration="41" state="rrrrrrrrrGGGGGrrr"/>
         <phase duration="3"  state="rrrrrrrrryyyyyrrr"/>
         <phase duration="2"  state="rrrrrrrrrrrrrrrrr"/>
-        <phase duration="15" state="rrrrrrrrrrrrrrGGG"/>
+        <phase duration="47" state="rrrrrrrrrrrrrrGGG"/>
         <phase duration="3"  state="rrrrrrrrrrrrrryyy"/>
         <phase duration="2"  state="rrrrrrrrrrrrrrrrr"/>
     </tlLogic>

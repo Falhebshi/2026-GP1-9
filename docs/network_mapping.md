@@ -183,6 +183,56 @@ network, not to all future network versions. `storage_length_m` is omitted
 because verified storage values are unavailable; summed SUMO segment lengths
 are not a substitute.
 
+### RCRC site 1444 detectors
+
+The RCRC report for the study intersection (site `"1444"`, 13 July – 13
+October 2026) has 12 stop-bar detectors. Each sits on the lane of one
+synthetic detector, so the RCRC records copy that detector's lane, approach,
+candidate movements, mapping status and SUMO position. Detector identity stays
+`(source, site_id, detector_id)`, so both sets coexist.
+
+RCRC descriptions give the travel direction; Jaadah approaches are named by
+where traffic comes from. Northbound traffic is on the south approach,
+eastbound on the west, southbound on the north and westbound on the east.
+Lanes count from the median in both.
+
+| RCRC detector | Description | Canonical lane | Movement(s) | Synthetic detector |
+| --- | --- | --- | --- | --- |
+| `144409` | `P2-NB-L1-L-STB-RP2` | `LANE_S_1` | `MOV_S_W` | 7 |
+| `144410` | `P2-NB-L2-L-STB-RP2` | `LANE_S_2` | `MOV_S_W` | 8 |
+| `144411` | `P4-EB-L1-L-STB-RP4` | `LANE_W_1` | `MOV_W_N` | 1 |
+| `144412` | `P4-EB-L2-TL-STB-RP4` | `LANE_W_2` | `MOV_W_N`, `MOV_W_E` (allocation) | 2 |
+| `144413` | `P4-EB-L3-T-STB-RP4` | `LANE_W_3` | `MOV_W_E` | 3 |
+| `144414` | `P6-SB-L1-L-STB-RP6` | `LANE_N_1` | `MOV_N_E` | 4 |
+| `144415` | `P6-SB-L2-L-STB-RP6` | `LANE_N_2` | `MOV_N_E` | 5 |
+| `144416` | `P6-SB-L3-L-STB-RP6` | `LANE_N_3` | `MOV_N_E` | 6 |
+| `144417` | `P8-WB-L1-L-STB-RP8` | `LANE_E_1` | `MOV_E_S` | 9 |
+| `144418` | `P8-WB-L2-TL-STB-RP8` | `LANE_E_2` | `MOV_E_S`, `MOV_E_W` (allocation) | 10 |
+| `144419` | `P8-WB-L3-T-STB-RP8` | `LANE_E_3` | `MOV_E_W` | 11 |
+| `144420` | `P8-WB-L4-T-STB-RP8` | `LANE_E_4` | `MOV_E_W` | 12 |
+
+The RCRC descriptions confirm the shared lanes: `144412` and `144418` are
+`TL` (left and through), where the synthetic catalogue used `L`. `MOV_S_W` is
+labelled `L` by RCRC, consistent with its classification as a protected left.
+
+**Why the mapping is reliable.** Each RCRC description states its lane's turns
+(`L`, `TL`, `T`), and these match the lane arrangement already validated against
+OpenStreetMap and the site layout drawing on every approach. RCRC confirmed that
+it numbers the westbound lanes 1 to 4 from the side nearer the south approach,
+which on that road is the median side, so RCRC and Jaadah both count from the
+median. Where an approach has several lanes of the same type (the north and
+south left lanes, the east through lanes), swapping two detectors would not
+change any movement demand, because their counts are added together.
+
+The positions are the synthetic stop-bar placement (1 m before the lane end),
+not surveyed positions; each record's `mapping_note` says so. Demand does not use
+them; only a future detector-level calibration would.
+
+The report has no detectors on lanes `LANE_W_4`, `LANE_N_4`, `LANE_S_3` and
+`LANE_S_4`, so `MOV_W_S_SLIP`, `MOV_N_W_SLIP` and `MOV_S_E_BYPASS` have no RCRC
+counts. Their demand is estimated (see
+[Traffic demand transformation](traffic_demand_transformation.md#movements-without-a-detector)).
+
 ### Bounded lane chains and detector compatibility
 
 The following chains run upstream to downstream. All adjacent segments have
@@ -403,8 +453,8 @@ Windows and Linux checkouts, giving the same network text a different raw
 checksum. `network_checksum_matches` accepts the original bytes and their
 LF/CRLF variants. All other bytes, including spaces and XML values, matter.
 
-For this network, the CRLF checksum starts `08b1dc40` and the LF checksum starts
-`b7fa6b5d`. Both identify the same content. Generate checksums from LF-normalized
+For this network, the LF checksum starts `49d546ae` and the CRLF checksum starts
+`3397a678`. Both identify the same content. Generate checksums from LF-normalized
 bytes:
 
 ```python
@@ -423,7 +473,11 @@ its recorded checksum.
 `schema_version` identifies the mapping configuration's structure and validation
 contract. The repository currently accepts only `"2.1"`. `mapping_version` is a
 nonempty label identifying a specific revision of the study-area mapping data;
-the current value is `"2.4-west-route-start"`. The version labels do not need to match.
+the current value is `"2.6-webster-signal-plan"`. `2.5-rcrc-site-1444` added the
+RCRC site 1444 detectors (see [RCRC site 1444 detectors](#rcrc-site-1444-detectors));
+`2.6-webster-signal-plan` records the network checksum after the signal plan
+changed to the Webster plan ([SUMO network](sumo_network.md#signal-program)). The
+version labels do not need to match.
 
 Schema 2.1 removes the unused `MovementMapping.sumo_lanes` field. All 18 values
 in the repository's schema 2.0 mapping were empty, so this changes no movement

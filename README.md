@@ -79,6 +79,17 @@ python -m uvicorn traffic_source.synthetic.server:app
 
 Check `http://127.0.0.1:8000/health`. Generated observations are stored in a local SQLite database under `data/synthetic_traffic/`.
 
+### RCRC replay source
+
+Plays back the private RCRC report for the study intersection as a live feed ([RCRC replay source](docs/rcrc_replay_source.md)). Load the report once from the private folder, then start the service:
+
+```powershell
+python -m traffic_source.rcrc_replay.load ../jaadah-private-data/raw/rcrc/site_1444/<report>.csv
+python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
+```
+
+Check `http://127.0.0.1:8002/health`. The replay uses port 8002 because the network map server uses 8001. It runs 13 weeks behind the real clock (16 November shows 17 August, 1 December shows 1 September), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. The report and the replay database stay in `jaadah-private-data/`, never in the repository.
+
 ### Simulation
 
 For a short SUMO smoke run using the included test routes:
@@ -95,6 +106,8 @@ For a baseline run from the synthetic source, leave the source running and use a
 .\.venv\Scripts\Activate.ps1
 python simulation/scripts/run_baseline.py --analysis-start YYYY-MM-DDT08:00+03:00 --analysis-end YYYY-MM-DDT09:00+03:00
 ```
+
+To run from the RCRC replay source instead, add `--source rcrc`.
 
 Replace `YYYY-MM-DD` with a date available from the source. Keep the Riyadh `+03:00` offset. The run adds 15 minutes before and after the analysis period. Check that `/health` reports a `latest_available_timestamp` at or after the end of this full window; a new source initially has only seven days of history. Each run needs a new output directory under `simulation/outputs/baseline_runs/` by default. It writes generated demand, `raw/fcd.xml`, `raw/tripinfo.xml`, and `summary.json`. FCD files can be large, and raw outputs are not automatically shown as dashboard KPIs.
 
