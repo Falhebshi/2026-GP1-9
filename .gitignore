@@ -42,3 +42,6 @@ Thumbs.db
 # Network map server database (uvicorn jaadah.network_congestion.server:app):
 # shaped by the RCRC measures
 /data/network_congestion/
+
+# Accounts database (backend/accounts/storage.py): holds password hashes
+/data/accounts/
