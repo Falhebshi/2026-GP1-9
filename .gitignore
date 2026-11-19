@@ -48,3 +48,6 @@ Thumbs.db
 /data/processed/network/od_sensitivity.npz
 /data/processed/network/assigned_flows.json
 /data/processed/network/assigned_flows_friday.json
+
+# Accounts database (backend/accounts/storage.py): holds password hashes
+/data/accounts/

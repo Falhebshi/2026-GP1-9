@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
+import RequireRole from './components/RequireRole'
 import Welcome from './pages/Welcome'
 import Login from './pages/Login'
 import NetworkOverview from './pages/NetworkOverview'
@@ -10,6 +11,7 @@ import ComponentPreview from './pages/ComponentPreview'
 import Alerts from './pages/Alerts'
 import AlertDetails from './pages/AlertDetails'
 import RecommendationDetails from './pages/RecommendationDetails'
+import AdminDashboard from './pages/AdminDashboard'
 
 
 // App is the router: it looks at the URL and decides which page to show.
@@ -21,17 +23,31 @@ function App() {
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
 
-        {/* Pages WITH the nav bar (they appear inside AppLayout) */}
+        {/* Traffic pages: logged-in traffic engineers only (RequireRole).
+            They appear inside AppLayout, which adds the nav bar. */}
+        <Route element={<RequireRole role="engineer" />}>
+          <Route element={<AppLayout />}>
+            <Route path="/overview" element={<NetworkOverview />} />
+            <Route path="/current" element={<CurrentTraffic />} />
+            <Route path="/forecast" element={<TrafficForecast />} />
+            <Route path="/trends" element={<TrafficTrends />} />
+            <Route path="/alerts" element={<Alerts />} />
+            {/* Opened from an alert card */}
+            <Route path="/alerts/:problemId" element={<AlertDetails />} />
+            {/* Opened from a recommended intervention on Alert Details */}
+            <Route path="/alerts/:problemId/recommendations/:recommendationId" element={<RecommendationDetails />} />
+          </Route>
+        </Route>
+
+        {/* Admin pages: logged-in administrators only */}
+        <Route element={<RequireRole role="admin" />}>
+          <Route element={<AppLayout />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+          </Route>
+        </Route>
+
+        {/* The component gallery for development: no login needed */}
         <Route element={<AppLayout />}>
-          <Route path="/overview" element={<NetworkOverview />} />
-          <Route path="/current" element={<CurrentTraffic />} />
-          <Route path="/forecast" element={<TrafficForecast />} />
-          <Route path="/trends" element={<TrafficTrends />} />
-          <Route path="/alerts" element={<Alerts />} />
-          {/* Opened from an alert card */}
-          <Route path="/alerts/:problemId" element={<AlertDetails />} />
-          {/* Opened from a recommended intervention on Alert Details */}
-          <Route path="/alerts/:problemId/recommendations/:recommendationId" element={<RecommendationDetails />} />
           <Route path="/preview" element={<ComponentPreview />} />
         </Route>
 
