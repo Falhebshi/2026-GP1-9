@@ -4,6 +4,7 @@ import Card from '../../components/Card'
 import InfoList from '../../components/InfoList'
 import { createEngineer, generatePassphrase } from '../../services/adminService'
 import PasswordField from './PasswordField'
+import { checkNewPassword } from './passwordChecks'
 
 // The Create account form in the details panel (ADM-01), in two steps:
 //
@@ -19,8 +20,6 @@ import PasswordField from './PasswordField'
 
 // The same simple check as the Login page and the server
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const MIN_PASSWORD = 15
-const MAX_PASSWORD = 64
 
 const EMPTY = { name: '', email: '', password: '', confirmation: '' }
 
@@ -31,14 +30,7 @@ function checkFields({ name, email, password, confirmation }) {
   if (!email.trim()) errors.email = "Enter the engineer's work email."
   else if (!EMAIL_PATTERN.test(email.trim()))
     errors.email = 'Enter an email address like name@organization.gov.sa.'
-  if (!password) errors.password = 'Enter a password, or select Generate.'
-  else if ([...password].length < MIN_PASSWORD)
-    errors.password = `Use at least ${MIN_PASSWORD} characters. A short phrase works well.`
-  else if ([...password].length > MAX_PASSWORD)
-    errors.password = `Use at most ${MAX_PASSWORD} characters.`
-  if (password && confirmation !== password)
-    errors.confirmation = 'The passwords do not match.'
-  return errors
+  return { ...errors, ...checkNewPassword(password, confirmation) }
 }
 
 function CreateEngineer({ onCreated, onCancel }) {

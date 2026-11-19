@@ -78,6 +78,16 @@ export async function setStatus(id, status) {
   })
 }
 
+// Sets a new password for an engineer and returns the account, without the
+// password (ADM-05). The engineer is logged out at once. A refused password
+// answers with error.field "password".
+export async function changePassword(id, password) {
+  return request(`/engineers/${encodeURIComponent(id)}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+}
+
 // A random five-word passphrase for the Generate button
 export async function generatePassphrase() {
   const { passphrase } = await request('/passphrase')

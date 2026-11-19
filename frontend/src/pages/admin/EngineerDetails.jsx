@@ -5,11 +5,13 @@ import Card from '../../components/Card'
 import InfoList from '../../components/InfoList'
 import { setStatus } from '../../services/adminService'
 import { STATUS_LABELS, STATUS_VARIANTS, createdDate } from './accountFormat'
+import ChangePassword from './ChangePassword'
 
 // The details panel for the selected engineer (ADM-02), with the account
 // actions:
 //
 //   Deactivate / Activate   ADM-03; deactivating asks for confirmation first
+//   Change password         ADM-05; a form for the new password
 //
 //   engineer              { id, name, email, status, created_at }
 //   onChanged(engineer, message)
@@ -21,7 +23,7 @@ import { STATUS_LABELS, STATUS_VARIANTS, createdDate } from './accountFormat'
 // The parent gives each engineer their own panel (key={engineer.id}), so a
 // half-finished action never carries over to another engineer.
 function EngineerDetails({ engineer, onChanged, onGone }) {
-  // 'view' | 'confirm-deactivate'
+  // 'view' | 'confirm-deactivate' | 'change-password'
   const [mode, setMode] = useState('view')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -63,6 +65,23 @@ function EngineerDetails({ engineer, onChanged, onGone }) {
       {error}
     </div>
   )
+
+  if (mode === 'change-password') {
+    return (
+      <Card title={engineer.name} className="admin-panel">
+        {details}
+        <ChangePassword
+          engineer={engineer}
+          onSaved={(updated) => {
+            setMode('view')
+            onChanged(updated, `Password changed for ${engineer.name}.`)
+          }}
+          onCancel={() => setMode('view')}
+          onGone={onGone}
+        />
+      </Card>
+    )
+  }
 
   if (mode === 'confirm-deactivate') {
     return (
@@ -108,6 +127,9 @@ function EngineerDetails({ engineer, onChanged, onGone }) {
             {busy ? 'Activating…' : 'Activate'}
           </Button>
         )}
+        <Button variant="secondary" onClick={() => setMode('change-password')} disabled={busy}>
+          Change password
+        </Button>
       </div>
     </Card>
   )

@@ -17,7 +17,7 @@ import './admin/AdminDashboard.css'
 //
 //   left    the engineer accounts (ADM-02); clicking one selects it
 //   right   the panel: the selected engineer's details and account actions
-//           (ADM-03), or the Create account form (ADM-01)
+//           (ADM-03, ADM-05), or the Create account form (ADM-01)
 function AdminDashboard() {
   const { user } = useOutletContext()
 
@@ -72,7 +72,7 @@ function AdminDashboard() {
     setMessage({ text: `Account created for ${engineer.name}.`, variant: 'info' })
   }
 
-  // After an action on the selected engineer (ADM-03)
+  // After an action on the selected engineer (ADM-03, ADM-05)
   async function handleChanged(engineer, text) {
     await load()
     setSelectedId(engineer.id)
