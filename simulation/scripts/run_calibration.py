@@ -28,6 +28,12 @@ data folder, never to the repository:
     ../jaadah-private-data/processed/calibration/results/<label>.csv
     ../jaadah-private-data/processed/calibration/results/<label>.json
 
+Sensitivity check: --left-share-shift moves the left-turn share of the
+shared lanes by that many share points (the team's agreed runs use -0.2
+and +0.2), through the demand transformation's share_adjustments. The
+shifted demand is kept in its own folder, and the run without a shift
+stays the official result.
+
 The replay source must release the requested days; start it with
 JAADAH_REPLAY_OFFSET_WEEKS=0 (docs/rcrc_replay_source.md).
 
@@ -67,6 +73,7 @@ from jaadah.calibration.parameters import (
     GEH_THRESHOLD,
     INDICATIVE_BELOW,
     REQUIRED_PASS_SHARE,
+    SHARED_LANE_LEFT_MOVEMENTS,
 )
 from jaadah.calibration.peak_hours import day_type, days_between, hour_windows
 from jaadah.calibration.vehicle_type import parse_vehicle_settings, route_file_with_settings
@@ -188,6 +195,7 @@ def prepare_hour(
     network_path: Path,
     history_days: int,
     free_flow_s: dict,
+    left_share_shift: float = 0.0,
 ) -> tuple[list[PreparedHour], int]:
     """
     Read one test hour's observations once and build (or reuse) its SUMO
@@ -222,7 +230,7 @@ def prepare_hour(
     demands = None   # built only if some seed has no stored demand
     prepared, built = [], 0
     for seed in seeds:
-        demand_dir = demand_root / mapping.mapping_version / f"{start:%Y%m%dT%H%M}_S{seed}"
+        demand_dir = demand_folder(demand_root, mapping.mapping_version, left_share_shift) / f"{start:%Y%m%dT%H%M}_S{seed}"
         route_file = demand_dir / f"{demand_dir.name}_routes.rou.xml"
 
         if not route_file.is_file():
@@ -235,6 +243,7 @@ def prepare_hour(
                     window_start=window.epoch,
                     window_end=window.run_end,
                     available_until=latest,
+                    share_adjustments=share_adjustments(left_share_shift),
                 )
                 if transformation.errors:
                     raise HourSkipped(f"demand could not be built: {transformation.errors[0]}")
@@ -266,6 +275,23 @@ def prepare_hour(
             movement_demand=hour_movement_demand(demand_dir, start, end),
         ))
     return prepared, built
+
+
+def share_adjustments(left_share_shift: float) -> dict[str, float] | None:
+    """The demand transformation's share_adjustments for a left-share shift, or None."""
+
+    if left_share_shift == 0:
+        return None
+    return {movement_id: left_share_shift for movement_id in SHARED_LANE_LEFT_MOVEMENTS}
+
+
+def demand_folder(demand_root: Path, mapping_version: str, left_share_shift: float) -> Path:
+    """Where an hour's demand is kept; shifted demand never mixes with the official one."""
+
+    folder = demand_root / mapping_version
+    if left_share_shift != 0:
+        folder = folder / f"left_share_shift_{left_share_shift:+g}"
+    return folder
 
 
 def hour_movement_demand(demand_dir: Path, start: datetime, end: datetime) -> dict[str, int]:
@@ -440,6 +466,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="driver setting for this run, e.g. --set tau=1.2 (repeatable)")
     parser.add_argument("--jobs", type=int, default=1, help="SUMO runs at the same time")
     parser.add_argument("--label", help="name of the results files (default: date-time and settings)")
+    parser.add_argument("--left-share-shift", type=float, default=0.0,
+                        help="sensitivity check: shift the left-turn share of the shared lanes "
+                             "by this many share points, e.g. -0.2 or 0.2")
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URLS[SOURCE])
     parser.add_argument("--history-days", type=int, default=DEFAULT_HISTORY_DAYS[SOURCE])
     parser.add_argument("--step-length", type=float, default=0.4)
@@ -450,6 +479,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
+    if not -1 < args.left_share_shift < 1:
+        parser.error("--left-share-shift must be between -1 and 1")
     try:
         args.settings = parse_vehicle_settings(args.settings)
     except ValueError as exc:
@@ -457,10 +488,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     return args
 
 
-def default_label(settings: dict[str, float]) -> str:
+def default_label(settings: dict[str, float], left_share_shift: float = 0.0) -> str:
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     tuned = "_".join(f"{name}{value:g}" for name, value in sorted(settings.items())) or "defaults"
-    return f"{stamp}_{tuned}"
+    shift = f"_left_share{left_share_shift:+g}" if left_share_shift else ""
+    return f"{stamp}_{tuned}{shift}"
 
 
 def main(argv=None) -> int:
@@ -519,6 +551,7 @@ def main(argv=None) -> int:
                 demand_root=args.out_root / "demand",
                 mapping_path=args.mapping, network_path=args.net,
                 history_days=args.history_days, free_flow_s=free_flow_s,
+                left_share_shift=args.left_share_shift,
             )
             prepared += runs
             print(f"  demand {number}/{len(windows)} ready ({start:%Y-%m-%d %H:%M}; "
@@ -606,7 +639,7 @@ def main(argv=None) -> int:
     share = pass_share(comparisons)
     seed_shares = {seed: pass_share(items) for seed, items in per_seed.items()}
     known = [value for value in seed_shares.values() if value is not None]
-    label = args.label or default_label(args.settings)
+    label = args.label or default_label(args.settings, args.left_share_shift)
     results_dir = args.out_root / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     csv_path = results_dir / f"{label}.csv"
@@ -623,6 +656,7 @@ def main(argv=None) -> int:
         "days": [args.days[0].isoformat(), args.days[-1].isoformat()],
         "seeds": args.seeds,
         "settings": args.settings,
+        "left_share_shift": args.left_share_shift,
         "mapping_version": mapping.mapping_version,
         "eligible_detector_hours": len(comparisons),
         "indicative": len(comparisons) < INDICATIVE_BELOW,
@@ -645,6 +679,9 @@ def main(argv=None) -> int:
     if share is None:
         print("No eligible detector-hours: nothing was compared.")
         return 1
+    if args.left_share_shift:
+        print(f"\nSENSITIVITY CHECK: shared-lane left-turn share shifted by {args.left_share_shift:+g} "
+              "(not the official result)")
     print(f"\nAll eligible detector-hours: {describe_share(comparisons)} with GEH < {GEH_THRESHOLD:g} "
           f"(target {REQUIRED_PASS_SHARE:.0%}): {'MET' if summary['meets_target'] else 'NOT MET'}")
     print(f"Within capacity:              {describe_share(within)}")

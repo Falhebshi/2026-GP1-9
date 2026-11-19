@@ -48,7 +48,7 @@ Calibration (30 Aug – 12 Sep 2026) and validation (27 Sep – 3 Oct 2026) were
 The misses have two causes, and neither is driver behaviour, so tuning the driver settings would only hide them:
 
 1. **Signal plan.** At its busiest hours, the West approach carries more traffic than the fixed Webster plan's green can serve, so SUMO passes fewer vehicles than were counted. The real controller is actuated and can give that approach more green. This is a limitation of the single fixed plan; see issue #70 (actuated signal).
-2. **Shared-lane split.** Where the plan has capacity, the remaining misses are on the East and West approaches: each approach's total matches, but vehicles are distributed differently across the lanes, in opposite directions on the two approaches, around the shared lanes `LANE_E_2` and `LANE_W_2`. This follows from the proportional split of the shared-lane counts between the left-turn and through movements, which is a demand assumption: RCRC supplied no turning counts. The split is not tuned, because the same detectors build the demand and check it, so fitting it to the score would be circular. A sensitivity check and a field count are proposed as future work.
+2. **Shared-lane split.** Where the plan has capacity, the remaining misses are on the East and West approaches: each approach's total matches, but vehicles are distributed differently across the lanes, in opposite directions on the two approaches, around the shared lanes `LANE_E_2` and `LANE_W_2`. This follows from the proportional split of the shared-lane counts between the left-turn and through movements, which is a demand assumption: RCRC supplied no turning counts. The split is not tuned, because the same detectors build the demand and check it, so fitting it to the score would be circular. The shared-lane sensitivity check (left-turn share shifted by −0.2 and +0.2, see below) confirms the split as the cause: North and South do not change, while East and West change by a few percentage points in opposite directions, East matching better with a lower left-turn share and West with a higher one. No single shift suits both approaches, and the official result keeps the current rule. Without turning counts the split stays a documented limitation; replacing the proportional rule with the HCM lane distribution already used by the KPI engine is proposed as future work.
 
 ## What is built
 
@@ -82,6 +82,19 @@ For each test hour and seed the runner:
 It shows each SUMO run as it finishes, then prints the share of eligible detector-hours with GEH below 5 (all hours, which is the result, and within capacity), per approach and, with several seeds, per seed with the spread. A set with fewer than 100 detector-hours is marked indicative. It writes the detail (one row per detector-hour, with observed and simulated count, GEH, occupancy, lane group, its observed volume and capacity, and whether it is within capacity) and a summary to `../jaadah-private-data/processed/calibration/results/<label>.csv` and `.json`. These files hold numbers derived from RCRC data, so they stay in the private data folder.
 
 The runner reuses `run_baseline.py`'s constants and building blocks but repeats its short ingestion-to-demand sequence, because `run_baseline.py` runs SUMO in the same function. The tuning itself (choosing which settings to try) is done by hand with `--set`.
+
+## Shared-lane sensitivity check
+
+The split of the shared-lane counts (`LANE_W_2`, `LANE_E_2`) between their left-turn and through movements is an assumption (no turning counts exist). To show how much the result depends on it, the runner can shift the left-turn share of both shared lanes, using the demand transformation's `share_adjustments` with the team's agreed values of −0.2 and +0.2 (`docs/traffic_demand_transformation.md`, Sensitivity Runs):
+
+```powershell
+python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --left-share-shift -0.2 --jobs 11 --label sensitivity_left_minus
+python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --left-share-shift 0.2 --jobs 11 --label sensitivity_left_plus
+```
+
+- The shift applies to `MOV_W_N` and `MOV_E_S` (`SHARED_LANE_LEFT_MOVEMENTS`); the through movement of each lane receives the rest, so lane and approach totals do not change.
+- Shifted demand is kept in its own folder (`demand/<mapping_version>/left_share_shift_<shift>/`) and never mixes with the official demand. The runner marks the output as a sensitivity check.
+- The values are fixed in advance and every version is reported. The run without a shift stays the official result: choosing the share that scores best would fit the demand to the score that checks it.
 
 ## Charts
 

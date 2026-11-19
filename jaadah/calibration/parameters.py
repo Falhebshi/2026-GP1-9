@@ -49,3 +49,9 @@ TUNABLE_VEHICLE_ATTRIBUTES = (
 # A result based on fewer eligible detector-hours than this is reported
 # as indicative.
 INDICATIVE_BELOW = 100
+
+# Shared-lane sensitivity check: the left-turn movements of the shared
+# lanes (LANE_W_2, LANE_E_2) whose share the demand transformation's
+# share_adjustments shifts. The team's agreed runs shift them by -0.2 and
+# +0.2 (docs/traffic_demand_transformation.md, Sensitivity Runs).
+SHARED_LANE_LEFT_MOVEMENTS = ("MOV_W_N", "MOV_E_S")

@@ -177,3 +177,38 @@ def test_observation_source_falls_back_to_requests_when_rows_are_rejected(monkey
     items, rejected = source.between(END, END + timedelta(hours=1))
     assert (items, rejected) == ([], 1)
     assert len(calls) == 2                                   # the span, then the hour on its own
+
+
+# ============================================================
+# SHARED-LANE SENSITIVITY CHECK
+# ============================================================
+
+def test_no_shift_means_no_adjustment_and_the_official_folder(tmp_path):
+    assert run_calibration.share_adjustments(0.0) is None
+    assert run_calibration.demand_folder(tmp_path, "2.6", 0.0) == tmp_path / "2.6"
+
+
+def test_shift_adjusts_both_shared_lane_left_movements(tmp_path):
+    assert run_calibration.share_adjustments(-0.2) == {"MOV_W_N": -0.2, "MOV_E_S": -0.2}
+    assert run_calibration.demand_folder(tmp_path, "2.6", -0.2) == tmp_path / "2.6" / "left_share_shift_-0.2"
+    assert run_calibration.demand_folder(tmp_path, "2.6", 0.2) == tmp_path / "2.6" / "left_share_shift_+0.2"
+
+
+def test_left_movements_are_the_shared_lanes_movements():
+    from jaadah.calibration.parameters import SHARED_LANE_LEFT_MOVEMENTS
+    from jaadah.mapping.loader import load_network_mappings
+
+    mapping = load_network_mappings(MAPPING, network_path=NETWORK)
+    shared = [d for d in mapping.detector_mappings
+              if d.source == "rcrc" and d.mapping_status == "requires_allocation"]
+    for movement_id in SHARED_LANE_LEFT_MOVEMENTS:
+        assert sum(movement_id in d.movement_ids for d in shared) == 1
+
+
+def test_shift_on_the_command_line_and_in_the_label():
+    assert parse_args(["--days", "2026-09-01", "--left-share-shift", "-0.2"]).left_share_shift == -0.2
+    assert parse_args(["--days", "2026-09-01"]).left_share_shift == 0.0
+    with pytest.raises(SystemExit):
+        parse_args(["--days", "2026-09-01", "--left-share-shift", "1.5"])
+    assert default_label({}, 0.2).endswith("_defaults_left_share+0.2")
+    assert default_label({}).endswith("_defaults")
