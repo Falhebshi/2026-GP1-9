@@ -353,6 +353,22 @@ class AccountStorage:
 
         return self.get_account(account_id)
 
+    def delete_engineer(self, account_id: str) -> bool:
+        """Delete an engineer account for good; return False if there is no such engineer.
+
+        Its sessions are deleted with it (ON DELETE CASCADE), so the
+        engineer loses access at once, and the email can be used again
+        for a new account (ADM-04).
+        """
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM accounts WHERE id = ? AND role = ?",
+                (account_id, ROLE_ENGINEER),
+            )
+
+        return cursor.rowcount == 1
+
     def find_login(self, email: str) -> LoginRecord | None:
         """Return what login needs for the account with this email, or None."""
 

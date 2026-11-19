@@ -590,3 +590,103 @@ def test_an_engineer_cannot_change_a_password(client, storage):
 
     assert change_password(client, omar.id).status_code == 403
     assert can_log_in(storage, NEW["email"], NEW["password"])
+
+
+# ============================================================
+# DELETE (ADM-04)
+# ============================================================
+
+def delete(client, account_id):
+    return client.delete(f"/admin/engineers/{account_id}")
+
+
+def test_a_deleted_account_is_removed_from_the_list(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+
+    response = delete(admin, sara.id)
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert admin.get("/admin/engineers").json() == {"engineers": []}
+    assert storage.get_account(sara.id) is None
+
+
+def test_a_deleted_engineer_cannot_log_in(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+
+    delete(admin, sara.id)
+
+    with TestClient(create_app(storage)) as engineer:
+        response = engineer.post("/auth/login", json=SARA)
+    # The same answer as for any email without an account
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Email or password is incorrect."
+
+
+def test_deleting_ends_the_engineer_s_sessions(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    engineer = logged_in_engineer(storage)
+    assert engineer.get("/auth/me").status_code == 200
+
+    delete(admin, sara.id)
+
+    assert engineer.get("/auth/me").status_code == 401
+    with sqlite3.connect(storage.database_path) as connection:
+        sessions = connection.execute("SELECT COUNT(*) FROM sessions WHERE account_id = ?", (sara.id,)).fetchone()
+    assert sessions == (0,)
+    engineer.__exit__(None, None, None)
+
+
+def test_the_email_can_be_used_again_for_a_new_account(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    delete(admin, sara.id)
+
+    response = admin.post(
+        "/admin/engineers",
+        json={"name": "Sara Alqahtani", "email": SARA["email"], "password": NEW_PASSWORD},
+    )
+
+    assert response.status_code == 201
+    # A new account: a new id, and only the new password works
+    assert response.json()["id"] != sara.id
+    assert can_log_in(storage, SARA["email"], NEW_PASSWORD)
+    assert not can_log_in(storage, SARA["email"], SARA["password"])
+
+
+def test_deleting_an_account_that_no_longer_exists_says_so(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    delete(admin, sara.id)
+
+    response = delete(admin, sara.id)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "This account no longer exists."
+
+
+def test_other_engineers_are_not_deleted(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    add_engineer(storage, "Omar Alharbi", NEW["email"], NEW["password"])
+    omar = logged_in_engineer(storage, NEW["email"], NEW["password"])
+
+    delete(admin, sara.id)
+
+    assert [e["name"] for e in admin.get("/admin/engineers").json()["engineers"]] == ["Omar Alharbi"]
+    assert omar.get("/auth/me").status_code == 200
+    omar.__exit__(None, None, None)
+
+
+def test_an_administrator_cannot_be_deleted(admin, storage):
+    noura = storage.find_login(NOURA["email"]).account
+
+    assert delete(admin, noura.id).status_code == 404
+    assert storage.get_account(noura.id) is not None
+    assert admin.get("/auth/me").status_code == 200
+
+
+def test_an_engineer_cannot_delete_an_account(client, storage):
+    add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    omar = add_engineer(storage, "Omar Alharbi", NEW["email"], NEW["password"])
+    client.post("/auth/login", json=SARA)
+
+    assert delete(client, omar.id).status_code == 403
+    assert storage.get_account(omar.id) is not None

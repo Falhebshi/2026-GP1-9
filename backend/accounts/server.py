@@ -27,6 +27,8 @@ Administrators only (401 without a session, 403 for engineers):
                              activate or deactivate an engineer (ADM-03)
     POST /admin/engineers/{id}/password
                              change an engineer's password (ADM-05)
+    DELETE /admin/engineers/{id}
+                             delete an engineer account for good (ADM-04)
 
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
@@ -364,6 +366,12 @@ def create_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
 
         return engineer_of(account)
+
+    @app.delete("/admin/engineers/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_engineer(account_id: str, admin: Account = Depends(current_admin)) -> None:
+        # The engineer's sessions go with the account (storage.delete_engineer)
+        if not accounts.delete_engineer(account_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
 
     @app.get("/admin/passphrase")
     def passphrase(admin: Account = Depends(current_admin)) -> Passphrase:
