@@ -45,3 +45,8 @@ Thumbs.db
 
 # Accounts database (backend/accounts/storage.py): holds password hashes
 /data/accounts/
+
+# Live update loop (simulation/scripts/run_live.py): the chain's working files and
+# the page's live outputs, rebuilt as the loop runs (team decision A on live outputs)
+/simulation/outputs/live/
+/frontend/public/data/*/live/
