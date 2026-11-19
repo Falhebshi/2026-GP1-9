@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from backend.demand.imputation import (
+    LIVE_FALLBACK_GAP_INTERVALS,
     MAX_GAP_INTERVALS,
     day_type,
     fit_neighbour_line,
@@ -950,3 +951,52 @@ def test_a_silent_window_is_checked_only_for_the_source_of_the_history() -> None
         "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
     }
     assert not [error for error in result.errors if "R1" in error.message]
+
+
+def silent_before_now(intervals: int) -> list[TrafficObservation]:
+    """The site history with the site silent for `intervals` intervals before NOW."""
+
+    return [
+        observation
+        for observation in make_site_history(days=22)
+        if observation.interval_start < NOW - intervals * INTERVAL
+    ]
+
+
+def live_outage(intervals_before: int, **options):
+    return transform_observations(
+        observations=[],
+        config=make_config(),
+        history=silent_before_now(intervals_before),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+        **options,
+    )
+
+
+def test_the_live_fallback_estimates_a_longer_gap_with_the_plain_average() -> None:
+    """NOW is the 6th silent interval: past the gap limit, inside the live limit."""
+
+    result = live_outage(MAX_GAP_INTERVALS, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert {
+        detector.method for demand in result.demands for detector in demand.imputed_detectors
+    } == {ImputationMethod.HISTORICAL_AVERAGE}
+
+
+def test_the_live_fallback_ends_at_its_limit() -> None:
+    result = live_outage(LIVE_FALLBACK_GAP_INTERVALS, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+
+    assert result.demands == []
+
+
+def test_without_the_live_fallback_the_gap_limit_is_unchanged() -> None:
+    assert live_outage(MAX_GAP_INTERVALS).demands == []
+
+
+def test_the_live_limit_is_longer_than_the_gap_limit() -> None:
+    assert LIVE_FALLBACK_GAP_INTERVALS == 8 > MAX_GAP_INTERVALS
