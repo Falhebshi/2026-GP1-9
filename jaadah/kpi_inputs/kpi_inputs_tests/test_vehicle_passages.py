@@ -88,7 +88,7 @@ def config_data(upstream=50, downstream=20):
 
 
 def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=None,
-            undeparted_in_tripinfo=False, **zone):
+            undeparted_in_tripinfo=False, fcd_start_s=None, **zone):
     """
     traces: {vehicle_id: [(time, odometer, speed), ...]}.
     never_inserted: {vehicle_id: depart_s}, planned but not in FCD; in tripinfo with
@@ -124,7 +124,7 @@ def collect(tmp_path, traces, *, factors=None, movements=None, never_inserted=No
         NetworkMappingConfig.model_validate(config_data(**zone)), tmp_path / "net.xml",
         run_id="RUN_TEST", window=window, fcd_path=tmp_path / "fcd.xml",
         tripinfo_path=tmp_path / "trip.xml", manifest_path=tmp_path / "manifest.json",
-        demand_path=tmp_path / "demand.json", fcd_period_s=1.0,
+        demand_path=tmp_path / "demand.json", fcd_period_s=1.0, fcd_start_s=fcd_start_s,
     )
 
 
@@ -285,6 +285,41 @@ def test_large_negative_time_loss_is_an_error(tmp_path):
     """Speed factor 0.5: free-flow 16 s against 8 s in the zone."""
     with pytest.raises(VehiclePassageError, match="time loss -8.00 s is below -1.0 s"):
         collect(tmp_path, {"V": steady(26)}, factors={"V": 0.5})
+
+
+def test_vehicle_first_seen_inside_its_zone_is_an_error(tmp_path):
+    """FCD of the whole run: a vehicle that appears at 120 m, past the zone entry at 102 m."""
+    with pytest.raises(VehiclePassageError, match="W: first seen inside its zone"):
+        collect(tmp_path, {"W": steady(26, start=12)})
+
+
+# ============================================================
+# FCD OF THE END OF A RUN ONLY (LIVE UPDATE LOOP)
+# ============================================================
+
+def test_vehicle_inside_its_zone_when_the_fcd_starts_is_left_out(tmp_path):
+    """
+    The FCD starts at 12 s. W is already at 120 m, inside its zone, so it entered
+    before the FCD and is left out. V starts at 0 m at 12 s, enters its zone at
+    22.2 s and is measured as usual.
+    """
+    result = collect(tmp_path, {
+        "W": steady(26, start=12),
+        "V": [(t, 10.0 * (t - 12), 10.0) for t in range(12, 39)],
+    }, fcd_start_s=12)
+
+    assert [record.vehicle_id for record in result.records] == ["V"]
+    assert result.records[0].zone_entry_time == at(22.2)
+    assert result.incomplete == []
+
+
+def test_vehicle_first_seen_inside_its_zone_after_the_fcd_starts_is_still_an_error(tmp_path):
+    """Only vehicles present in the FCD's first timestep can have entered before it."""
+    with pytest.raises(VehiclePassageError, match="W: first seen inside its zone"):
+        collect(tmp_path, {
+            "W": steady(26, start=14),
+            "V": steady(14, start=12),
+        }, fcd_start_s=12)
 
 
 def test_approach_without_zone_is_an_error(tmp_path):

@@ -117,7 +117,11 @@ M, VEH = KpiUnit.METRES, KpiUnit.VEHICLES
 
 
 class RunFiles(NamedTuple):
-    """One finished run: its record, its time window and its files."""
+    """
+    One finished run: its record, its time window and its files.
+    fcd_start_s is set when the FCD covers only the run's last part, from
+    that second on (the live update loop; see collect_vehicle_passages).
+    """
 
     run: SimulationRun
     window: RunWindow
@@ -125,6 +129,7 @@ class RunFiles(NamedTuple):
     tripinfo_path: Path
     manifest_path: Path
     demand_path: Path
+    fcd_start_s: float | None = None
 
 
 # ============================================================
@@ -218,7 +223,7 @@ def collect_measurements(
         config, network_path, run_id=run.run_id, window=files.window,
         fcd_path=files.fcd_path, tripinfo_path=files.tripinfo_path,
         manifest_path=files.manifest_path, demand_path=files.demand_path,
-        fcd_period_s=run.step_length_s,
+        fcd_period_s=run.step_length_s, fcd_start_s=files.fcd_start_s,
     )
     queues = collect_cycle_queues(
         config, network_path, program, files.fcd_path, run_id=run.run_id,
