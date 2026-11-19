@@ -79,6 +79,14 @@ Because the offset is whole weeks, the **time of day and the weekday always matc
 
 After the end of the data the clock stays there: the provider has nothing newer. To show a later or earlier point in the data, change `offset_weeks`.
 
+The server reads the offset from the environment variable `JAADAH_REPLAY_OFFSET_WEEKS` when it is set (a whole number of weeks, 0 or more), otherwise it uses 13. Calibration compares runs with days in September and October, which the demonstration clock has not released yet, so it starts the server with `0`, which releases the whole report (see [`calibration.md`](calibration.md)):
+
+```powershell
+$env:JAADAH_REPLAY_OFFSET_WEEKS = "0"
+python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
+Remove-Item Env:JAADAH_REPLAY_OFFSET_WEEKS   # back to the 13-week demonstration clock
+```
+
 **The dates in the data are never changed.** The replay only decides how much of the report has been delivered. The clock depends on nothing but the real time, so stopping or restarting the service never shifts it.
 
 ---
