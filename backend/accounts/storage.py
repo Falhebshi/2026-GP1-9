@@ -328,6 +328,31 @@ class AccountStorage:
 
         return self.get_account(account_id)
 
+    def set_password(self, account_id: str, password_hash: str) -> Account | None:
+        """Replace an engineer's password; return the account, or None if no such engineer.
+
+        Also ends all the engineer's sessions, so the old password's
+        sessions stop at once (ADM-05), and clears any login pause on
+        their email, so they can log in with the new password straight away.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT email FROM accounts WHERE id = ? AND role = ?",
+                (account_id, ROLE_ENGINEER),
+            ).fetchone()
+            if row is None:
+                return None
+
+            connection.execute(
+                "UPDATE accounts SET password_hash = ? WHERE id = ?",
+                (password_hash, account_id),
+            )
+            connection.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
+            connection.execute("DELETE FROM login_attempts WHERE email = ?", (row[0],))
+
+        return self.get_account(account_id)
+
     def find_login(self, email: str) -> LoginRecord | None:
         """Return what login needs for the account with this email, or None."""
 

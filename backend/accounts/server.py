@@ -25,6 +25,8 @@ Administrators only (401 without a session, 403 for engineers):
     GET  /admin/passphrase   a random passphrase for the Generate button
     POST /admin/engineers/{id}/status
                              activate or deactivate an engineer (ADM-03)
+    POST /admin/engineers/{id}/password
+                             change an engineer's password (ADM-05)
 
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
@@ -143,6 +145,10 @@ class Passphrase(BaseModel):
 
 class NewStatus(BaseModel):
     status: Literal["active", "inactive"]
+
+
+class NewPassword(BaseModel):
+    password: str
 
 
 def engineer_of(account: Account) -> Engineer:
@@ -332,6 +338,28 @@ def create_app(
     ) -> Engineer:
         # Deactivating also ends the engineer's sessions (storage.set_status)
         account = accounts.set_status(account_id, change.status)
+        if account is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
+
+        return engineer_of(account)
+
+    @app.post("/admin/engineers/{account_id}/password")
+    def change_password(
+        account_id: str,
+        change: NewPassword,
+        admin: Account = Depends(current_admin),
+    ) -> Engineer:
+        engineer = accounts.get_engineer(account_id)
+        if engineer is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
+
+        # The same rules as every password, with this engineer's name and email
+        problem = password_problem(change.password, engineer.name, engineer.email)
+        if problem:
+            raise field_error(400, "password", problem)
+
+        # Also ends the engineer's sessions (storage.set_password)
+        account = accounts.set_password(account_id, hash_password(change.password))
         if account is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
 
