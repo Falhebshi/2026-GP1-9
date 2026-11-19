@@ -31,7 +31,7 @@ frontend/src/
                                panel, the Create account form
 ```
 
-This document covers the backlog items PBI 31 (log in), PBI 32 (log out), ADM-02 (list engineers), ADM-01 (create engineer accounts), ADM-03 (activate and deactivate), ADM-05 (change an engineer's password) and the account parts of NFR-03 (security). The standards behind each rule are listed under [Sources](#sources).
+This document covers the backlog items PBI 31 (log in), PBI 32 (log out), ADM-02 (list engineers), ADM-01 (create engineer accounts), ADM-03 (activate and deactivate), ADM-05 (change an engineer's password), ADM-04 (delete an engineer account) and the account parts of NFR-03 (security). The standards behind each rule are listed under [Sources](#sources).
 
 ---
 
@@ -140,6 +140,17 @@ Both fields are hidden by default with **Show**/**Hide**; the new password also 
 - the account's status does not change.
 
 **Cancel** closes the form and changes nothing. A refused password (too short, common, made of the engineer's own name or email) shows its message under the field and changes nothing; it is never hashed.
+
+### Deleting an Account (ADM-04)
+
+**Delete account** (the red button) asks first: "Delete Omar Alharbi's account? This can't be undone. They won't be able to log in, and the account is removed from the list." **Cancel** changes nothing; the red **Delete account** under the question deletes the account. Then:
+
+- the account is removed from the database, and from the list, with nothing selected and the line "Omar Alharbi's account was deleted.";
+- **all of the engineer's sessions end** with it, as for deactivating;
+- logging in with that email and password answers "Email or password is incorrect.", the same as for any email without an account;
+- the email can be used again for a new account, which gets a new id and a new password.
+
+Deleting is for an account that should not come back, such as one created with a mistake; **Deactivate** keeps the account for later. Administrators cannot be deleted from the dashboard. If another tab already deleted the account, the action answers "This account no longer exists." and the list refreshes.
 
 ### Creating an Engineer Account (ADM-01)
 
@@ -415,6 +426,10 @@ Request: `{"status": "inactive"}` or `{"status": "active"}`. Response `200`: the
 
 Request: `{"password": "silver harbor quiet lamp"}`. Response `200`: the engineer (never the password). The engineer's sessions end and any login pause on their email is cleared. A refused password answers `400` `{"detail": {"field": "password", "message": "…"}}`; an unknown id, or an administrator's, answers `404` `{"detail": "This account no longer exists."}`.
 
+#### `DELETE /admin/engineers/{id}`
+
+Response `204` with no body. The account and all its sessions are deleted. An unknown id (including one already deleted), or an administrator's, answers `404` `{"detail": "This account no longer exists."}`.
+
 #### `GET /admin/passphrase`
 
 ```json
@@ -478,14 +493,14 @@ Times are stored in UTC: they are only compared, never shown. A session started 
 python -m pytest backend/accounts
 ```
 
-181 tests, all with artificial accounts and temporary databases:
+189 tests, all with artificial accounts and temporary databases:
 
 | File | Tests | Covers |
 |---|---|---|
 | `test_passwords.py` | 25 | length limits and code points, NFC, the common-password list (whole password, any case), the name, email and "jaadah" rule, Argon2id settings, salts, wrong and damaged hashes |
 | `test_storage.py` | 34 | accounts (random ids, lowercase unique emails, roles), the pause per email with and without an account, forgetting old counts, made-up emails not piling up, sessions (SHA-256 only, 8 hours, 30 minutes idle, logout, inactive and deleted accounts) |
 | `test_server.py` | 39 | login for both roles, cookie settings and `JAADAH_SECURE_COOKIE`, the same answers and one password check per attempt for real and unknown emails (also over 6 attempts and while paused), input length limits, the deactivated message only with the right password, the 30-minute pause, logging in again, logout, both session limits, the hash never sent |
-| `test_admin.py` | 64 | administrators only (401 and 403 on every admin endpoint), the list (fields, empty, no administrators, order by name ignoring case, inactive status), creating an engineer (role, Argon2id hash, appears in the list, can log in, trimmed and lowercased, every refused field and its message, duplicate emails including an administrator's, refused passwords never hashed), the word list's SHA-256, passphrase shape, strength and length; deactivating (status, sessions ended at once, login refused, other engineers and the admin unaffected), reactivating (can log in again), unknown and administrator ids (404), invalid statuses, engineers refused; changing a password (new one works, old one refused, new Argon2id hash, never sent back, sessions ended, login pause cleared, other engineers and the status unaffected, every refused password with its message and never hashed, the name rule using that engineer's name, unknown and administrator ids, engineers refused) |
+| `test_admin.py` | 72 | administrators only (401 and 403 on every admin endpoint), the list (fields, empty, no administrators, order by name ignoring case, inactive status), creating an engineer (role, Argon2id hash, appears in the list, can log in, trimmed and lowercased, every refused field and its message, duplicate emails including an administrator's, refused passwords never hashed), the word list's SHA-256, passphrase shape, strength and length; deactivating (status, sessions ended at once, login refused, other engineers and the admin unaffected), reactivating (can log in again), unknown and administrator ids (404), invalid statuses, engineers refused; changing a password (new one works, old one refused, new Argon2id hash, never sent back, sessions ended, login pause cleared, other engineers and the status unaffected, every refused password with its message and never hashed, the name rule using that engineer's name, unknown and administrator ids, engineers refused); deleting (removed from the list, cannot log in, sessions ended, the email reusable, a second delete 404, other engineers unaffected, administrators cannot be deleted, engineers refused) |
 | `test_create_admin.py` | 19 | creating an administrator who can then log in, refused passwords, names, emails and duplicates, running as a module; with `--engineer-email`, both accounts with the same password and their own salts, both able to log in, different emails required, nothing created if either email is taken, the engineer email in the password rule |
 
 For the website, `npm run lint` and `npm run build` in `frontend/`.
@@ -499,4 +514,4 @@ For the website, `npm run lint` and `npm run build` in `frontend/`.
 - OWASP Session Management Cheat Sheet, https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html: idle timeout ranges.
 - UK National Cyber Security Centre, list of the 100,000 most used passwords (2019), with Have I Been Pwned; copy from SecLists, MIT License.
 - Joseph Bonneau and the Electronic Frontier Foundation, EFF Large Wordlist for Passphrases (2016), https://www.eff.org/dice, CC BY 3.0 US.
-- Jaadah Product Backlog: PBI 31, PBI 32, ADM-01, ADM-02, ADM-03, ADM-05 and NFR-03.
+- Jaadah Product Backlog: PBI 31, PBI 32, ADM-01, ADM-02, ADM-03, ADM-04, ADM-05 and NFR-03.
