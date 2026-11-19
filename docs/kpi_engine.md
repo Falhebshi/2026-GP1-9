@@ -812,6 +812,8 @@ The live update loop simulates 15 minutes at a time and needs only the newest in
 - blocked approaches (section 13.7) stay unavailable, as in every interval;
 - every earlier interval keeps the rule of section 7.4.
 
+**FCD of the end of a run.** The live loop measures only the last 45 minutes of its chain (`RunFiles.fcd_start_s`, [Live update loop](live_update_loop.md), section 4). A vehicle already inside its zone in that FCD's first timestep entered before it and belongs to an earlier interval, so it is left out instead of being an error; anywhere else, a vehicle first seen inside its zone is still an error. With 45 minutes for the two intervals reported, the results are the same as from the whole chain's FCD.
+
 The loop asks for the previous and the newest interval at each update, so a provisional interval is calculated again once its vehicles have finished, and its values become final. `write_kpis` names the newest interval in `provisional_interval_start`, merges the window's results into the day's files (section 16.4), and the page marks that interval as provisional. Example: at 10:30 the window is 10:00–10:30; 10:00–10:15 is final and 10:15–10:30 provisional.
 
 ---

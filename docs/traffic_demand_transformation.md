@@ -448,6 +448,7 @@ Example: the hour before the gap counted 120 vehicles where 100 is typical, so t
 | Limit | Value | Reason |
 |---|---|---|
 | Longest gap | 5 intervals (75 minutes), counted back from the interval being estimated | Evaluated on the RCRC site 1444 data by `analysis/rcrc_site_1444/gap_limit_evaluation.py`: the longest gap for which the hour before still improves the estimate. Longer gaps stay missing |
+| Longest gap, live loop only | 8 intervals (2 hours): after the 5th, the plain time-slot average | `fallback_gap_intervals` (`LIVE_FALLBACK_GAP_INTERVALS`). The plain average is as accurate at the 6th interval as at the 1st, so the [live update loop](live_update_loop.md) keeps simulating through an outage; after 2 hours it pauses. A project choice, used by no other run |
 | Shared-lane detectors | Not estimated, except in a site-wide outage | Their count is split by an assumption; estimating it first would stack two estimates. See [Site-Wide Outages](#site-wide-outages) |
 | Regression history | 480 common intervals | Five days (Chen et al., 2003) |
 | Average history | 3 values per time slot and day type | Chosen by the team |
@@ -470,6 +471,8 @@ Estimating a shared-lane detector stacks two estimates (the count and the split)
 A silent interval is only an outage if the source has already delivered it. `available_until` is the source's `latest_available_timestamp`: a silent interval ending by then is missing, which is how the **newest** interval is estimated live, when nothing has arrived after it yet. Without `available_until`, only gaps followed by data are estimated. An interval before the first known data is outside the data and is never filled. Outages are not estimated without a window, because without one the service cannot tell which silent intervals were requested. The gap limit above still applies, so after 5 silent intervals the twin reports the site's demand as missing; the baseline runner then does not start.
 
 Time slots that often fall in outages have fewer past values, so their averages are based on fewer weeks than other slots.
+
+A window can consist of silent intervals only: the live update loop builds one interval at a time, so during an outage the batch of observations is empty. The source the run is for is then taken from the history, both when checking the window for movements without demand and when estimating the slip and bypass movements. Without this, an empty batch would be checked against every mapped source, and the synthetic detectors would be reported missing in an RCRC run.
 
 ### Marking Imputed Demand
 
