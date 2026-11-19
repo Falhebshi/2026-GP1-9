@@ -37,6 +37,7 @@ Example:
 """
 
 import argparse
+import bisect
 import csv
 import json
 import shutil
@@ -127,20 +128,40 @@ class PreparedHour:
 # 1. DEMAND
 # ============================================================
 
-def prepare_hour(
-    client: RcrcReplayClient,
-    mapping,
-    start: datetime,
-    end: datetime,
-    seed: int,
-    *,
-    demand_root: Path,
-    mapping_path: Path,
-    network_path: Path,
-    history_days: int,
-    free_flow_s: dict,
-) -> PreparedHour:
-    """Read the hour's observations and build (or reuse) its SUMO demand."""
+class ObservationSource:
+    """
+    RCRC observations for the whole calibration run, read from the replay
+    source once and sliced per test hour.
+
+    Every hour needs its own window plus 35 days of history, and those
+    ranges overlap almost completely, so reading the full span once is
+    much faster than reading it again for every hour. The replay source
+    returns rows ordered by interval end, so a slice holds the same rows,
+    in the same order, as a separate request for that range would.
+    If any row of the span is rejected, it falls back to one request per
+    range, so a rejected row only affects the hours whose window holds it.
+    """
+
+    def __init__(self, client: RcrcReplayClient, start: datetime, end: datetime):
+        self.client = client
+        result = ingest_rcrc_observations(client, start=start, end=end)
+        self.bulk = not result.errors
+        self.items = result.observations
+        self.ends = [item.interval_end for item in self.items]
+
+    def between(self, start: datetime, end: datetime):
+        """(observations, rejected count) with start < interval end <= end."""
+
+        if not self.bulk:
+            result = ingest_rcrc_observations(self.client, start=start, end=end)
+            return result.observations, len(result.errors)
+        low = bisect.bisect_right(self.ends, start)
+        high = bisect.bisect_right(self.ends, end)
+        return self.items[low:high], 0
+
+
+def run_window(mapping, start: datetime, end: datetime):
+    """The test hour's run window: warm-up before, clearance after."""
 
     scenario = Scenario(
         scenario_id=f"SCN_CALIBRATION_{start:%Y%m%dT%H%M}-{end:%H%M}",
@@ -151,75 +172,100 @@ def prepare_hour(
         end_time=end,
     )
     config = SimulationConfig(warmup_duration_s=WARMUP_S, clearance_duration_s=CLEARANCE_S)
-    window = build_run_window(scenario, config)
+    return build_run_window(scenario, config)
 
-    latest = client.fetch_latest_available_timestamp()
-    if latest is None:
-        raise SourceNotReady(
-            "the replay source has no report loaded; load it with "
-            "python -m traffic_source.rcrc_replay.load <report.csv> and restart the server"
-        )
+
+def prepare_hour(
+    source: ObservationSource,
+    latest: datetime,
+    mapping,
+    start: datetime,
+    end: datetime,
+    seeds: list[int],
+    *,
+    demand_root: Path,
+    mapping_path: Path,
+    network_path: Path,
+    history_days: int,
+    free_flow_s: dict,
+) -> tuple[list[PreparedHour], int]:
+    """
+    Read one test hour's observations once and build (or reuse) its SUMO
+    demand for every seed.
+
+    Ingestion, the 35-day history and the demand transformation do not
+    depend on the seed, so they are done once per hour, and only when a
+    seed's demand is not stored yet. Only the departure planning and the
+    demand files are per seed. Returns the prepared runs and the number
+    of seeds whose demand was built now.
+    """
+
+    window = run_window(mapping, start, end)
     if latest < window.run_end:
         raise HourSkipped(
             f"source has data only until {latest:%Y-%m-%d %H:%M}; if the report covers "
             "this hour, start the replay source with JAADAH_REPLAY_OFFSET_WEEKS=0"
         )
 
-    ingestion = ingest_rcrc_observations(client, start=window.epoch, end=window.run_end)
-    if ingestion.errors:
-        raise HourSkipped(f"{len(ingestion.errors)} source records were rejected")
+    observations, rejected = source.between(window.epoch, window.run_end)
+    if rejected:
+        raise HourSkipped(f"{rejected} source records were rejected")
 
-    hour = [item for item in ingestion.observations if start < item.interval_end <= end]
-    prepared = PreparedHour(
-        day=start.date(), start=start, end=end, seed=seed,
-        epoch=window.epoch, duration_s=window.duration_s,
-        route_file=Path(),
-        observed_counts={(item.detector_id, item.interval_end): item.vehicle_count for item in hour},
-        observed_occupancy={
-            (item.detector_id, item.interval_end): item.occupancy_percent
-            for item in hour
-            if item.occupancy_percent is not None
-        },
-    )
+    hour = [item for item in observations if start < item.interval_end <= end]
+    observed_counts = {(item.detector_id, item.interval_end): item.vehicle_count for item in hour}
+    observed_occupancy = {
+        (item.detector_id, item.interval_end): item.occupancy_percent
+        for item in hour
+        if item.occupancy_percent is not None
+    }
 
-    demand_dir = demand_root / mapping.mapping_version / f"{start:%Y%m%dT%H%M}_S{seed}"
-    route_file = demand_dir / f"{demand_dir.name}_routes.rou.xml"
-    prepared.route_file = route_file
-    if route_file.is_file():
-        prepared.movement_demand = hour_movement_demand(demand_dir, start, end)
-        return prepared
+    demands = None   # built only if some seed has no stored demand
+    prepared, built = [], 0
+    for seed in seeds:
+        demand_dir = demand_root / mapping.mapping_version / f"{start:%Y%m%dT%H%M}_S{seed}"
+        route_file = demand_dir / f"{demand_dir.name}_routes.rou.xml"
 
-    history = ingest_rcrc_observations(
-        client, start=window.epoch - timedelta(days=history_days), end=window.epoch
-    ).observations
-    transformation = build_simulation_demand(
-        ingestion.observations,
-        mapping_path=mapping_path,
-        history=history,
-        window_start=window.epoch,
-        window_end=window.run_end,
-        available_until=latest,
-    )
-    if transformation.errors:
-        raise HourSkipped(f"demand could not be built: {transformation.errors[0]}")
+        if not route_file.is_file():
+            if demands is None:
+                history, _ = source.between(window.epoch - timedelta(days=history_days), window.epoch)
+                transformation = build_simulation_demand(
+                    observations,
+                    mapping_path=mapping_path,
+                    history=history,
+                    window_start=window.epoch,
+                    window_end=window.run_end,
+                    available_until=latest,
+                )
+                if transformation.errors:
+                    raise HourSkipped(f"demand could not be built: {transformation.errors[0]}")
+                demands = transformation.demands
 
-    plan = plan_departures(
-        transformation.demands,
-        window=window,
-        routes=movement_routes(mapping),
-        expected_movements=demand_movement_ids(mapping),
-        free_flow_s=free_flow_s,
-        seed=seed,
-    )
-    demand_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        write_sumo_demand(plan, transformation.demands, mapping, demand_dir)
-        check_generated_demand(demand_dir, mapping, network_path, window=window, seed=seed)
-    except Exception:
-        shutil.rmtree(demand_dir, ignore_errors=True)
-        raise
-    prepared.movement_demand = hour_movement_demand(demand_dir, start, end)
-    return prepared
+            plan = plan_departures(
+                demands,
+                window=window,
+                routes=movement_routes(mapping),
+                expected_movements=demand_movement_ids(mapping),
+                free_flow_s=free_flow_s,
+                seed=seed,
+            )
+            demand_dir.mkdir(parents=True, exist_ok=False)
+            try:
+                write_sumo_demand(plan, demands, mapping, demand_dir)
+                check_generated_demand(demand_dir, mapping, network_path, window=window, seed=seed)
+            except Exception:
+                shutil.rmtree(demand_dir, ignore_errors=True)
+                raise
+            built += 1
+
+        prepared.append(PreparedHour(
+            day=start.date(), start=start, end=end, seed=seed,
+            epoch=window.epoch, duration_s=window.duration_s,
+            route_file=route_file,
+            observed_counts=observed_counts,
+            observed_occupancy=observed_occupancy,
+            movement_demand=hour_movement_demand(demand_dir, start, end),
+        ))
+    return prepared, built
 
 
 def hour_movement_demand(demand_dir: Path, start: datetime, end: datetime) -> dict[str, int]:
@@ -430,7 +476,7 @@ def main(argv=None) -> int:
     approach_of = {item.detector_id: item.approach_id for item in detectors}
     detector_of_lane = {item.lane_id: item.detector_id for item in detectors if item.lane_id}
     free_flow_s = compute_free_flow_times(mapping, args.net)
-    client = RcrcReplayClient(args.source_url)
+    client = RcrcReplayClient(args.source_url, timeout_s=300)
 
     # Capacity inputs, as the KPI engine builds them.
     network = build_network_inputs(mapping)
@@ -441,26 +487,51 @@ def main(argv=None) -> int:
     lanes_by_id = {lane.lane_id: lane for lane in network.lanes}
     movements = {m: network.movements[m] for m in network.movement_attributes}
 
-    # 1. Demand, one test hour and seed at a time (the source is read in order).
+    # 1. Demand, one test hour at a time (the source is read in order); the
+    # seed-independent part is done once per hour.
+    windows = [window for day in args.days for window in hour_windows(day)]
+    try:
+        latest = client.fetch_latest_available_timestamp()
+        if latest is None:
+            raise SourceNotReady(
+                "the replay source has no report loaded; load it with "
+                "python -m traffic_source.rcrc_replay.load <report.csv> and restart the server"
+            )
+        spans = [run_window(mapping, start, end) for start, end in windows]
+        print("Reading the observations once for all test hours...", flush=True)
+        source = ObservationSource(
+            client,
+            min(span.epoch for span in spans) - timedelta(days=args.history_days),
+            max(span.run_end for span in spans),
+        )
+    except SourceNotReady as exc:
+        print(f"Nothing was run: {exc}.", file=sys.stderr)
+        return 2
+    except httpx2.HTTPError as exc:
+        print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
+        return 2
+
     prepared, skipped = [], []
-    for day in args.days:
-        for start, end in hour_windows(day):
-            for seed in args.seeds:
-                try:
-                    prepared.append(prepare_hour(
-                        client, mapping, start, end, seed,
-                        demand_root=args.out_root / "demand",
-                        mapping_path=args.mapping, network_path=args.net,
-                        history_days=args.history_days, free_flow_s=free_flow_s,
-                    ))
-                except HourSkipped as exc:
-                    skipped.append((start, seed, str(exc)))
-                except SourceNotReady as exc:
-                    print(f"Nothing was run: {exc}.", file=sys.stderr)
-                    return 2
-                except httpx2.HTTPError as exc:
-                    print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
-                    return 2
+    for number, (start, end) in enumerate(windows, start=1):
+        try:
+            runs, built = prepare_hour(
+                source, latest, mapping, start, end, args.seeds,
+                demand_root=args.out_root / "demand",
+                mapping_path=args.mapping, network_path=args.net,
+                history_days=args.history_days, free_flow_s=free_flow_s,
+            )
+            prepared += runs
+            print(f"  demand {number}/{len(windows)} ready ({start:%Y-%m-%d %H:%M}; "
+                  f"{built} seed(s) built, {len(runs) - built} reused)", flush=True)
+        except HourSkipped as exc:
+            skipped += [(start, seed, str(exc)) for seed in args.seeds]
+            print(f"  demand {number}/{len(windows)} skipped ({start:%Y-%m-%d %H:%M}): {exc}", flush=True)
+        except SourceNotReady as exc:
+            print(f"Nothing was run: {exc}.", file=sys.stderr)
+            return 2
+        except httpx2.HTTPError as exc:
+            print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
+            return 2
     print(f"{len(prepared)} runs to simulate ({len(args.days)} days, {len(args.seeds)} seed(s)); "
           f"{len(skipped)} skipped")
     for start, seed, reason in skipped:

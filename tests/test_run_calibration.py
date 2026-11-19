@@ -132,3 +132,48 @@ def test_hour_capacities_uses_the_kpi_engine_lane_groups():
         network.movement_attributes, program, demand, observed, detector_of_lane,
     )
     assert capacities[detectors[0].detector_id].within_capacity is None
+
+
+# ============================================================
+# READING THE OBSERVATIONS ONCE
+# ============================================================
+
+from types import SimpleNamespace
+
+import simulation.scripts.run_calibration as run_calibration
+
+
+def fake_observation(end):
+    return SimpleNamespace(interval_end=end, detector_id="D1", vehicle_count=1)
+
+
+def test_observation_source_slices_like_a_separate_request(monkeypatch):
+    ends = [END + step * timedelta(minutes=15) for step in range(8)]
+    calls = []
+
+    def fake_ingest(client, start, end):
+        calls.append((start, end))
+        return SimpleNamespace(observations=[fake_observation(e) for e in ends if start < e <= end], errors=[])
+
+    monkeypatch.setattr(run_calibration, "ingest_rcrc_observations", fake_ingest)
+    source = run_calibration.ObservationSource(None, ends[0] - timedelta(minutes=15), ends[-1])
+
+    items, rejected = source.between(ends[1], ends[4])      # (ends[1], ends[4]]
+    assert [item.interval_end for item in items] == ends[2:5]
+    assert rejected == 0
+    assert len(calls) == 1                                   # read once, then sliced
+
+
+def test_observation_source_falls_back_to_requests_when_rows_are_rejected(monkeypatch):
+    calls = []
+
+    def fake_ingest(client, start, end):
+        calls.append((start, end))
+        return SimpleNamespace(observations=[], errors=["bad row"])
+
+    monkeypatch.setattr(run_calibration, "ingest_rcrc_observations", fake_ingest)
+    source = run_calibration.ObservationSource(None, END, END + timedelta(hours=2))
+
+    items, rejected = source.between(END, END + timedelta(hours=1))
+    assert (items, rejected) == ([], 1)
+    assert len(calls) == 2                                   # the span, then the hour on its own

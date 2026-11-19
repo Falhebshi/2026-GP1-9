@@ -36,6 +36,20 @@ The target GEH < 5 for at least 85% of hourly flows follows the Wisconsin DOT ca
 
 **Limitations.** No travel times or queue lengths were observed, so delay and queues are checked only indirectly, through occupancy. Detector positions are modelled, not surveyed. Source time stamps are assumed to mark interval ends. The model runs a fixed signal plan where the real one is actuated. Slip and bypass demand rests on assumed shares.
 
+## Results 
+
+Calibration (30 Aug – 12 Sep 2026) and validation (27 Sep – 3 Oct 2026) were both run with 4 seeds and SUMO's default driver settings. No parameter was tuned, for the reasons below. The figures stay outside the repository, with the other RCRC-derived numbers, in `../jaadah-private-data/processed/calibration/results/calibration_final.*` and `validation_final.*`.
+
+- **Validation meets the target; calibration falls just short of it.** On all eligible detector-hours, validation reaches the 85% target and calibration misses it by a single detector-hour. Both sets are within sampling uncertainty of the 85% line, and the model behaves the same way on the unseen validation week as on the calibration weeks.
+- **Within capacity, both sets exceed the target.**
+- **The seeds agree closely.** The pass rates of the 4 seeds differ by about one percentage point, so 4 seeds are enough.
+- **North and South match almost completely; East matches well; West does not.**
+
+The misses have two causes, and neither is driver behaviour, so tuning the driver settings would only hide them:
+
+1. **Signal plan.** At its busiest hours, the West approach carries more traffic than the fixed Webster plan's green can serve, so SUMO passes fewer vehicles than were counted. The real controller is actuated and can give that approach more green. This is a limitation of the single fixed plan; see issue #70 (actuated signal).
+2. **Shared-lane split.** Where the plan has capacity, the remaining misses are on the East and West approaches: each approach's total matches, but vehicles are distributed differently across the lanes, in opposite directions on the two approaches, around the shared lanes `LANE_E_2` and `LANE_W_2`. This follows from the proportional split of the shared-lane counts between the left-turn and through movements, which is a demand assumption: RCRC supplied no turning counts. The split is not tuned, because the same detectors build the demand and check it, so fitting it to the score would be circular. A sensitivity check and a field count are proposed as future work.
+
 ## What is built
 
 | Module | What it does |
@@ -60,7 +74,7 @@ python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --set
 For each test hour and seed the runner:
 
 1. reads the hour, with its warm-up and clearance, from the replay source and builds the SUMO demand with the same steps as `run_baseline.py` (ingestion, demand transformation, departure planning, demand writer, demand checks). An hour whose demand cannot be built is skipped and listed, never filled in;
-2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>/` and reuses it on later runs, so tuning only reruns SUMO;
+2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>/` and reuses it on later runs, so tuning only reruns SUMO. The observations for all test hours, with their 35-day history, are read from the replay source once and sliced per hour (the source returns rows ordered by interval end, so a slice equals a separate request), and the seed-independent steps (ingestion, history, demand transformation) are done once per hour; only departure planning and the demand files are per seed;
 3. runs SUMO with the induction loops and without FCD output, with the same settings as a baseline run (`--begin 0`, step 0.4 s, the seed, `--random false`). Settings given with `--set` go on a copy of the route file; the generated demand is never changed;
 4. compares each detector-hour with the observed counts, on the mean of the seeds, and once per seed;
 5. calculates each lane group's capacity for the hour with the KPI engine, from the hour's movement demand and the signal plan in the network, and compares it with the lane group's observed volume (the sum of its detectors' counts).
@@ -68,6 +82,19 @@ For each test hour and seed the runner:
 It shows each SUMO run as it finishes, then prints the share of eligible detector-hours with GEH below 5 (all hours, which is the result, and within capacity), per approach and, with several seeds, per seed with the spread. A set with fewer than 100 detector-hours is marked indicative. It writes the detail (one row per detector-hour, with observed and simulated count, GEH, occupancy, lane group, its observed volume and capacity, and whether it is within capacity) and a summary to `../jaadah-private-data/processed/calibration/results/<label>.csv` and `.json`. These files hold numbers derived from RCRC data, so they stay in the private data folder.
 
 The runner reuses `run_baseline.py`'s constants and building blocks but repeats its short ingestion-to-demand sequence, because `run_baseline.py` runs SUMO in the same function. The tuning itself (choosing which settings to try) is done by hand with `--set`.
+
+## Charts
+
+```powershell
+python analysis/calibration/calibration_charts.py
+```
+
+`analysis/calibration/calibration_charts.py` reads `calibration_final.csv` and `validation_final.csv` (other files with `--calibration` and `--validation`) and draws two figures, calibration and validation side by side:
+
+- `observed_vs_simulated`: one point per detector-hour (mean of the seeds), the line of perfect agreement and the band where GEH < 5; within-capacity hours are blue circles and over-capacity hours orange triangles, so the distinction does not rely on colour alone;
+- `geh_distribution`: the number of detector-hours per GEH bin of 1, stacked by within and over capacity, with the GEH = 5 threshold marked and everything from 15 up in one bar.
+
+Each is written as PNG (300 dpi) and SVG to `../jaadah-private-data/processed/calibration/figures/`, because the figures show RCRC-derived values. The script needs `matplotlib` (in `requirements.txt`).
 
 ## Rules and why
 
@@ -87,5 +114,5 @@ The positions are the modelled lane end minus 1 m, copied from the synthetic pla
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py tests/test_run_calibration.py
+.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py tests/test_run_calibration.py tests/test_calibration_charts.py
 ```
