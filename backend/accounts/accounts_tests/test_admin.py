@@ -28,7 +28,7 @@ RIYADH = timezone(timedelta(hours=3))
 START = datetime(2026, 11, 18, 9, 0, tzinfo=RIYADH)
 
 # Artificial accounts, not real people
-ALIYAH = {"email": "aliyah@ksu.edu.sa", "password": "lantern desert noon falcon"}
+NOURA = {"email": "noura@ksu.edu.sa", "password": "lantern desert noon falcon"}
 SARA = {"email": "sara.q@moh.gov.sa", "password": "orbit maple quiet river"}
 NEW = {"name": "Omar Alharbi", "email": "omar@ksu.edu.sa", "password": "copper valley storm lamp"}
 
@@ -38,7 +38,7 @@ def storage(tmp_path):
     storage = AccountStorage(tmp_path / "accounts.db", now=lambda: START)
     storage.initialize()
     storage.create_account(
-        "Aliyah Alharbi", ALIYAH["email"], hash_password(ALIYAH["password"]), ROLE_ADMIN,
+        "Noura Almutairi", NOURA["email"], hash_password(NOURA["password"]), ROLE_ADMIN,
     )
     return storage
 
@@ -53,7 +53,7 @@ def client(storage):
 def admin(client):
     """The client, logged in as the administrator."""
 
-    client.post("/auth/login", json=ALIYAH)
+    client.post("/auth/login", json=NOURA)
     return client
 
 
@@ -124,7 +124,7 @@ def test_engineers_are_listed_with_name_email_and_status(admin, storage):
 def test_administrators_are_not_listed(admin):
     names = [e["name"] for e in admin.get("/admin/engineers").json()["engineers"]]
 
-    assert "Aliyah Alharbi" not in names
+    assert "Noura Almutairi" not in names
 
 
 def test_engineers_are_ordered_by_name_ignoring_case(admin, storage):
@@ -257,7 +257,7 @@ def test_an_email_that_already_has_an_account_is_refused(admin):
 
 
 def test_an_administrator_email_cannot_be_reused_for_an_engineer(admin):
-    response = admin.post("/admin/engineers", json={**NEW, "email": ALIYAH["email"]})
+    response = admin.post("/admin/engineers", json={**NEW, "email": NOURA["email"]})
 
     assert response.status_code == 409
 
