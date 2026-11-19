@@ -73,7 +73,7 @@ Then start the accounts server and keep it running while you use the website:
 python -m uvicorn backend.accounts.server:app --port 8003
 ```
 
-Check `http://127.0.0.1:8003/health`. Accounts are stored in `data/accounts/accounts.db`, which holds password hashes and is never committed. Engineers land on Network Traffic Overview and administrators on the Admin Dashboard. Password rules, sessions, and roles are described in [Accounts and Login](docs/accounts.md).
+Check `http://127.0.0.1:8003/health`. Accounts are stored in `data/accounts/accounts.db`, which holds password hashes and is never committed. When Jaadah is reached over HTTPS, set `JAADAH_SECURE_COOKIE=true` before starting it, so the session cookie is only sent over HTTPS. Engineers land on Network Traffic Overview and administrators on the Admin Dashboard. Password rules, sessions, and roles are described in [Accounts and Login](docs/accounts.md).
 
 ### Frontend
 

@@ -46,6 +46,8 @@ uvicorn backend.accounts.server:app --port 8003
 
 The database is created at `data/accounts/accounts.db`. It holds password hashes, so it is listed in `.gitignore` and never committed. Deleting it removes every account and session.
 
+When Jaadah is reached over HTTPS, start the server with `JAADAH_SECURE_COOKIE=true` so the session cookie is only sent over HTTPS (see [Sessions](#sessions)). On the local `http://localhost` website leave it unset.
+
 ---
 
 ## Roles and Pages
@@ -64,6 +66,8 @@ The database is created at `data/accounts/accounts.db`. It holds password hashes
 | The other role | sent to their own first page |
 
 Each role sees only what its job needs: an administrator's password gives no access to the traffic analysis, and an engineer's gives no access to account management. Administrators are created only by `create_admin`; the Admin Dashboard manages engineer accounts, never administrators.
+
+Someone already logged in who opens `/login` goes straight to their own first page.
 
 The component gallery (`/preview`) is for development and needs no login.
 
@@ -137,13 +141,15 @@ The same password hashed twice gives two different strings, so a copy of the dat
 
 | Step | Check | If it fails |
 |---|---|---|
-| 1 | The email has an account (emails compared trimmed and lowercased) | 401 Email or password is incorrect. |
-| 2 | The account's login is not [paused](#too-many-wrong-passwords) | 429 Too many attempts. Try again in 30 minutes. |
-| 3 | The password is right | 401 Email or password is incorrect. (the 5th wrong one in a row: 429) |
+| 1 | The email is at most 254 characters and the password at most 256 | 401 Email or password is incorrect. (not hashed) |
+| 2 | Login with this email is not [paused](#too-many-wrong-passwords) | 429 Too many attempts. Try again in 30 minutes. |
+| 3 | The email has an account and the password is right | 401 Email or password is incorrect. (the 5th wrong one in a row: 429) |
 | 4 | The account is active | 403 Your account is deactivated. Contact the administrator. |
 | 5 | | a session starts and the response is `{"user": {"id", "name", "email", "role"}}` |
 
-A wrong password and an unknown email get the same message. An unknown email is still checked against a stored dummy hash, so it takes about as long as a wrong password and the time does not reveal which emails have accounts.
+Emails are compared trimmed and lowercased. Step 1 stops a multi-megabyte "password" from being hashed; no real login is affected, because passwords are at most 64 characters and an email address at most 254 (RFC 5321).
+
+**Nothing in the answers reveals which emails have accounts.** A wrong password and an unknown email get the same message; every answer after step 1 runs exactly one password check (against a stored dummy hash when the email has no account, and while paused), so it takes about as long; and the pause works per email typed, the same with or without an account.
 
 A deactivated account is told so **only after the correct password**. The real engineer learns why login fails; someone guessing learns nothing:
 
@@ -154,7 +160,17 @@ A deactivated account is told so **only after the correct password**. The real e
 
 ### Too Many Wrong Passwords
 
-NIST requires limiting failed attempts, to no more than 100 in a row. In Jaadah, **5 wrong passwords in a row pause that account's login for 30 minutes**. During the pause even the correct password is refused; a correct password afterwards sets the count back to 0. The values are Jaadah's choice within the NIST limit:
+NIST requires limiting failed attempts, to no more than 100 in a row. In Jaadah, **5 wrong passwords in a row for one email pause login with that email for 30 minutes**. During the pause even the correct password is refused; a correct password afterwards sets the count back to 0. The values are Jaadah's choice within the NIST limit.
+
+The count is kept **per email typed**, not per account, so an email without an account behaves exactly like one with an account. Otherwise "Too many attempts" would appear only for real accounts and tell anyone which emails are Jaadah users:
+
+| Attempt | `sara.q@moh.gov.sa` (has an account) | `nobody@moh.gov.sa` (no account) |
+|---|---|---|
+| 1 to 4, wrong password | 401 Email or password is incorrect. | 401 Email or password is incorrect. |
+| 5, wrong password | 429 Too many attempts… | 429 Too many attempts… |
+| 6, any password, within 30 minutes | 429 Too many attempts… | 429 Too many attempts… |
+
+For Sara's account:
 
 | Time | Attempt | Result |
 |---|---|---|
@@ -163,7 +179,9 @@ NIST requires limiting failed attempts, to no more than 100 in a row. In Jaadah,
 | 09:29:59 | correct password | 429 |
 | 09:30 | correct password | logged in, count back to 0 |
 
-This allows at most 240 guesses a day on one account. A stranger who knows an email can delay that engineer by 30 minutes, but cannot lock them out until an administrator acts. The count is kept per account (`failed_logins` and `login_paused_until` in `accounts`).
+A count is **forgotten after 30 minutes without a wrong password** (once any pause is over). This applies to every email alike, and stops someone from filling the database by typing many made-up emails: the old rows are deleted before each new wrong password is counted, and when the server starts.
+
+This allows at most 240 guesses a day on one email. A stranger who knows an email can delay that engineer by 30 minutes, but cannot lock them out until an administrator acts.
 
 ---
 
@@ -177,6 +195,7 @@ After login the server creates a **session**: a random 256-bit token sent to the
 | `SameSite=Strict` | not sent when another site links to Jaadah |
 | `Path=/` | sent with every request to the website |
 | `Max-Age=28800` | the browser forgets it after 8 hours |
+| `Secure` (when `JAADAH_SECURE_COOKIE=true`) | sent over HTTPS only |
 
 The server stores only the token's SHA-256, so a copy of the database cannot be used to log in. The website keeps nothing about the session itself; it asks the server.
 
@@ -204,7 +223,11 @@ So an engineer working on one page, such as the simulation, stays logged in, whi
 
 The 30 minutes is the top of OWASP's 15 to 30 minute range for low-risk applications, and stricter than NIST asks for a password-only login (an inactivity timeout is optional; the overall limit at most 30 days).
 
+Logging in again in the same browser ends that browser's previous session, so its old token stops working at once.
+
 **Logout** (`POST /auth/logout`) deletes the session on the server and removes the cookie, so the old token no longer works even if sent again (PBI 32). Logging out twice, or without a session, does nothing.
+
+The cookie is HttpOnly, so only the server can remove it. If the server cannot be reached, the session is still open: the user stays on the page and a notice under the nav bar says "Could not log out: the login service is not responding. Try again." They are never shown the Login page while still logged in.
 
 Sessions are removed at once when an account is deleted (the database deletes them with the account) and stop working at once when an account is not active.
 
@@ -260,7 +283,6 @@ The password hash is never sent.
 | `status` | `active` or `inactive` |
 | `password_hash` | the Argon2id string |
 | `created_at` | when the account was created |
-| `failed_logins`, `login_paused_until` | wrong passwords in a row, and the end of a pause |
 
 **sessions**: one row per logged-in browser.
 
@@ -271,13 +293,22 @@ The password hash is never sent.
 | `expires_at` | 8 hours after login |
 | `last_seen_at` | the latest request |
 
+**login_attempts**: one row per email with recent wrong passwords, whether or not an account has that email.
+
+| Column | Meaning |
+|---|---|
+| `email` | as typed, trimmed and lowercased |
+| `failed_logins` | wrong passwords in a row |
+| `last_failed_at` | the latest wrong password |
+| `paused_until` | the end of a login pause, if any |
+
 Times are stored in UTC: they are only compared, never shown. A session started at 09:00 Riyadh time is stored as 06:00 UTC.
 
 ---
 
 ## Security Limits
 
-- **HTTPS.** The local website runs on `http://localhost`, so the cookie is sent without the `Secure` flag. NFR-03 requires HTTPS when Jaadah is reached over a network; the cookie must then be `Secure` (`secure=True` in `server.py`).
+- **HTTPS.** The local website runs on `http://localhost`, so the cookie is sent without the `Secure` flag. NFR-03 requires HTTPS when Jaadah is reached over a network; start the accounts server with `JAADAH_SECURE_COOKIE=true` there.
 - **Traffic servers.** Only the website checks the role; the traffic servers answer without a session.
 - **Passwords set by an administrator.** The administrator knows an engineer's password when handing it over, and engineers cannot change their own password.
 
@@ -289,13 +320,13 @@ Times are stored in UTC: they are only compared, never shown. A session started 
 python -m pytest backend/accounts
 ```
 
-86 tests, all with artificial accounts and temporary databases:
+109 tests, all with artificial accounts and temporary databases:
 
 | File | Tests | Covers |
 |---|---|---|
 | `test_passwords.py` | 25 | length limits and code points, NFC, the common-password list (whole password, any case), the name, email and "jaadah" rule, Argon2id settings, salts, wrong and damaged hashes |
-| `test_storage.py` | 28 | accounts (random ids, lowercase unique emails, roles), the pause after 5 wrong passwords, sessions (SHA-256 only, 8 hours, 30 minutes idle, logout, inactive and deleted accounts) |
-| `test_server.py` | 22 | login for both roles, cookie settings, the same message for wrong password and unknown email, the deactivated message only with the right password, the 30-minute pause, logout, both session limits, the hash never sent |
+| `test_storage.py` | 34 | accounts (random ids, lowercase unique emails, roles), the pause per email with and without an account, forgetting old counts, made-up emails not piling up, sessions (SHA-256 only, 8 hours, 30 minutes idle, logout, inactive and deleted accounts) |
+| `test_server.py` | 39 | login for both roles, cookie settings and `JAADAH_SECURE_COOKIE`, the same answers and one password check per attempt for real and unknown emails (also over 6 attempts and while paused), input length limits, the deactivated message only with the right password, the 30-minute pause, logging in again, logout, both session limits, the hash never sent |
 | `test_create_admin.py` | 11 | creating an administrator who can then log in, refused passwords, names, emails and duplicates, running as a module |
 
 For the website, `npm run lint` and `npm run build` in `frontend/`.
