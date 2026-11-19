@@ -13,18 +13,25 @@ backend/
 └── accounts/
     ├── passwords.py           password rules, hashing and checking
     ├── common_passwords.txt   common passwords that are refused
+    ├── passphrase.py          random passphrases for the Generate button
+    ├── eff_large_wordlist.txt the EFF word list the passphrases come from
     ├── storage.py             SQLite storage: accounts and sessions
-    ├── server.py              FastAPI service: login, logout, who is logged in
+    ├── server.py              FastAPI service: login, logout, who is logged in,
+    │                          and the administrator endpoints
     ├── create_admin.py        command that creates an administrator
     └── accounts_tests/        tests
 
 frontend/src/
-├── services/authService.js    calls to the accounts server
+├── services/authService.js    login calls to the accounts server
+├── services/adminService.js   administrator calls to the accounts server
 ├── components/RequireRole.jsx which pages each role can open
-└── pages/AdminDashboard.jsx   the administrator's first page
+└── pages/
+    ├── AdminDashboard.jsx     the administrator's page
+    └── admin/                 its parts: the engineer list, the details
+                               panel, the Create account form
 ```
 
-This document covers the backlog items PBI 31 (log in), PBI 32 (log out) and the account parts of NFR-03 (security). The standards behind each rule are listed under [Sources](#sources).
+This document covers the backlog items PBI 31 (log in), PBI 32 (log out), ADM-02 (list engineers), ADM-01 (create engineer accounts) and the account parts of NFR-03 (security). The standards behind each rule are listed under [Sources](#sources).
 
 ---
 
@@ -33,10 +40,20 @@ This document covers the backlog items PBI 31 (log in), PBI 32 (log out) and the
 The accounts database starts empty and Jaadah has no default login, so create an administrator once:
 
 ```bash
-python -m backend.accounts.create_admin --name "Aliyah Alharbi" --email aliyah@ksu.edu.sa
+python -m backend.accounts.create_admin --name "Noura Almutairi" --email noura@ksu.edu.sa
 ```
 
 It asks for the password twice without showing it on screen, checks it with the [password rules](#password-rules), and stores only its hash. Run it again for each extra administrator.
+
+To set up your own laptop in one step, add `--engineer-email` to also create your traffic engineer account, with the same name and password:
+
+```bash
+python -m backend.accounts.create_admin --name "Noura Almutairi" --email noura.admin@ksu.edu.sa --engineer-email noura@ksu.edu.sa
+```
+
+The two emails must differ, the password must not be made of the name or either email, and if either email already has an account nothing is created.
+
+Accounts live in each laptop's own database: an account created on one laptop does not exist on another. Each teammate sets up their own. Engineer accounts are created by an administrator on the [Admin Dashboard](#admin-dashboard).
 
 Then start the accounts server next to the website:
 
@@ -75,11 +92,67 @@ These checks are in the website. The traffic servers (ports 8000 to 8002) do not
 
 ---
 
+## Admin Dashboard
+
+The Admin Dashboard (`/admin`) has the list of engineer accounts on the left and a **panel** on the right (under the list on a narrow screen).
+
+### The List of Engineers (ADM-02)
+
+Every engineer account, with its name, email and status, ordered by name A to Z ignoring capital letters. Administrators are not listed: they are managed only with `create_admin`.
+
+| Status | Shown as |
+|---|---|
+| `active` | green "Active" badge |
+| `inactive` | grey "Inactive" badge |
+
+With no engineer accounts the page says "No engineer accounts yet" and invites the administrator to create one.
+
+Clicking an engineer selects them (their row turns lavender with an indigo bar) and opens their **details** in the panel: email, status and the date the account was created (in Riyadh time). The account actions are added to this panel by their own backlog items: activate or deactivate (ADM-03), change password (ADM-05) and delete (ADM-04). Until then the panel says "Account actions will appear here."
+
+### Creating an Engineer Account (ADM-01)
+
+**Create account** opens the form in the panel:
+
+| Field | Checked in the browser | Checked again by the server |
+|---|---|---|
+| Name | not empty | not empty, at most 100 characters |
+| Work email | looks like `name@organization.gov.sa` | the same, at most 254 characters, and no account already has it |
+| Password | 15 to 64 characters | all the [password rules](#password-rules) |
+| Confirm password | the same as the password | |
+
+The password is hidden by default, with **Show**/**Hide**, **Copy**, and **Generate**, which fills both password fields with a [random passphrase](#generated-passphrases).
+
+**Create account** on the form opens a **confirmation** step showing the name, email, role ("Traffic engineer") and the password, hidden unless the administrator selects Show. **Back** returns to the form with everything kept; **Confirm** creates the account. If the server refuses something (the email already has an account, a common password, a password made of the person's name), the form comes back with the message under that field.
+
+After the account is created, the new engineer appears in the list, selected, with "Account created for Omar Alharbi." The password is then **not shown or kept anywhere**: only its Argon2id hash is stored. The form says so before confirming: "Copy the password before you confirm; it won't be shown again." A name or email cannot be edited afterwards; a forgotten password is replaced with Change password (ADM-05).
+
+The new engineer can log in at once and lands on Network Traffic Overview.
+
+### Generated Passphrases
+
+**Generate** asks the server for five words picked at random from the **EFF large word list** (7,776 words) with Python's `secrets` module, joined by hyphens:
+
+```text
+lantern-orbit-maple-quiet-river
+```
+
+Each word adds log2(7,776) = 12.9 bits of randomness, so five words give about 65 bits. The words have 3 to 9 letters, so a passphrase is always 19 to 49 characters, inside the 15 to 64 rule. The server still checks it like any password. NIST allows a password either chosen by the user or "assigned randomly by the CSP"; a five-word phrase is far easier to type and hand over than a random string of the same strength.
+
+`eff_large_wordlist.txt` is kept exactly as EFF publishes it, so its SHA-256 can be compared with EFF's file at https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt:
+
+```text
+addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e
+```
+
+The EFF Large Wordlist for Passphrases is by Joseph Bonneau and the Electronic Frontier Foundation (2016), https://www.eff.org/dice, licensed under Creative Commons Attribution 3.0 United States (CC BY 3.0 US). The copy comes from EFF's repository `EFForg/eff_diceware`.
+
+---
+
 ## Password Rules
 
 `password_problem(password, name, email)` returns why a new password is refused, or `None`. The same rules apply to every account and to `create_admin`. They follow NIST SP 800-63B-4, which applies when a password is the only login factor, as in Jaadah.
 
-The password is first normalised to Unicode NFC, so "é" typed as one character or as "e" plus an accent is the same password. Then, in order:
+The same rules apply to passwords typed by an administrator, generated passphrases and `create_admin`. The password is first normalised to Unicode NFC, so "é" typed as one character or as "e" plus an accent is the same password. Then, in order:
 
 | Rule | Refused example | Message |
 |---|---|---|
@@ -227,7 +300,7 @@ Logging in again in the same browser ends that browser's previous session, so it
 
 **Logout** (`POST /auth/logout`) deletes the session on the server and removes the cookie, so the old token no longer works even if sent again (PBI 32). Logging out twice, or without a session, does nothing.
 
-The cookie is HttpOnly, so only the server can remove it. If the server cannot be reached, the session is still open: the user stays on the page and a notice under the nav bar says "Could not log out: the login service is not responding. Try again." They are never shown the Login page while still logged in.
+The cookie is HttpOnly, so only the server can remove it. If the server cannot be reached, the session is still open: the user stays on the page and a notice under the nav bar says "Could not log out: the login service is not responding. Try again." The notice belongs to that page and is not shown after moving to another one. They are never shown the Login page while still logged in.
 
 Sessions are removed at once when an account is deleted (the database deletes them with the account) and stop working at once when an account is not active.
 
@@ -265,7 +338,52 @@ Errors are `{"detail": "<message>"}` with `401`, `403` or `429`, as listed under
 
 The logged-in user, in the same shape as the login response, or `401` `{"detail": "Log in to continue."}`.
 
-The password hash is never sent.
+### Administrator Endpoints
+
+Without a session these answer `401` `{"detail": "Log in to continue."}`; for an engineer, `403` `{"detail": "Only administrators can do this."}`.
+
+#### `GET /admin/engineers`
+
+```json
+{"engineers": [
+  {"id": "3f9a…", "name": "Omar Alharbi", "email": "omar@ksu.edu.sa",
+   "status": "active", "created_at": "2026-11-18T06:00:00+00:00"}
+]}
+```
+
+Ordered by name, ignoring capital letters. `created_at` is in UTC.
+
+#### `POST /admin/engineers`
+
+Request:
+
+```json
+{"name": "Omar Alharbi", "email": "omar@ksu.edu.sa", "password": "copper valley storm lamp"}
+```
+
+Response `201`: the new engineer, in the shape above. A refused field answers `400` (or `409` for an email that already has an account) with the field and a message to show under it:
+
+```json
+{"detail": {"field": "password", "message": "This password is too common. Choose another one."}}
+```
+
+| Field | Messages |
+|---|---|
+| `name` | Enter the engineer's name. · Use at most 100 characters. |
+| `email` | Enter an email address like name@organization.gov.sa. · An account with this email already exists. (409) |
+| `password` | any [password rule](#password-rules) message |
+
+A refused password is never hashed.
+
+#### `GET /admin/passphrase`
+
+```json
+{"passphrase": "lantern-orbit-maple-quiet-river"}
+```
+
+A new one on every request.
+
+The password hash is never sent by any endpoint.
 
 ---
 
@@ -320,14 +438,15 @@ Times are stored in UTC: they are only compared, never shown. A session started 
 python -m pytest backend/accounts
 ```
 
-109 tests, all with artificial accounts and temporary databases:
+155 tests, all with artificial accounts and temporary databases:
 
 | File | Tests | Covers |
 |---|---|---|
 | `test_passwords.py` | 25 | length limits and code points, NFC, the common-password list (whole password, any case), the name, email and "jaadah" rule, Argon2id settings, salts, wrong and damaged hashes |
 | `test_storage.py` | 34 | accounts (random ids, lowercase unique emails, roles), the pause per email with and without an account, forgetting old counts, made-up emails not piling up, sessions (SHA-256 only, 8 hours, 30 minutes idle, logout, inactive and deleted accounts) |
 | `test_server.py` | 39 | login for both roles, cookie settings and `JAADAH_SECURE_COOKIE`, the same answers and one password check per attempt for real and unknown emails (also over 6 attempts and while paused), input length limits, the deactivated message only with the right password, the 30-minute pause, logging in again, logout, both session limits, the hash never sent |
-| `test_create_admin.py` | 11 | creating an administrator who can then log in, refused passwords, names, emails and duplicates, running as a module |
+| `test_admin.py` | 38 | administrators only (401 and 403 on every admin endpoint), the list (fields, empty, no administrators, order by name ignoring case, inactive status), creating an engineer (role, Argon2id hash, appears in the list, can log in, trimmed and lowercased, every refused field and its message, duplicate emails including an administrator's, refused passwords never hashed), the word list's SHA-256, passphrase shape, strength and length |
+| `test_create_admin.py` | 19 | creating an administrator who can then log in, refused passwords, names, emails and duplicates, running as a module; with `--engineer-email`, both accounts with the same password and their own salts, both able to log in, different emails required, nothing created if either email is taken, the engineer email in the password rule |
 
 For the website, `npm run lint` and `npm run build` in `frontend/`.
 
@@ -339,4 +458,5 @@ For the website, `npm run lint` and `npm run build` in `frontend/`.
 - OWASP Password Storage Cheat Sheet, https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html: Argon2id and its minimum settings.
 - OWASP Session Management Cheat Sheet, https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html: idle timeout ranges.
 - UK National Cyber Security Centre, list of the 100,000 most used passwords (2019), with Have I Been Pwned; copy from SecLists, MIT License.
-- Jaadah Product Backlog: PBI 31, PBI 32 and NFR-03.
+- Joseph Bonneau and the Electronic Frontier Foundation, EFF Large Wordlist for Passphrases (2016), https://www.eff.org/dice, CC BY 3.0 US.
+- Jaadah Product Backlog: PBI 31, PBI 32, ADM-01, ADM-02 and NFR-03.
