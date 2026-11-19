@@ -33,6 +33,10 @@ Administrators only (401 without a session, 403 for engineers):
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
 
+Every answer carries Cache-Control: no-store, so the browser never keeps
+a copy of account data (a generated password, the engineer list, who is
+logged in) after the page is closed.
+
 Setting: JAADAH_SECURE_COOKIE=true marks the session cookie Secure (sent
 over HTTPS only). Set it whenever Jaadah is reached over HTTPS; leave it
 unset for the local http://localhost website.
@@ -74,6 +78,10 @@ SECURE_COOKIE_SETTING = "JAADAH_SECURE_COOKIE"
 # (RFC 5321), so no real login is affected.
 MAX_LOGIN_EMAIL = 254
 MAX_LOGIN_PASSWORD = 256
+
+# Sent with every answer: account data is never cached (OWASP Web Cache
+# Security Cheat Sheet: no-store for responses with sensitive data)
+NO_STORE = "no-store"
 
 # The browser keeps the session token in this cookie
 SESSION_COOKIE = "jaadah_session"
@@ -207,6 +215,13 @@ def create_app(
         yield
 
     app = FastAPI(title="Jaadah accounts", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def never_cache(request: Request, call_next):
+        # Runs around every request, errors included
+        response = await call_next(request)
+        response.headers["Cache-Control"] = NO_STORE
+        return response
 
     def current_account(request: Request) -> Account:
         """The account of this request's session; 401 without a valid one."""

@@ -90,6 +90,25 @@ def test_an_engineer_gets_403_from_admin_endpoints(client, storage, method, path
     assert response.json()["detail"] == ADMINS_ONLY
 
 
+def test_every_admin_answer_says_never_cache_it(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    fahad = add_engineer(storage, "Fahad Alotaibi", "fahad@ksu.edu.sa")
+
+    responses = [
+        admin.get("/admin/engineers"),
+        admin.get("/admin/passphrase"),
+        admin.post("/admin/engineers", json=NEW),
+        admin.post("/admin/engineers", json={**NEW, "password": "short"}),   # refused
+        admin.post(f"/admin/engineers/{sara.id}/status", json={"status": "inactive"}),
+        admin.post(f"/admin/engineers/{sara.id}/password", json={"password": "silver harbor quiet lamp"}),
+        admin.delete(f"/admin/engineers/{fahad.id}"),
+        admin.delete(f"/admin/engineers/{fahad.id}"),                         # 404
+    ]
+
+    assert [r.status_code for r in responses] == [200, 200, 201, 400, 200, 200, 204, 404]
+    assert all(r.headers["cache-control"] == "no-store" for r in responses)
+
+
 def test_an_engineer_cannot_create_an_account(client, storage):
     add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
     client.post("/auth/login", json=SARA)

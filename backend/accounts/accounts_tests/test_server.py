@@ -409,3 +409,21 @@ def test_a_failed_login_keeps_the_current_session(client):
     log_in(client, SARA["email"], "not the right password")
 
     assert client.get("/auth/me").status_code == 200
+
+
+# ============================================================
+# CACHING
+# ============================================================
+
+def test_every_answer_says_never_cache_it(client):
+    responses = [
+        client.get("/health"),
+        client.get("/auth/me"),                                     # 401
+        log_in(client, SARA["email"], "not the right password"),    # 401
+        log_in(client, **SARA),
+        client.get("/auth/me"),
+        client.post("/auth/logout"),
+    ]
+
+    assert [r.status_code for r in responses] == [200, 401, 401, 200, 200, 204]
+    assert all(r.headers["cache-control"] == "no-store" for r in responses)
