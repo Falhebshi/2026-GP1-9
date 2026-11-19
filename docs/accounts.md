@@ -165,7 +165,7 @@ Deleting is for an account that should not come back, such as one created with a
 
 The password is hidden by default, with **Show**/**Hide**, **Copy**, and **Generate**, which fills both password fields with a [random passphrase](#generated-passphrases).
 
-**Create account** on the form opens a **confirmation** step showing the name, email, role ("Traffic engineer") and the password, hidden unless the administrator selects Show. **Back** returns to the form with everything kept; **Confirm** creates the account. If the server refuses something (the email already has an account, a common password, a password made of the person's name), the form comes back with the message under that field.
+**Create account** on the form opens a **confirmation** step showing the name, email, role ("Traffic engineer") and the password, hidden unless the administrator selects Show, with its own **Copy** button. **Back** returns to the form with everything kept; **Confirm** creates the account. If the server refuses something (the email already has an account, a common password, a password made of the person's name), the form comes back with the message under that field.
 
 After the account is created, the new engineer appears in the list, selected, with "Account created for Omar Alharbi." The password is then **not shown or kept anywhere**: only its Argon2id hash is stored. The form says so before confirming: "Copy the password before you confirm; it won't be shown again." A name or email cannot be edited afterwards; a forgotten password is replaced with Change password (ADM-05).
 
@@ -440,6 +440,8 @@ A new one on every request.
 
 The password hash is never sent by any endpoint.
 
+Every answer from the accounts server, errors included, carries `Cache-Control: no-store`, so the browser never keeps a copy of account data: a generated password, the engineer list, or who is logged in.
+
 ---
 
 ## Storage
@@ -493,14 +495,14 @@ Times are stored in UTC: they are only compared, never shown. A session started 
 python -m pytest backend/accounts
 ```
 
-189 tests, all with artificial accounts and temporary databases:
+191 tests, all with artificial accounts and temporary databases:
 
 | File | Tests | Covers |
 |---|---|---|
 | `test_passwords.py` | 25 | length limits and code points, NFC, the common-password list (whole password, any case), the name, email and "jaadah" rule, Argon2id settings, salts, wrong and damaged hashes |
 | `test_storage.py` | 34 | accounts (random ids, lowercase unique emails, roles), the pause per email with and without an account, forgetting old counts, made-up emails not piling up, sessions (SHA-256 only, 8 hours, 30 minutes idle, logout, inactive and deleted accounts) |
-| `test_server.py` | 39 | login for both roles, cookie settings and `JAADAH_SECURE_COOKIE`, the same answers and one password check per attempt for real and unknown emails (also over 6 attempts and while paused), input length limits, the deactivated message only with the right password, the 30-minute pause, logging in again, logout, both session limits, the hash never sent |
-| `test_admin.py` | 72 | administrators only (401 and 403 on every admin endpoint), the list (fields, empty, no administrators, order by name ignoring case, inactive status), creating an engineer (role, Argon2id hash, appears in the list, can log in, trimmed and lowercased, every refused field and its message, duplicate emails including an administrator's, refused passwords never hashed), the word list's SHA-256, passphrase shape, strength and length; deactivating (status, sessions ended at once, login refused, other engineers and the admin unaffected), reactivating (can log in again), unknown and administrator ids (404), invalid statuses, engineers refused; changing a password (new one works, old one refused, new Argon2id hash, never sent back, sessions ended, login pause cleared, other engineers and the status unaffected, every refused password with its message and never hashed, the name rule using that engineer's name, unknown and administrator ids, engineers refused); deleting (removed from the list, cannot log in, sessions ended, the email reusable, a second delete 404, other engineers unaffected, administrators cannot be deleted, engineers refused) |
+| `test_server.py` | 40 | login for both roles, cookie settings and `JAADAH_SECURE_COOKIE`, the same answers and one password check per attempt for real and unknown emails (also over 6 attempts and while paused), input length limits, the deactivated message only with the right password, the 30-minute pause, logging in again, logout, both session limits, the hash never sent, `Cache-Control: no-store` on every answer |
+| `test_admin.py` | 73 | administrators only (401 and 403 on every admin endpoint), the list (fields, empty, no administrators, order by name ignoring case, inactive status), creating an engineer (role, Argon2id hash, appears in the list, can log in, trimmed and lowercased, every refused field and its message, duplicate emails including an administrator's, refused passwords never hashed), the word list's SHA-256, passphrase shape, strength and length; deactivating (status, sessions ended at once, login refused, other engineers and the admin unaffected), reactivating (can log in again), unknown and administrator ids (404), invalid statuses, engineers refused; changing a password (new one works, old one refused, new Argon2id hash, never sent back, sessions ended, login pause cleared, other engineers and the status unaffected, every refused password with its message and never hashed, the name rule using that engineer's name, unknown and administrator ids, engineers refused); deleting (removed from the list, cannot log in, sessions ended, the email reusable, a second delete 404, other engineers unaffected, administrators cannot be deleted, engineers refused); `Cache-Control: no-store` on every admin answer, refusals included |
 | `test_create_admin.py` | 19 | creating an administrator who can then log in, refused passwords, names, emails and duplicates, running as a module; with `--engineer-email`, both accounts with the same password and their own salts, both able to log in, different emails required, nothing created if either email is taken, the engineer email in the password rule |
 
 For the website, `npm run lint` and `npm run build` in `frontend/`.
