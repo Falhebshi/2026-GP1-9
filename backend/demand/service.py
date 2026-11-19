@@ -1203,7 +1203,9 @@ def transform_observations(
             share_config=share_config,
             config=config,
             scenario=share_scenario,
-            sources={observation.source for observation in observations},
+            # With the history, as in find_window_gaps: a silent window
+            # still has a source to estimate for.
+            sources={observation.source for observation in observations + valid_history},
             intervals=(
                 window_intervals(window_start, window_end)
                 if window_start is not None
@@ -1230,7 +1232,7 @@ def transform_observations(
     if window_start is not None:
         errors.extend(
             find_window_gaps(
-                observations=observations,
+                observations=observations + valid_history,
                 config=config,
                 handled=(
                     set(groups) | set(allocated) | set(blocked) | set(imputed)
@@ -1260,6 +1262,12 @@ def find_window_gaps(
     """
     Report every movement and interval of the window that received no
     observation at all, so the window is fully accounted for.
+
+    The sources checked are those of the observations, which include the
+    history: in a window in which a whole site was silent (the live loop
+    builds one interval at a time), the batch itself can be empty, and
+    the history still says which source the run is for. Only with no
+    observation at all are all mapped sources checked.
     """
 
     sources = sorted(

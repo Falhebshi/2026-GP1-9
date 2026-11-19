@@ -914,3 +914,39 @@ def test_live_outage_stops_being_estimated_after_the_gap_limit() -> None:
     )
 
     assert result.demands == []
+
+
+def make_two_source_config() -> NetworkMappingConfig:
+    """make_config() plus an RCRC detector at another site, so two sources are mapped."""
+
+    data = make_config().model_dump(mode="json")
+    data["detector_mappings"].append({
+        **make_detector_mapping(
+            detector_id="R1", approach_id="APP_N", movement_ids=["MOV_N_E"], mapping_status="usable",
+        ),
+        "source": "rcrc",
+        "site_id": "1444",
+    })
+    return NetworkMappingConfig.model_validate(data)
+
+
+def test_a_silent_window_is_checked_only_for_the_source_of_the_history() -> None:
+    """
+    The live loop builds one interval at a time, so in an outage the batch is
+    empty. The history says the run is synthetic: the RCRC detector mapped for
+    the same movement must not be reported missing.
+    """
+
+    result = transform_observations(
+        observations=[],
+        config=make_two_source_config(),
+        history=make_site_history(days=22),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+    )
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert not [error for error in result.errors if "R1" in error.message]
