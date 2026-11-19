@@ -316,3 +316,132 @@ def test_the_passphrase_endpoint_gives_a_new_one_each_time(admin):
 
     assert first != second
     assert len(first.split("-")) >= 5
+
+
+# ============================================================
+# ACTIVATE AND DEACTIVATE (ADM-03)
+# ============================================================
+
+def set_status(client, account_id, new_status):
+    return client.post(f"/admin/engineers/{account_id}/status", json={"status": new_status})
+
+
+def logged_in_engineer(storage, email=SARA["email"], password=SARA["password"]):
+    """A second browser, logged in as the engineer."""
+
+    engineer = TestClient(create_app(storage))
+    engineer.__enter__()
+    engineer.post("/auth/login", json={"email": email, "password": password})
+    return engineer
+
+
+def test_deactivating_makes_the_status_inactive(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+
+    response = set_status(admin, sara.id, "inactive")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "inactive"
+    assert admin.get("/admin/engineers").json()["engineers"][0]["status"] == "inactive"
+
+
+def test_deactivating_ends_the_engineer_s_session_at_once(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    engineer = logged_in_engineer(storage)
+    assert engineer.get("/auth/me").status_code == 200
+
+    set_status(admin, sara.id, "inactive")
+
+    assert engineer.get("/auth/me").status_code == 401
+    with sqlite3.connect(storage.database_path) as connection:
+        sessions = connection.execute(
+            "SELECT COUNT(*) FROM sessions WHERE account_id = ?", (sara.id,),
+        ).fetchone()
+    assert sessions == (0,)
+    engineer.__exit__(None, None, None)
+
+
+def test_a_deactivated_engineer_cannot_log_in(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    set_status(admin, sara.id, "inactive")
+
+    with TestClient(create_app(storage)) as engineer:
+        response = engineer.post("/auth/login", json=SARA)
+
+    assert response.status_code == 403
+
+
+def test_reactivating_lets_the_engineer_log_in_again(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    set_status(admin, sara.id, "inactive")
+
+    response = set_status(admin, sara.id, "active")
+
+    assert response.json()["status"] == "active"
+    with TestClient(create_app(storage)) as engineer:
+        assert engineer.post("/auth/login", json=SARA).status_code == 200
+
+
+def test_reactivating_does_not_end_other_sessions(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    engineer = logged_in_engineer(storage)
+
+    set_status(admin, sara.id, "active")          # already active
+
+    assert engineer.get("/auth/me").status_code == 200
+    engineer.__exit__(None, None, None)
+
+
+def test_deactivating_one_engineer_leaves_the_others(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    add_engineer(storage, "Omar Alharbi", NEW["email"], NEW["password"])
+    omar = logged_in_engineer(storage, NEW["email"], NEW["password"])
+
+    set_status(admin, sara.id, "inactive")
+
+    assert omar.get("/auth/me").status_code == 200
+    statuses = {e["name"]: e["status"] for e in admin.get("/admin/engineers").json()["engineers"]}
+    assert statuses == {"Sara Alqahtani": "inactive", "Omar Alharbi": "active"}
+    omar.__exit__(None, None, None)
+
+
+def test_the_admin_s_own_session_is_not_affected(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"])
+
+    set_status(admin, sara.id, "inactive")
+
+    assert admin.get("/auth/me").status_code == 200
+
+
+def test_an_unknown_account_answers_no_longer_exists(admin):
+    response = set_status(admin, "0" * 32, "inactive")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "This account no longer exists."
+
+
+def test_an_administrator_cannot_be_deactivated(admin, storage):
+    noura = storage.find_login(NOURA["email"]).account
+
+    response = set_status(admin, noura.id, "inactive")
+
+    assert response.status_code == 404
+    assert storage.get_account(noura.id).status == "active"
+
+
+def test_only_active_or_inactive_are_accepted(admin, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"])
+
+    response = set_status(admin, sara.id, "suspended")
+
+    assert response.status_code == 422
+    assert storage.get_account(sara.id).status == "active"
+
+
+def test_an_engineer_cannot_change_a_status(client, storage):
+    sara = add_engineer(storage, "Sara Alqahtani", SARA["email"], SARA["password"])
+    omar = add_engineer(storage, "Omar Alharbi", NEW["email"], NEW["password"])
+    client.post("/auth/login", json=SARA)
+
+    assert set_status(client, omar.id, "inactive").status_code == 403
+    assert storage.get_account(omar.id).status == "active"

@@ -23,6 +23,8 @@ Administrators only (401 without a session, 403 for engineers):
     GET  /admin/engineers    every engineer account (ADM-02)
     POST /admin/engineers    create an engineer account (ADM-01)
     GET  /admin/passphrase   a random passphrase for the Generate button
+    POST /admin/engineers/{id}/status
+                             activate or deactivate an engineer (ADM-03)
 
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
@@ -34,6 +36,7 @@ unset for the local http://localhost website.
 
 import os
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -87,6 +90,9 @@ NAME_TOO_LONG = f"Use at most {MAX_NAME_LENGTH} characters."
 EMAIL_INVALID = "Enter an email address like name@organization.gov.sa."
 EMAIL_TAKEN = "An account with this email already exists."
 
+# For an action on an account another tab deleted (or an administrator's id)
+ACCOUNT_GONE = "This account no longer exists."
+
 # Checked when the email has no account, and while login is paused, so
 # every answer takes about one password check and the time does not
 # reveal which emails have accounts
@@ -133,6 +139,10 @@ class NewEngineer(BaseModel):
 
 class Passphrase(BaseModel):
     passphrase: str
+
+
+class NewStatus(BaseModel):
+    status: Literal["active", "inactive"]
 
 
 def engineer_of(account: Account) -> Engineer:
@@ -311,6 +321,19 @@ def create_app(
             )
         except DuplicateEmailError:
             raise field_error(409, "email", EMAIL_TAKEN) from None
+
+        return engineer_of(account)
+
+    @app.post("/admin/engineers/{account_id}/status")
+    def set_status(
+        account_id: str,
+        change: NewStatus,
+        admin: Account = Depends(current_admin),
+    ) -> Engineer:
+        # Deactivating also ends the engineer's sessions (storage.set_status)
+        account = accounts.set_status(account_id, change.status)
+        if account is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
 
         return engineer_of(account)
 

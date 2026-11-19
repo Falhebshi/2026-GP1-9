@@ -296,6 +296,38 @@ class AccountStorage:
 
         return [_account(row) for row in rows]
 
+    def get_engineer(self, account_id: str) -> Account | None:
+        """The engineer account with this id, or None (also for an administrator's id)."""
+
+        account = self.get_account(account_id)
+
+        return account if account is not None and account.role == ROLE_ENGINEER else None
+
+    def set_status(self, account_id: str, status: str) -> Account | None:
+        """Set an engineer's status; return the account, or None if no such engineer.
+
+        Making an account inactive also ends all its sessions at once, so
+        the engineer loses access immediately (ADM-03).
+        """
+
+        if status not in (STATUS_ACTIVE, STATUS_INACTIVE):
+            raise ValueError(f"unknown status: {status}")
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE accounts SET status = ? WHERE id = ? AND role = ?",
+                (status, account_id, ROLE_ENGINEER),
+            )
+            if cursor.rowcount == 0:
+                return None
+
+            if status == STATUS_INACTIVE:
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,),
+                )
+
+        return self.get_account(account_id)
+
     def find_login(self, email: str) -> LoginRecord | None:
         """Return what login needs for the account with this email, or None."""
 
