@@ -17,7 +17,7 @@ from backend.ingestion.client import RcrcBatch
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.traffic import ImputationMethod
 from simulation.live.demand import build_interval_demand, estimated_interval
-from simulation.live.loop import MAX_CATCH_UP, LiveLoop, LoopSettings
+from simulation.live.loop import MAX_CATCH_UP, MAX_FAILURES, LiveLoop, LoopSettings
 from traffic_source.rcrc_replay.config import RIYADH
 from traffic_source.rcrc_replay.report import RCRC_COLUMNS, read_rcrc_report
 from traffic_source.rcrc_replay.storage import RcrcReplayStorage
@@ -318,6 +318,27 @@ def test_a_failed_update_is_retried_and_after_three_the_chain_starts_again(sourc
     assert loop.pass_once() is None and loop.record is chain
     assert loop.pass_once() is None and loop.record is chain
     assert loop.pass_once() is None and loop.record is None
+
+
+def test_a_source_that_cannot_be_reached_keeps_the_chain(source, tmp_path, monkeypatch):
+    import httpx2
+
+    loop = make_loop(source(), tmp_path)
+    chain = loop.record = some_chain()
+
+    def unreachable():
+        raise httpx2.ConnectError("connection refused")
+
+    monkeypatch.setattr(loop, "step", unreachable)
+    published_states = []
+    monkeypatch.setattr(loop.publisher, "publish_state", published_states.append)
+
+    for _ in range(MAX_FAILURES + 2):
+        assert loop.pass_once() is None
+
+    assert loop.record is chain and loop.failures == 0
+    assert {state["state"] for state in published_states} == {"waiting"}
+    assert "cannot be reached" in published_states[-1]["message"]
 
 
 def test_an_inconsistent_chain_starts_again_at_once(source, tmp_path, monkeypatch):

@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx2
+
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.sumo_demand.planner import compute_free_flow_times
 from simulation.live.chain import (
@@ -80,7 +82,7 @@ MAX_FAILURES = 3
 MAX_STEPS_PER_PASS = 2 * MAX_CATCH_UP + 4
 KEEP_STATES = 4
 KEEP_CHAIN = timedelta(hours=24)
-POLL_S = 30
+POLL_S = 10
 
 
 @dataclass
@@ -373,6 +375,8 @@ class LiveLoop:
         tried again at the next pass. After MAX_FAILURES in a row, or at
         once when the chain itself is inconsistent (ChainError), the loop
         starts a new chain at the newest data instead of retrying forever.
+        A source that cannot be reached is not a failed update: the loop
+        reports it and waits, keeping its chain.
         """
 
         try:
@@ -380,6 +384,13 @@ class LiveLoop:
             self.failures = 0
             log.debug("state: %s", state["state"])
             return state
+        except httpx2.HTTPError as exc:
+            # The source is down or restarting: nothing was simulated, so
+            # the chain is fine. It is not a failed update; the loop waits
+            # and catches up when the source answers again.
+            log.warning("the traffic source cannot be reached: %s", exc)
+            self._publish_state("waiting", "The traffic source cannot be reached; the loop keeps trying.")
+            return None
         except Exception as exc:  # one failed pass must not stop the twin
             self.failures += 1
             log.exception("the update failed (%d in a row)", self.failures)

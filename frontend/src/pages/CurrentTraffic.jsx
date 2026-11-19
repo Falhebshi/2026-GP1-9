@@ -171,6 +171,12 @@ function CurrentTraffic() {
         </Notice>
       )}
       {live && liveInfo.state === 'paused' && <Notice variant="warning">{liveInfo.message}</Notice>}
+      {live && liveInfo.state === 'waiting' && (
+        <Notice variant="warning">
+          {liveInfo.message} The results up to {formatTime(liveInfo.dataUntil)} (data time) are
+          shown.
+        </Notice>
+      )}
       {live && liveInfo.state === 'starting' && (
         <Notice variant="info">
           {liveInfo.message} Until then, the previous run up to {formatTime(liveInfo.dataUntil)} is
@@ -282,7 +288,7 @@ function timeBadge({ live, liveInfo, isNewest }) {
   if (!live) return <Badge variant="neutral">Simulated</Badge>
   if (liveInfo.state === 'paused') return <Badge variant="warning">Paused</Badge>
   if (liveInfo.state === 'starting') return <Badge variant="neutral">Starting</Badge>
-  if (liveInfo.state === 'stopped' || liveInfo.stale)
+  if (liveInfo.state === 'stopped' || liveInfo.state === 'waiting' || liveInfo.stale)
     return <Badge variant="warning">Not updating</Badge>
   return isNewest ? <Badge variant="success">Live</Badge> : <Badge variant="neutral">Earlier</Badge>
 }

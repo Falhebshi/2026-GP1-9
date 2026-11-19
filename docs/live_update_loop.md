@@ -27,7 +27,7 @@ python simulation/scripts/run_live.py --source rcrc --once   # one pass, then ex
 | `--source`, `--source-url` | `rcrc` (default, `http://127.0.0.1:8002`) or `synthetic` (`:8000`) |
 | `--work-dir` | The chains' working files; default `simulation/outputs/live/` |
 | `--out` | Where the page reads; default `frontend/public/data/<intersection>/live/` |
-| `--poll` | Seconds between passes, default 30 |
+| `--poll` | Seconds between passes, default 10 |
 | `--seed`, `--mapping`, `--net`, `--sumo-bin` | As for `run_baseline.py`; seed 42 |
 | `--verbose` | Log every pass |
 
@@ -135,9 +135,9 @@ The playback index of every run (`run.json` in the [3D scene guide](../simulatio
 | --- | --- |
 | `source` | `live` |
 | `status` | `running` while the loop runs (also while waiting or paused); `completed` once it has stopped |
-| `live.state` | `running` (up to date, or catching up), `starting` (a new chain is warming up, and this `run.json` still describes the previous one), `paused` (an interval cannot be built, section 6) or `stopped` (the loop was stopped) |
+| `live.state` | `running` (up to date, or catching up), `starting` (a new chain is warming up, and this `run.json` still describes the previous one), `waiting` (the traffic source cannot be reached, or has no data yet), `paused` (an interval cannot be built, section 6) or `stopped` (the loop was stopped) |
 | `live.message` | Why, in words, for the page |
-| `live.updated_at` | When the loop last reported (real time); it reports every pass, about every 30 s |
+| `live.updated_at` | When the loop last reported (real time); it reports every pass, about every 10 s |
 | `live.data_until` | End of the newest interval simulated (data time) |
 | `live.simulated_until_s` | Where the simulation stopped, in seconds from `run_start`: `data_until` minus the lag |
 | `live.lag_s`, `live.update_interval_s` | 60 and 900 |
@@ -155,6 +155,7 @@ The playback index of every run (`run.json` in the [3D scene guide](../simulatio
 | --- | --- | --- |
 | A new interval has arrived | Simulates and publishes it | The newest interval, provisional; the one before, final |
 | No new interval yet | Reports that it is up to date | Unchanged |
+| The traffic source cannot be reached | Keeps its chain, reports `waiting` and tries again at every pass | "The traffic source cannot be reached", with the results so far and a "Not updating" badge |
 | Detectors silent, up to 8 intervals | Simulates on estimated traffic and marks the intervals | "No sensor data" for those intervals; no KPIs and no cars |
 | An interval cannot be built (silent for more than 2 hours, or too few earlier days of the same type to estimate from) | Pauses, and tries the newest interval at every pass | A warning with the reason; the last results stay |
 | Data again after a pause | Starts a new chain with the first interval that can be built as its warm-up | "A new run has started" while it warms up; results again one interval later, from the new chain only |
@@ -165,7 +166,7 @@ The playback index of every run (`run.json` in the [3D scene guide](../simulatio
 
 A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The page then shows the day only from the restart.
 
-An update that fails (for example SUMO crashing) changes nothing in the chain's record. The loop reports the failure and tries the same update again at the next pass; a segment folder it left behind is removed first. After 3 failures in a row, or at once when the chain itself is inconsistent (its departures would change), the loop starts a new chain at the newest data instead of retrying forever.
+An update that fails (for example SUMO crashing) changes nothing in the chain's record. The loop reports the failure and tries the same update again at the next pass; a segment folder it left behind is removed first. After 3 failures in a row, or at once when the chain itself is inconsistent (its departures would change), the loop starts a new chain at the newest data instead of retrying forever. A traffic source that cannot be reached (stopped, restarting, no network) is not a failed update: nothing was simulated, so the loop keeps its chain, reports `waiting`, and catches up when the source answers again (up to 8 intervals, as after a stop).
 
 ---
 

@@ -13,7 +13,8 @@
 //     isSample: true when the page shows the committed sample run, because nothing is live
 //     live: null for the sample run; for the live run:
 //       { state, message,                'running', 'starting' (a new run is warming up and the
-//                                        previous one is shown), 'paused' or 'stopped', and why
+//                                        previous one is shown), 'waiting' (the source cannot
+//                                        be reached), 'paused' or 'stopped', and why
 //         updatedAt, dataUntil,          when the loop last reported (real time) and the end of
 //                                        the newest interval it has simulated (data time), ISO
 //         stale,                         true when the loop has not reported for 30 minutes
