@@ -15,7 +15,13 @@ are simulated once per seed:
    of the route file; the generated demand itself is never changed.
 3. Score: hourly counts are compared with the observed ones (geh.py).
    The mean of the seeds is compared, and only eligible detector-hours
-   count.
+   count. The pass rate of each seed is reported too.
+4. Capacity: each detector-hour is marked within capacity when the
+   observed hourly volume of its lane group is at or below the lane
+   group's HCM capacity under the network's signal plan, as the KPI
+   engine calculates it (saturation flow x effective green / cycle).
+   The pass rate on all eligible detector-hours is the result; the
+   pass rate within capacity is reported next to it.
 
 Results hold RCRC-derived numbers, so they are written to the private
 data folder, never to the repository:
@@ -37,7 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -48,17 +54,27 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import httpx2
 
+from backend.analytics.kpi.capacity import calculate_capacity
+from backend.analytics.kpi.lane_groups import derive_lane_groups
 from backend.demand.service import build_simulation_demand
 from backend.ingestion.client import RcrcReplayClient
 from backend.ingestion.service import ingest_rcrc_observations
 from jaadah.calibration.detectors import calibration_detectors, write_e1_additional
 from jaadah.calibration.e1_output import read_e1_intervals
 from jaadah.calibration.geh import HourlyComparison, compare_hours, meets_target, pass_share
-from jaadah.calibration.parameters import GEH_THRESHOLD, REQUIRED_PASS_SHARE
+from jaadah.calibration.parameters import (
+    GEH_THRESHOLD,
+    INDICATIVE_BELOW,
+    REQUIRED_PASS_SHARE,
+)
 from jaadah.calibration.peak_hours import day_type, days_between, hour_windows
 from jaadah.calibration.vehicle_type import parse_vehicle_settings, route_file_with_settings
+from jaadah.kpi_inputs.network_inputs import build_network_inputs
+from jaadah.kpi_inputs.signal_program import build_signal_program
 from jaadah.mapping.loader import load_network_mappings
+from jaadah.models.kpis import KpiStatus
 from jaadah.models.scenario import ControlMode, Scenario, SimulationConfig, TimeContext
+from jaadah.models.traffic import SimulationDemand
 from jaadah.sumo_demand.checks import check_generated_demand
 from jaadah.sumo_demand.planner import (
     build_run_window,
@@ -87,6 +103,10 @@ class HourSkipped(Exception):
     """A test hour cannot be simulated; the reason is reported, not hidden."""
 
 
+class SourceNotReady(Exception):
+    """The replay source has no report loaded; no hour can be prepared."""
+
+
 @dataclass
 class PreparedHour:
     """One test hour and seed, ready to simulate."""
@@ -100,6 +120,7 @@ class PreparedHour:
     route_file: Path
     observed_counts: dict = field(default_factory=dict)      # (detector, interval end) -> count
     observed_occupancy: dict = field(default_factory=dict)   # (detector, interval end) -> percent
+    movement_demand: dict = field(default_factory=dict)      # movement -> vehicles in the hour (= veh/h)
 
 
 # ============================================================
@@ -133,10 +154,15 @@ def prepare_hour(
     window = build_run_window(scenario, config)
 
     latest = client.fetch_latest_available_timestamp()
-    if latest is None or latest < window.run_end:
+    if latest is None:
+        raise SourceNotReady(
+            "the replay source has no report loaded; load it with "
+            "python -m traffic_source.rcrc_replay.load <report.csv> and restart the server"
+        )
+    if latest < window.run_end:
         raise HourSkipped(
-            f"source has data only until {latest}; start the replay source with "
-            "JAADAH_REPLAY_OFFSET_WEEKS=0"
+            f"source has data only until {latest:%Y-%m-%d %H:%M}; if the report covers "
+            "this hour, start the replay source with JAADAH_REPLAY_OFFSET_WEEKS=0"
         )
 
     ingestion = ingest_rcrc_observations(client, start=window.epoch, end=window.run_end)
@@ -160,6 +186,7 @@ def prepare_hour(
     route_file = demand_dir / f"{demand_dir.name}_routes.rou.xml"
     prepared.route_file = route_file
     if route_file.is_file():
+        prepared.movement_demand = hour_movement_demand(demand_dir, start, end)
         return prepared
 
     history = ingest_rcrc_observations(
@@ -191,7 +218,20 @@ def prepare_hour(
     except Exception:
         shutil.rmtree(demand_dir, ignore_errors=True)
         raise
+    prepared.movement_demand = hour_movement_demand(demand_dir, start, end)
     return prepared
+
+
+def hour_movement_demand(demand_dir: Path, start: datetime, end: datetime) -> dict[str, int]:
+    """Vehicles per movement in [start, end), read from the stored demand file."""
+
+    demand_file = demand_dir / f"{demand_dir.name}_demand.json"
+    totals: dict[str, int] = {}
+    for record in json.loads(demand_file.read_text(encoding="utf-8")):
+        demand = SimulationDemand.model_validate(record)
+        if start <= demand.interval_start and demand.interval_end <= end:
+            totals[demand.movement_id] = totals.get(demand.movement_id, 0) + demand.vehicle_count
+    return totals
 
 
 # ============================================================
@@ -252,6 +292,75 @@ def score_hour(runs: list[PreparedHour], intervals_by_seed: list[list], detector
         for intervals in intervals_by_seed
     ]
     return compare_hours(runs[0].observed_counts, simulated, detector_ids, [runs[0].end])
+
+
+# ============================================================
+# 4. CAPACITY
+# ============================================================
+
+@dataclass(frozen=True)
+class GroupCapacity:
+    """One lane group in one test hour."""
+
+    lane_group_id: str
+    observed_veh_h: int | None
+    capacity_veh_h: float | None
+
+    @property
+    def within_capacity(self) -> bool | None:
+        if self.observed_veh_h is None or self.capacity_veh_h is None:
+            return None
+        return self.observed_veh_h <= self.capacity_veh_h
+
+
+def hour_capacities(
+    groups,
+    lanes_by_id,
+    movements,
+    movement_attributes,
+    program,
+    movement_demand: dict[str, int],
+    observed_hourly: dict[str, int | None],
+    detector_of_lane: dict[str, str],
+) -> dict[str, GroupCapacity]:
+    """
+    Capacity of every lane group in one test hour, keyed by detector ID.
+
+    The capacity comes from the KPI engine (calculate_capacity) with the
+    hour's movement demand. The observed volume of a lane group is the
+    sum of the observed hourly counts of its lanes' detectors; it is
+    unknown (None) when a lane has no detector or no eligible count.
+    """
+
+    demand = {m: float(v) for m, v in movement_demand.items() if m in movement_attributes}
+    results = calculate_capacity(groups, lanes_by_id, movements, movement_attributes, program, demand)
+
+    by_detector = {}
+    for group in groups:
+        result = results.lane_groups.get(group.lane_group_id)
+        capacity = (
+            result.capacity_veh_h
+            if result is not None and result.status == KpiStatus.OK
+            else None
+        )
+        counts = [observed_hourly.get(detector_of_lane.get(lane)) for lane in group.lane_ids]
+        observed = None if any(count is None for count in counts) else sum(counts)
+        for lane in group.lane_ids:
+            if lane in detector_of_lane:
+                by_detector[detector_of_lane[lane]] = GroupCapacity(
+                    group.lane_group_id, observed, capacity
+                )
+    return by_detector
+
+
+def describe_share(comparisons: list[HourlyComparison]) -> str:
+    """'84.2% of 336' or 'none'; marked indicative below INDICATIVE_BELOW."""
+
+    share = pass_share(comparisons)
+    if share is None:
+        return "none"
+    note = " (indicative: fewer than %d)" % INDICATIVE_BELOW if len(comparisons) < INDICATIVE_BELOW else ""
+    return f"{share:.1%} of {len(comparisons)}{note}"
 
 
 def mean_occupancy(values: dict, detector_id: str, end: datetime) -> float | None:
@@ -319,8 +428,18 @@ def main(argv=None) -> int:
     detectors = calibration_detectors(mapping, source=SOURCE, site_id=SITE_ID)
     detector_ids = [item.detector_id for item in detectors]
     approach_of = {item.detector_id: item.approach_id for item in detectors}
+    detector_of_lane = {item.lane_id: item.detector_id for item in detectors if item.lane_id}
     free_flow_s = compute_free_flow_times(mapping, args.net)
     client = RcrcReplayClient(args.source_url)
+
+    # Capacity inputs, as the KPI engine builds them.
+    network = build_network_inputs(mapping)
+    program = build_signal_program(
+        mapping, args.net, scenario_id="SCN_CALIBRATION", signal_program_id="SP_CALIBRATION"
+    )
+    groups = derive_lane_groups(network.lanes, list(network.movement_attributes.values()))
+    lanes_by_id = {lane.lane_id: lane for lane in network.lanes}
+    movements = {m: network.movements[m] for m in network.movement_attributes}
 
     # 1. Demand, one test hour and seed at a time (the source is read in order).
     prepared, skipped = [], []
@@ -336,6 +455,9 @@ def main(argv=None) -> int:
                     ))
                 except HourSkipped as exc:
                     skipped.append((start, seed, str(exc)))
+                except SourceNotReady as exc:
+                    print(f"Nothing was run: {exc}.", file=sys.stderr)
+                    return 2
                 except httpx2.HTTPError as exc:
                     print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
                     return 2
@@ -344,33 +466,51 @@ def main(argv=None) -> int:
     for start, seed, reason in skipped:
         print(f"  skipped {start:%Y-%m-%d %H:%M} seed {seed}: {reason}")
 
-    # 2. SUMO runs.
+    # 2. SUMO runs, with progress.
     def run(item):
         return simulate(item, detectors, args.settings, network_path=args.net,
                         sumo_bin=sumo_bin, step_length_s=args.step_length)
 
+    intervals = [None] * len(prepared)
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        intervals = list(pool.map(run, prepared))
+        futures = {pool.submit(run, item): index for index, item in enumerate(prepared)}
+        for done, future in enumerate(as_completed(futures), start=1):
+            intervals[futures[future]] = future.result()
+            item = prepared[futures[future]]
+            print(f"  run {done}/{len(prepared)} done ({item.start:%Y-%m-%d %H:%M}, seed {item.seed})",
+                  flush=True)
 
-    # 3. Score each test hour over its seeds.
+    # 3. Score each test hour over its seeds; 4. capacity of its lane groups.
     hours = {}
     for item, result in zip(prepared, intervals):
         hours.setdefault(item.start, []).append((item, result))
 
-    rows, comparisons = [], []
+    rows, comparisons, within = [], [], []
+    per_seed = {seed: [] for seed in args.seeds}
     for start, group in sorted(hours.items()):
         runs = [item for item, _ in group]
         results = [result for _, result in group]
         hour_comparisons = score_hour(runs, results, detector_ids)
         comparisons += hour_comparisons
+        for item, result in group:
+            per_seed[item.seed] += score_hour([item], [result], detector_ids)
+
+        observed_hourly = {c.detector_id: c.observed for c in hour_comparisons}
+        capacities = hour_capacities(
+            groups, lanes_by_id, movements, network.movement_attributes, program,
+            runs[0].movement_demand, observed_hourly, detector_of_lane,
+        )
         simulated_occupancy = [
             {(i.detector_id, i.interval_end): i.occupancy_percent for i in result} for result in results
         ]
         for comparison in hour_comparisons:
-            per_seed = [mean_occupancy(values, comparison.detector_id, comparison.hour_end)
-                        for values in simulated_occupancy]
-            sim_occupancy = (sum(per_seed) / len(per_seed)) if None not in per_seed else None
+            seed_occupancy = [mean_occupancy(values, comparison.detector_id, comparison.hour_end)
+                              for values in simulated_occupancy]
+            sim_occupancy = (sum(seed_occupancy) / len(seed_occupancy)) if None not in seed_occupancy else None
             obs_occupancy = mean_occupancy(runs[0].observed_occupancy, comparison.detector_id, comparison.hour_end)
+            capacity = capacities.get(comparison.detector_id)
+            if capacity is not None and capacity.within_capacity:
+                within.append(comparison)
             rows.append({
                 "day": runs[0].day.isoformat(),
                 "day_type": day_type(runs[0].day),
@@ -383,9 +523,18 @@ def main(argv=None) -> int:
                 "match": comparison.matches,
                 "observed_occupancy_pct": None if obs_occupancy is None else round(obs_occupancy, 1),
                 "simulated_occupancy_pct": None if sim_occupancy is None else round(sim_occupancy, 1),
+                "lane_group_id": None if capacity is None else capacity.lane_group_id,
+                "lane_group_observed_veh_h": None if capacity is None else capacity.observed_veh_h,
+                "lane_group_capacity_veh_h": (
+                    None if capacity is None or capacity.capacity_veh_h is None
+                    else round(capacity.capacity_veh_h, 1)
+                ),
+                "within_capacity": None if capacity is None else capacity.within_capacity,
             })
 
     share = pass_share(comparisons)
+    seed_shares = {seed: pass_share(items) for seed, items in per_seed.items()}
+    known = [value for value in seed_shares.values() if value is not None]
     label = args.label or default_label(args.settings)
     results_dir = args.out_root / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -405,10 +554,15 @@ def main(argv=None) -> int:
         "settings": args.settings,
         "mapping_version": mapping.mapping_version,
         "eligible_detector_hours": len(comparisons),
+        "indicative": len(comparisons) < INDICATIVE_BELOW,
         "pass_share": share,
         "target": REQUIRED_PASS_SHARE,
         "geh_threshold": GEH_THRESHOLD,
         "meets_target": meets_target(comparisons),
+        "within_capacity_detector_hours": len(within),
+        "pass_share_within_capacity": pass_share(within),
+        "pass_share_by_seed": {str(seed): value for seed, value in seed_shares.items()},
+        "seed_spread": (max(known) - min(known)) if known else None,
         "pass_share_by_approach": {
             approach: sum(matches) / len(matches) for approach, matches in sorted(by_approach.items())
         },
@@ -420,10 +574,14 @@ def main(argv=None) -> int:
     if share is None:
         print("No eligible detector-hours: nothing was compared.")
         return 1
-    print(f"\n{len(comparisons)} eligible detector-hours, {share:.1%} with GEH < {GEH_THRESHOLD:g} "
+    print(f"\nAll eligible detector-hours: {describe_share(comparisons)} with GEH < {GEH_THRESHOLD:g} "
           f"(target {REQUIRED_PASS_SHARE:.0%}): {'MET' if summary['meets_target'] else 'NOT MET'}")
+    print(f"Within capacity:              {describe_share(within)}")
     for approach, value in summary["pass_share_by_approach"].items():
         print(f"  {approach}: {value:.1%}")
+    if len(args.seeds) > 1:
+        shares = ", ".join(f"{seed}: {value:.1%}" for seed, value in seed_shares.items() if value is not None)
+        print(f"Per seed: {shares} (spread {summary['seed_spread']:.1%})")
     print(f"Details: {csv_path}")
     return 0
 

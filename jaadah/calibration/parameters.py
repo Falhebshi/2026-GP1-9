@@ -1,9 +1,9 @@
 """
 Calibration constants.
 
-These are the proposed acceptance criteria (19 Nov 2026), not yet
-approved by the team and supervisor. If they change, change the values
-here, and only here.
+These are the acceptance criteria agreed on 19 Nov 2026 (see
+docs/calibration.md). If they change, change the values here, and only
+here.
 """
 
 # GEH below this value counts as a match (FHWA 2004, Dowling et al.).
@@ -45,3 +45,7 @@ TUNABLE_VEHICLE_ATTRIBUTES = (
     "lcSpeedGain",
     "lcKeepRight",
 )
+
+# A result based on fewer eligible detector-hours than this is reported
+# as indicative.
+INDICATIVE_BELOW = 100

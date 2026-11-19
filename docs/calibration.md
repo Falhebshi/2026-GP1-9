@@ -2,21 +2,23 @@
 
 Calibration checks that the simulated intersection behaves like the real one, by measuring SUMO the same way RCRC measured the road: with a detector at each of the 12 stop-bar positions of site 1444.
 
-## Acceptance criteria (proposed)
+## Acceptance criteria
 
-Proposed on 19 Nov 2026 and not yet approved. The values the code uses are in `jaadah/calibration/parameters.py`.
+Agreed on 19 Nov 2026 after two team reviews. The values the code uses are in `jaadah/calibration/parameters.py`.
 
 | Item | Rule |
 |---|---|
 | Measures | Volume and occupancy per detector per 15 minutes: RCRC site 1444 (12 stop-bar detectors) against SUMO induction loops at the mapped positions |
 | Compared unit | One detector-hour: the sum of four 15-minute counts |
 | Eligible | All four observed intervals reported and none imputed, and every seed has all four simulated intervals |
-| Days | Only days after the late-August demand increase; the National Day week (20–26 Sep 2026) and days with more than 10% imputed intervals are left out |
-| Split | Whole weeks, calibration weeks first, validation weeks later, with the same mix of workdays, Fridays and Saturdays |
-| Hours | The two busiest hours of each day type (workday, Friday, Saturday), at least 3 hours apart, taken from the calibration weeks; listed in `TEST_HOUR_STARTS`. Quiet hours are left out because GEH is more lenient at low volumes |
-| Pass (primary) | GEH < 5 for at least 85% of eligible detector-hours, checked separately on the calibration and the validation set |
-| Reported, not pass/fail | Observed against simulated occupancy, 15-minute GEH and errors, time-series plots. Occupancy is not pass/fail because it depends on the signal plan: the real controller is actuated, the model runs one fixed plan |
-| Seeds | Tuning on seed 42; acceptance on the mean simulated count of 4 seeds |
+| Days | Only days after the late-August demand increase; the National Day week (20–26 Sep 2026) is left out, and so is any day with more than 10% of its test-hour intervals imputed, counted over all 12 detectors |
+| Split | Whole weeks, calibration weeks first, validation weeks later, with the same mix of workdays, Fridays and Saturdays: 30 Aug – 12 Sep for calibration and 27 Sep – 3 Oct for validation (2 + 1 weeks), or 30 Aug – 19 Sep and 27 Sep – 10 Oct (3 + 2) if runs are fast |
+| Hours | The two busiest hours of each day type (workday, Friday, Saturday, all 12 detectors summed), at least 3 hours apart, found on the calibration weeks only and kept fixed for validation; listed in `TEST_HOUR_STARTS`. Quiet hours are left out because GEH is more lenient at low volumes. A test hour belongs to the calendar day it falls in: Friday 00:00–01:00 is Thursday-night traffic, Saturday 00:00–01:00 is Friday night |
+| Warm-up | Each test-hour run starts 15 minutes before the hour, with its demand loaded, and ends 15 minutes after it, as a baseline run does. Loop periods start at the run start, so they line up with the source's 15-minute intervals |
+| Pass (primary) | GEH < 5 for at least 85% of eligible detector-hours, checked separately on the calibration and the validation set. This pass rate on all eligible hours is the result. The number of eligible detector-hours is reported; a set with fewer than 100 is called indicative |
+| Within capacity | Reported next to the result. A detector-hour is within capacity when the observed hourly volume of its lane group is at or below that lane group's capacity under the network's signal plan: saturation flow × effective green / cycle, as the KPI engine calculates it. Failing hours over capacity are a signal-plan limitation, not a driver-behaviour one: the real controller is actuated and can give an approach more green than the fixed plan. This rule was set before the full results were seen |
+| Reported, not pass/fail | Observed against simulated occupancy, 15-minute GEH and errors, time-series plots. Occupancy is not pass/fail because it depends on the signal plan: the real controller is actuated, the model runs one fixed plan. It is compared as a pattern (when it rises and falls), not as exact values, because a SUMO loop is not the same length as the real detector |
+| Seeds | Tuning on seed 42. Acceptance uses, for each detector-hour, the GEH of the mean simulated count over 4 seeds; the pass rate of each seed and the spread between seeds are reported |
 | Tuned | SUMO driver parameters `tau`, `sigma`, `minGap`, `accel`, `decel`, `speedFactor`; lane-change parameters only if lane-level counts stay off |
 | Not tuned | Demand (it comes from the counts), the signal plan, the slip and bypass share assumptions |
 | Stop tuning | When the target is met, or when a round improves the pass share by less than 1 percentage point; what was reached is reported either way |
@@ -27,7 +29,10 @@ C = 600, M = 660  ->  GEH = 2.39  (match)
 C = 600, M = 780  ->  GEH = 6.85  (no match)
 ```
 
-The 85% rule comes from FHWA, *Traffic Analysis Toolbox Volume III* (Dowling, Skabardonis and Alexiadis, FHWA-HRT-04-040, 2004), which took it from Wisconsin DOT and the UK Design Manual for Roads and Bridges. The 2019 update (FHWA-HOP-18-036) uses broader statistical criteria. The combination above is Jaadah's own protocol, not one FHWA prescribes.
+The target GEH < 5 for at least 85% of hourly flows follows the Wisconsin DOT calibration criteria reproduced as an example in FHWA (2004), Table 4 (based on UK guidelines). FHWA (2019) uses broader criteria. The combination above is Jaadah's own protocol, not one FHWA prescribes.
+
+- Dowling, R., Skabardonis, A. and Alexiadis, V. (2004). *Traffic Analysis Toolbox Volume III: Guidelines for Applying Traffic Microsimulation Modeling Software.* FHWA-HRT-04-040, FHWA, June 2004.
+- Wunderlich, K., Vasudevan, M. and Wang, P. (2019). *TAT Volume III: Guidelines for Applying Traffic Microsimulation Modeling Software, 2019 Update to the 2004 Version.* FHWA-HOP-18-036, FHWA, April 2019.
 
 **Limitations.** No travel times or queue lengths were observed, so delay and queues are checked only indirectly, through occupancy. Detector positions are modelled, not surveyed. Source time stamps are assumed to mark interval ends. The model runs a fixed signal plan where the real one is actuated. Slip and bypass demand rests on assumed shares.
 
@@ -41,7 +46,7 @@ The 85% rule comes from FHWA, *Traffic Analysis Toolbox Volume III* (Dowling, Sk
 | `traffic_source/rcrc_replay/config.py` | `ReplayConfig.from_environment()`: the replay offset can be set with `JAADAH_REPLAY_OFFSET_WEEKS` (see `rcrc_replay_source.md`). |
 | `jaadah/calibration/peak_hours.py` | The day type of a date and its two test hours, in Riyadh time. |
 | `jaadah/calibration/vehicle_type.py` | Checks driver settings (only the attributes in `TUNABLE_VEHICLE_ATTRIBUTES`) and writes a copy of a route file with them set on its vehicle type. |
-| `simulation/scripts/run_calibration.py` | Runs every test hour of a range of days, for each seed, and scores the model. |
+| `simulation/scripts/run_calibration.py` | Runs every test hour of a range of days, for each seed, scores the model, and marks each detector-hour within or over its lane group's capacity using the KPI engine (`backend/analytics/kpi/capacity.py`). The capacity part lives in the script because `jaadah/` must not import from `backend/`. |
 
 ## Running a calibration
 
@@ -57,9 +62,10 @@ For each test hour and seed the runner:
 1. reads the hour, with its warm-up and clearance, from the replay source and builds the SUMO demand with the same steps as `run_baseline.py` (ingestion, demand transformation, departure planning, demand writer, demand checks). An hour whose demand cannot be built is skipped and listed, never filled in;
 2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>/` and reuses it on later runs, so tuning only reruns SUMO;
 3. runs SUMO with the induction loops and without FCD output, with the same settings as a baseline run (`--begin 0`, step 0.4 s, the seed, `--random false`). Settings given with `--set` go on a copy of the route file; the generated demand is never changed;
-4. compares each detector-hour with the observed counts, on the mean of the seeds.
+4. compares each detector-hour with the observed counts, on the mean of the seeds, and once per seed;
+5. calculates each lane group's capacity for the hour with the KPI engine, from the hour's movement demand and the signal plan in the network, and compares it with the lane group's observed volume (the sum of its detectors' counts).
 
-It prints the share of eligible detector-hours with GEH below 5, overall and per approach, and writes the detail (one row per detector-hour, with observed and simulated count, GEH and occupancy) and a summary to `../jaadah-private-data/processed/calibration/results/<label>.csv` and `.json`. These files hold numbers derived from RCRC data, so they stay in the private data folder.
+It shows each SUMO run as it finishes, then prints the share of eligible detector-hours with GEH below 5 (all hours, which is the result, and within capacity), per approach and, with several seeds, per seed with the spread. A set with fewer than 100 detector-hours is marked indicative. It writes the detail (one row per detector-hour, with observed and simulated count, GEH, occupancy, lane group, its observed volume and capacity, and whether it is within capacity) and a summary to `../jaadah-private-data/processed/calibration/results/<label>.csv` and `.json`. These files hold numbers derived from RCRC data, so they stay in the private data folder.
 
 The runner reuses `run_baseline.py`'s constants and building blocks but repeats its short ingestion-to-demand sequence, because `run_baseline.py` runs SUMO in the same function. The tuning itself (choosing which settings to try) is done by hand with `--set`.
 
