@@ -32,13 +32,16 @@ import './TrafficScene3D.css'
 //
 //   intersectionId   folder in public/data, e.g. "INT_001"
 //   center           [longitude, latitude] the camera starts over
-//   scenario         "baseline" (default) or an intervention run
+//   scenario         "baseline" (default), "live" (the live run) or an intervention run
 //   time             seconds from the start of the analysis period (optional, without it the scene
 //                    loops through the analysis period by itself)
 //   onTimeChange     called with the seconds from the start of the analysis period, once a second,
 //                    while the scene loops by itself (optional)
 //   jumpTo           { time } moves the looping scene to that time; pass a new object for every
 //                    jump (optional)
+//   startAt          where the looping scene starts, in seconds from the start of the analysis
+//                    period (optional, 0 without it); used when the scene is built again for a
+//                    live run's new interval
 //   bounds           study area { west, south, east, north }, everything outside is cut off
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
@@ -47,6 +50,9 @@ import './TrafficScene3D.css'
 //   openApproachId   approach_id of the selected approach, or null; its lanes are highlighted
 //   onApproachChange called with an approach_id (or null) when a chip or an approach's lanes are
 //                    clicked; the page shows the selected approach's details next to the scene
+//   hiddenRanges     [[start_s, end_s], ...] in seconds from the run start: no cars are drawn in
+//                    them (the live run's intervals without sensor data, whose traffic was
+//                    estimated); the signals keep running (optional)
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
 // Cars and signal indications come from the SUMO run (run.json, its 15-minute vehicle files and
@@ -121,6 +127,8 @@ function TrafficScene3D({
   time,
   onTimeChange,
   jumpTo,
+  startAt,
+  hiddenRanges,
   onReady,
   onError,
 }) {
@@ -225,6 +233,8 @@ function TrafficScene3D({
   const autoplay = time === undefined
   const hoverRef = useRef(null)
   const selRef = useRef(null)
+  const hiddenRef = useRef(hiddenRanges ?? [])
+  hiddenRef.current = hiddenRanges ?? []
   const paintRef = useRef(paintOpacityFor(18))
   const slatRef = useRef(slatOpacityFor(18))
   const xrayRef = useRef(false)
@@ -283,7 +293,8 @@ function TrafficScene3D({
     // cars move every frame, so with cars the scene is always redrawn
     if (!force && !s.veh && dyn === lastSigRef.current) return
     lastSigRef.current = dyn
-    const vehicles = s.veh?.at(t) // null while this interval's file is still loading
+    const hidden = hiddenRef.current.some(([from, to]) => t >= from && t < to)
+    const vehicles = hidden ? null : s.veh?.at(t) // null while this interval's file is still loading
     const cars = vehicles ? vehicleLayers(vehicleStates(vehicles, t), t) : []
     const selected = selRef.current
     const highlight = selected
@@ -393,7 +404,7 @@ function TrafficScene3D({
         const from = d.run?.analysis_start_s ?? 0
         const to = d.run?.analysis_end_s ?? 120
         startRef.current = from
-        tRef.current = from + (time ?? 0)
+        tRef.current = from + (time ?? startAt ?? 0)
         sceneRef.current = {
           net: prepareNetwork({
             surface: d.surface,

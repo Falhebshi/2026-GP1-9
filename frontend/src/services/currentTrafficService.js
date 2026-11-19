@@ -1,22 +1,41 @@
 // Where the Current Traffic page gets its data.
 //
-// The page shows the simulated run in public/data/<intersection>/baseline/ (the only real data in
-// Sprint 1): the run (run.json), its KPI results (kpis.json, KpiResult records from the KPI
-// engine) and the approaches (network/approaches.json). The alerts are still sample data.
-// getCurrentTraffic() gives back:
+// The page shows the live run in public/data/<intersection>/live/ when the live update loop
+// (simulation/scripts/run_live.py) has published one, and otherwise the committed sample run in
+// baseline/, labelled as a sample. Never both: the folder is picked by its run.json (team
+// decision A on live outputs). From the folder it reads the run (run.json) and its KPI results
+// (kpis.json, KpiResult records from the KPI engine), and the approaches from
+// network/approaches.json. The alerts are still sample data. getCurrentTraffic() gives back:
 //
 //   {
-//     source: 'run',                     'run' for a simulated run; 'live' once live data exists
+//     source: 'run',                     'live' for the live run, 'run' for the sample run
+//     scenario: 'baseline',              the folder the run is in: 'live' or 'baseline'
+//     isSample: true when the page shows the committed sample run, because nothing is live
+//     live: null for the sample run; for the live run:
+//       { state, message,                'running', 'starting' (a new run is warming up and the
+//                                        previous one is shown), 'paused' or 'stopped', and why
+//         updatedAt, dataUntil,          when the loop last reported (real time) and the end of
+//                                        the newest interval it has simulated (data time), ISO
+//         stale,                         true when the loop has not reported for 30 minutes
+//         version }                      changes whenever a new interval is published
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
-//     run: { id, status, failureReason, start, duration, intervalSeconds },
-//                                        null when there is no run yet. status 'completed' or
-//                                        'failed' (then failureReason says why, and there are no
-//                                        intervals). start: the start of the analysis period (ISO
-//                                        time); duration and intervalSeconds in seconds
+//     run: { id, status, failureReason, start, duration, intervalSeconds, analysisStartSeconds },
+//                                        null when there is no run yet. status 'completed',
+//                                        'running' (a live run) or 'failed' (then failureReason
+//                                        says why, and there are no intervals). start: the start
+//                                        of the analysis period (ISO time); duration and
+//                                        intervalSeconds in seconds
 //     hasKpis: false when the run has no KPI results yet (no kpis.json, or one of another run)
 //     isTest: true when the run or its KPIs are test data ("is_test" in run.json or kpis.json)
 //     intervals: [{                      one per 15 minutes of the analysis period, oldest first
 //       start, end,                      ISO times
+//       provisional,                     true for the newest interval of a live run: simulated up to
+//                                        60 s before its end, with some vehicles still driving, so
+//                                        its values change at the next update
+//       noSensorData,                    null, or { approachIds } when the detectors were silent and
+//                                        the traffic was estimated: its KPIs are left out (kpis is
+//                                        empty, approach and movement kpis are {}), and the page
+//                                        shows "No sensor data" instead (team decision, option 3)
 //       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
 //                                        the interval before in the same run (null for the first)
 //       approaches: [{
@@ -25,7 +44,8 @@
 //         movements: [{ movement_id, label, kpis: { <kpi name>: KpiResult } }],
 //       }],
 //     }],
-//     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay
+//     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay;
+//                                        no bar (no value) for an interval without sensor data
 //     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
 //   }
 //
@@ -223,11 +243,22 @@ export async function getCurrentTraffic() {
   const approaches = await getJson(`${folder}/network/approaches.json`)
   if (!approaches) throw new Error('The approaches could not be loaded.')
 
-  let run = demo === 'no-run' ? null : await getJson(`${folder}/baseline/run.json`)
+  // The live run if there is one (?demo=sample shows the sample run anyway)
+  const liveRun =
+    demo === 'no-run' || demo === 'sample' ? null : await getJson(`${folder}/live/run.json`)
+  const scenario = liveRun ? 'live' : 'baseline'
+  let run = liveRun ?? (demo === 'no-run' ? null : await getJson(`${folder}/baseline/run.json`))
   if (run && demo === 'failed') {
     run = { ...run, status: 'failed', failure_reason: 'TraCIException: connection closed by SUMO' }
   }
-  const page = { source: 'run', intersection, alerts: SAMPLE_ALERTS }
+  const page = {
+    source: liveRun ? 'live' : 'run',
+    scenario,
+    isSample: !liveRun && Boolean(run),
+    live: liveRun ? liveState(liveRun) : null,
+    intersection,
+    alerts: SAMPLE_ALERTS,
+  }
 
   if (!run || run.status === 'failed') {
     return {
@@ -246,7 +277,7 @@ export async function getCurrentTraffic() {
   }
 
   // Only the KPI results of this run; a kpis.json left from another run is not used
-  const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/baseline/kpis.json`)
+  const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/${scenario}/kpis.json`)
   const results = kpis?.run_id === run.run_id ? kpis.results : null
   const intervals =
     demo === 'empty' ? [] : groupByInterval(run, results ?? [], approaches.approaches)
@@ -255,16 +286,35 @@ export async function getCurrentTraffic() {
     ...page,
     run: {
       id: run.run_id,
-      status: 'completed',
+      status: liveRun ? 'running' : 'completed',
       failureReason: null,
       start: addSeconds(run.run_start, run.analysis_start_s),
       duration: run.analysis_end_s - run.analysis_start_s,
       intervalSeconds: run.interval_s,
+      // seconds from the run start (the warm-up) to the analysis period: the scene's own clock
+      analysisStartSeconds: run.analysis_start_s,
     },
     hasKpis: results !== null,
     isTest: Boolean(run.is_test || (results && kpis.is_test)),
     intervals,
     timeline: intervals.map(timelineBar),
+  }
+}
+
+// A live run stops counting as live when the loop has not reported for this long: it reports
+// every half minute, and publishes a new interval every 15 minutes
+const STALE_AFTER = 30 * 60 * 1000
+
+// What the page shows about the live loop, from run.json's "live" part
+function liveState(run) {
+  const live = run.live ?? {}
+  return {
+    state: live.state ?? 'running',
+    message: live.message ?? null,
+    updatedAt: live.updated_at ?? null,
+    dataUntil: live.data_until ?? null,
+    stale: live.updated_at ? Date.now() - Date.parse(live.updated_at) > STALE_AFTER : false,
+    version: `${run.run_id}|${live.data_until ?? ''}`,
   }
 }
 
@@ -306,19 +356,57 @@ function groupByInterval(run, results, approaches) {
   for (let s = run.analysis_start_s; s < run.analysis_end_s; s += run.interval_s) {
     starts.push(addSeconds(run.run_start, s))
   }
+  // Live runs only: the intervals with estimated traffic, and the provisional (newest) one
+  const estimated = (run.live?.estimated_intervals ?? []).map((item) => ({
+    start: addSeconds(run.run_start, item.start_s),
+    approachIds: item.approach_ids,
+  }))
+  const provisional =
+    run.live?.provisional_interval_start_s != null
+      ? addSeconds(run.run_start, run.live.provisional_interval_start_s)
+      : null
 
   return starts.map((start, i) => {
     const before = starts[i - 1]
+    const noSensorData = estimated.find((item) => at(item.start) === at(start)) ?? null
+    const end = addSeconds(start, run.interval_s)
+
+    // No sensor data: the results come from estimated traffic, so none are shown
+    if (noSensorData) {
+      return {
+        start,
+        end,
+        provisional: false,
+        noSensorData: { approachIds: noSensorData.approachIds },
+        kpis: [],
+        approaches: approaches.map((a) => ({
+          approach_id: a.approach_id,
+          arm: a.side[0].toUpperCase() + a.side.slice(1),
+          road: a.road,
+          kpis: {},
+          movements: a.movements.map((m) => ({
+            movement_id: m.movement_id,
+            label: movementLabel(m),
+            kpis: {},
+          })),
+        })),
+      }
+    }
+
     const intersection = Object.values(of('intersection', run.intersection_id, start))
 
     return {
       start,
-      end: addSeconds(start, run.interval_s),
+      end,
+      provisional: provisional !== null && at(provisional) === at(start),
+      noSensorData: null,
       kpis: intersection.map((current) => ({
         current,
-        previous: before
-          ? (of('intersection', run.intersection_id, before)[current.kpi] ?? null)
-          : null,
+        // no comparison with an interval whose values are not shown
+        previous:
+          before && !estimated.some((item) => at(item.start) === at(before))
+            ? (of('intersection', run.intersection_id, before)[current.kpi] ?? null)
+            : null,
       })),
       approaches: approaches.map((a) => ({
         approach_id: a.approach_id,
