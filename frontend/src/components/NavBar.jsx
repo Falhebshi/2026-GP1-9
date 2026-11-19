@@ -27,18 +27,20 @@ function NavBar() {
   // links: they only have the Admin Dashboard.
   const showLinks = !isAdmin && pathname !== '/overview'
 
-  // Shown under the bar when logging out did not reach the server
-  const [logoutError, setLogoutError] = useState('')
+  // Shown under the bar when logging out did not reach the server, on the
+  // page where it happened only: { message, page }
+  const [logoutError, setLogoutError] = useState(null)
+  const showLogoutError = logoutError && logoutError.page === pathname
 
   async function handleLogout() {
-    setLogoutError('')
+    setLogoutError(null)
     try {
       // Ends the session on the server and removes its cookie (PBI 32)
       await logOut()
       navigate('/login', { replace: true })
     } catch (error) {
       // Still logged in: stay on the page and say so
-      setLogoutError(error.message)
+      setLogoutError({ message: error.message, page: pathname })
     }
   }
 
@@ -65,9 +67,9 @@ function NavBar() {
         </nav>
       </header>
 
-      {logoutError && (
+      {showLogoutError && (
         <Notice variant="warning" className="nav-notice">
-          {logoutError}
+          {logoutError.message}
         </Notice>
       )}
     </>
