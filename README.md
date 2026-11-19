@@ -4,12 +4,12 @@ Jaadah (جادّة) is a graduation project developed by students at King Saud U
 
 The system provides both a broader overview of traffic conditions across the road network and a detailed simulation of a selected intersection in Riyadh. Using SUMO (Simulation of Urban MObility), Jaadah simulates vehicle movements and evaluates traffic performance through indicators such as delay, queue length, throughput, and level of service. The project also aims to incorporate artificial intelligence for traffic forecasting and anomaly detection, alongside recommendations for potential improvements. These improvements can then be tested and compared against the original traffic conditions through simulation, helping engineers make more informed decisions before implementing changes on real roads.
 
-This repository has a React dashboard, a synthetic traffic source, traffic ingestion and demand code, SUMO simulation scripts, and KPI calculations. The dashboard still uses sample data on several pages. Connecting simulation results and live KPIs to the dashboard, forecasting, and intervention comparisons is planned work.
+This repository has a React dashboard, a synthetic traffic source, traffic ingestion and demand code, SUMO simulation scripts, KPI calculations, and an accounts server for login. The dashboard still uses sample data on several pages. Connecting simulation results and live KPIs to the dashboard, forecasting, and intervention comparisons is planned work.
 
 ## Technology stack
 
 - **Frontend:** React, Vite, React Router, MapLibre GL, and deck.gl.
-- **Python:** FastAPI, Pydantic, pandas, NumPy, and pytest.
+- **Python:** FastAPI, Pydantic, pandas, NumPy, argon2-cffi (password hashing), and pytest.
 - **Simulation:** SUMO and TraCI.
 - **Local synthetic data storage:** SQLite.
 
@@ -18,7 +18,7 @@ This repository has a React dashboard, a synthetic traffic source, traffic inges
 ```text
 frontend/       React dashboard and its local 3D scene files
 traffic_source/ Synthetic detector-observation service
-backend/        Traffic ingestion, demand transformation, and KPI calculations
+backend/        Traffic ingestion, demand transformation, KPI calculations, and accounts
 jaadah/         Shared data models, network mapping, and SUMO demand generation
 simulation/     SUMO configurations, scripts, and scene-building tools
 data/           Checked-in network and other non-restricted inputs
@@ -57,7 +57,23 @@ cd ..
 
 ## Run the project
 
-Use separate terminals for the frontend and traffic source. Run commands from the repository root unless the step says otherwise.
+Use separate terminals for the frontend, the accounts server, and the traffic source. Run commands from the repository root unless the step says otherwise.
+
+### Accounts server
+
+Every page except Login needs an account, and there is no default login. Create an administrator once (it asks for the password twice without showing it):
+
+```powershell
+python -m backend.accounts.create_admin --name "Your Name" --email you@ksu.edu.sa
+```
+
+Then start the accounts server and keep it running while you use the website:
+
+```powershell
+python -m uvicorn backend.accounts.server:app --port 8003
+```
+
+Check `http://127.0.0.1:8003/health`. Accounts are stored in `data/accounts/accounts.db`, which holds password hashes and is never committed. When Jaadah is reached over HTTPS, set `JAADAH_SECURE_COOKIE=true` before starting it, so the session cookie is only sent over HTTPS. Engineers land on Network Traffic Overview and administrators on the Admin Dashboard. Password rules, sessions, and roles are described in [Accounts and Login](docs/accounts.md).
 
 ### Frontend
 
@@ -66,7 +82,7 @@ cd frontend
 npm run dev
 ```
 
-Open the local URL printed by Vite. The frontend works without the Python source; much of its displayed traffic data is still sample data.
+Open the local URL printed by Vite and log in. Logging in needs the accounts server; the traffic pages otherwise work without the Python sources, and much of their displayed traffic data is still sample data.
 
 ### Synthetic traffic source
 
@@ -115,7 +131,7 @@ More runner options and output details are in [simulation integration](docs/simu
 
 ## Configuration and data limits
 
-No `.env` file or application credentials are needed for these commands. If SUMO is not on `PATH`, the simulation scripts accept `--sumo-bin`. The synthetic source uses fixed paths in `traffic_source/synthetic/config.py`. If a SUMO configuration uses `${VARIABLE}` in a file path, set that variable in your shell first.
+No `.env` file is needed for these commands. To use the website, create an administrator with `create_admin` (see [Accounts server](#accounts-server)); there is no default login. If SUMO is not on `PATH`, the simulation scripts accept `--sumo-bin`. The synthetic source uses fixed paths in `traffic_source/synthetic/config.py`. If a SUMO configuration uses `${VARIABLE}` in a file path, set that variable in your shell first.
 
 The synthetic source expects processed RCRC-derived profiles in a sibling folder, outside this repository:
 
