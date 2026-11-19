@@ -5,6 +5,7 @@ import InfoList from '../../components/InfoList'
 import { createEngineer, generatePassphrase } from '../../services/adminService'
 import PasswordField from './PasswordField'
 import { checkNewPassword } from './passwordChecks'
+import useCopy, { COPY_FAILED } from './useCopy'
 
 // The Create account form in the details panel (ADM-01), in two steps:
 //
@@ -43,6 +44,8 @@ function CreateEngineer({ onCreated, onCancel }) {
   const [generating, setGenerating] = useState(false)
   // The confirmation step's own Show/Hide for the password
   const [confirmShown, setConfirmShown] = useState(false)
+  // The confirmation step's Copy button, as promised by its hint
+  const { copyState, copy } = useCopy(fields.password)
 
   const nameRef = useRef(null)
   const emailRef = useRef(null)
@@ -126,11 +129,24 @@ function CreateEngineer({ onCreated, onCancel }) {
                   >
                     {confirmShown ? 'Hide' : 'Show'}
                   </button>
+                  <button
+                    type="button"
+                    className="admin-inline-button"
+                    onClick={copy}
+                    disabled={saving}
+                  >
+                    {copyState === 'copied' ? 'Copied' : 'Copy'}
+                  </button>
                 </span>
               ),
             },
           ]}
         />
+        {copyState === 'failed' && (
+          <p className="admin-field-hint" role="status">
+            {COPY_FAILED}
+          </p>
+        )}
         <p className="admin-field-hint">
           Copy the password before you confirm; it won't be shown again.
         </p>

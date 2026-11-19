@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import useCopy, { COPY_FAILED } from './useCopy'
 
 // A password input that is hidden by default and can be shown or hidden
 // (ADM-01, ADM-05), with an optional Copy button.
@@ -12,9 +13,6 @@ import { useState } from 'react'
 //   disabled     while saving
 //   autoComplete "new-password" by default, so browsers suggest one
 
-// How long "Copied" stays on the button
-const COPIED_MS = 2000
-
 function PasswordField({
   id,
   label,
@@ -27,18 +25,7 @@ function PasswordField({
   autoComplete = 'new-password',
 }) {
   const [shown, setShown] = useState(false)
-  // '' | 'copied' | 'failed'
-  const [copyState, setCopyState] = useState('')
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopyState('copied')
-    } catch {
-      setCopyState('failed')
-    }
-    setTimeout(() => setCopyState(''), COPIED_MS)
-  }
+  const { copyState, copy } = useCopy(value)
 
   const errorId = `${id}-error`
 
@@ -90,7 +77,7 @@ function PasswordField({
 
       {copyState === 'failed' && (
         <p className="admin-field-hint" role="status">
-          Copying is not available here. Select the password and copy it yourself.
+          {COPY_FAILED}
         </p>
       )}
       {error && (
