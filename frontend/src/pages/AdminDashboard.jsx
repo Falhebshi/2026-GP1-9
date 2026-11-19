@@ -16,8 +16,8 @@ import './admin/AdminDashboard.css'
 // App.jsx).
 //
 //   left    the engineer accounts (ADM-02); clicking one selects it
-//   right   the panel: the selected engineer's details, or the Create
-//           account form (ADM-01)
+//   right   the panel: the selected engineer's details and account actions
+//           (ADM-03, ADM-05, ADM-04), or the Create account form (ADM-01)
 function AdminDashboard() {
   const { user } = useOutletContext()
 
@@ -26,8 +26,9 @@ function AdminDashboard() {
   const [loadError, setLoadError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [creating, setCreating] = useState(false)
-  // A line under the header after an action, e.g. "Account created for …"
-  const [message, setMessage] = useState('')
+  // A line under the header after an action, e.g. "Account created for …":
+  // { text, variant } with variant "info" or "warning", or null
+  const [message, setMessage] = useState(null)
 
   // Loads (or reloads) the list; a failed reload keeps the list on screen
   function load() {
@@ -56,19 +57,40 @@ function AdminDashboard() {
   function select(id) {
     setSelectedId(id)
     setCreating(false)
-    setMessage('')
+    setMessage(null)
   }
 
   function startCreating() {
     setCreating(true)
-    setMessage('')
+    setMessage(null)
   }
 
   async function handleCreated(engineer) {
     setCreating(false)
     await load()
     setSelectedId(engineer.id)
-    setMessage(`Account created for ${engineer.name}.`)
+    setMessage({ text: `Account created for ${engineer.name}.`, variant: 'info' })
+  }
+
+  // After an action on the selected engineer (ADM-03, ADM-05)
+  async function handleChanged(engineer, text) {
+    await load()
+    setSelectedId(engineer.id)
+    setMessage({ text, variant: 'info' })
+  }
+
+  // After deleting the selected engineer (ADM-04)
+  async function handleDeleted(engineer) {
+    setSelectedId(null)
+    await load()
+    setMessage({ text: `${engineer.name}'s account was deleted.`, variant: 'info' })
+  }
+
+  // The account was deleted in another tab: refresh and say so
+  async function handleGone() {
+    setSelectedId(null)
+    await load()
+    setMessage({ text: 'This account no longer exists.', variant: 'warning' })
   }
 
   const selected = engineers?.find((engineer) => engineer.id === selectedId) ?? null
@@ -77,7 +99,15 @@ function AdminDashboard() {
   if (creating) {
     panel = <CreateEngineer onCreated={handleCreated} onCancel={() => setCreating(false)} />
   } else if (selected) {
-    panel = <EngineerDetails engineer={selected} />
+    panel = (
+      <EngineerDetails
+        key={selected.id}
+        engineer={selected}
+        onChanged={handleChanged}
+        onDeleted={handleDeleted}
+        onGone={handleGone}
+      />
+    )
   } else {
     panel = (
       <Card className="admin-panel">
@@ -98,7 +128,11 @@ function AdminDashboard() {
         }
       />
 
-      {message && <Notice className="admin-message">{message}</Notice>}
+      {message && (
+        <Notice variant={message.variant} className="admin-message">
+          {message.text}
+        </Notice>
+      )}
 
       {loadError && !engineers ? (
         <EmptyState variant="error" title="Engineer accounts unavailable">

@@ -34,6 +34,16 @@
   background: var(--color-action-hover);
 }
 
+/* Danger: filled red, for an action that cannot be undone (e.g. delete) */
+.btn-danger {
+  background: var(--color-danger);
+  color: var(--color-text-on-dark);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-danger-text);
+}
+
 /* Secondary: outlined, for everything else */
 .btn-secondary {
   background: var(--color-surface);

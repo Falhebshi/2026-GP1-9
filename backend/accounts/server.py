@@ -23,9 +23,19 @@ Administrators only (401 without a session, 403 for engineers):
     GET  /admin/engineers    every engineer account (ADM-02)
     POST /admin/engineers    create an engineer account (ADM-01)
     GET  /admin/passphrase   a random passphrase for the Generate button
+    POST /admin/engineers/{id}/status
+                             activate or deactivate an engineer (ADM-03)
+    POST /admin/engineers/{id}/password
+                             change an engineer's password (ADM-05)
+    DELETE /admin/engineers/{id}
+                             delete an engineer account for good (ADM-04)
 
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
+
+Every answer carries Cache-Control: no-store, so the browser never keeps
+a copy of account data (a generated password, the engineer list, who is
+logged in) after the page is closed.
 
 Setting: JAADAH_SECURE_COOKIE=true marks the session cookie Secure (sent
 over HTTPS only). Set it whenever Jaadah is reached over HTTPS; leave it
@@ -34,6 +44,7 @@ unset for the local http://localhost website.
 
 import os
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -68,6 +79,10 @@ SECURE_COOKIE_SETTING = "JAADAH_SECURE_COOKIE"
 MAX_LOGIN_EMAIL = 254
 MAX_LOGIN_PASSWORD = 256
 
+# Sent with every answer: account data is never cached (OWASP Web Cache
+# Security Cheat Sheet: no-store for responses with sensitive data)
+NO_STORE = "no-store"
+
 # The browser keeps the session token in this cookie
 SESSION_COOKIE = "jaadah_session"
 
@@ -86,6 +101,9 @@ NAME_MISSING = "Enter the engineer's name."
 NAME_TOO_LONG = f"Use at most {MAX_NAME_LENGTH} characters."
 EMAIL_INVALID = "Enter an email address like name@organization.gov.sa."
 EMAIL_TAKEN = "An account with this email already exists."
+
+# For an action on an account another tab deleted (or an administrator's id)
+ACCOUNT_GONE = "This account no longer exists."
 
 # Checked when the email has no account, and while login is paused, so
 # every answer takes about one password check and the time does not
@@ -133,6 +151,14 @@ class NewEngineer(BaseModel):
 
 class Passphrase(BaseModel):
     passphrase: str
+
+
+class NewStatus(BaseModel):
+    status: Literal["active", "inactive"]
+
+
+class NewPassword(BaseModel):
+    password: str
 
 
 def engineer_of(account: Account) -> Engineer:
@@ -189,6 +215,13 @@ def create_app(
         yield
 
     app = FastAPI(title="Jaadah accounts", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def never_cache(request: Request, call_next):
+        # Runs around every request, errors included
+        response = await call_next(request)
+        response.headers["Cache-Control"] = NO_STORE
+        return response
 
     def current_account(request: Request) -> Account:
         """The account of this request's session; 401 without a valid one."""
@@ -313,6 +346,47 @@ def create_app(
             raise field_error(409, "email", EMAIL_TAKEN) from None
 
         return engineer_of(account)
+
+    @app.post("/admin/engineers/{account_id}/status")
+    def set_status(
+        account_id: str,
+        change: NewStatus,
+        admin: Account = Depends(current_admin),
+    ) -> Engineer:
+        # Deactivating also ends the engineer's sessions (storage.set_status)
+        account = accounts.set_status(account_id, change.status)
+        if account is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
+
+        return engineer_of(account)
+
+    @app.post("/admin/engineers/{account_id}/password")
+    def change_password(
+        account_id: str,
+        change: NewPassword,
+        admin: Account = Depends(current_admin),
+    ) -> Engineer:
+        engineer = accounts.get_engineer(account_id)
+        if engineer is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
+
+        # The same rules as every password, with this engineer's name and email
+        problem = password_problem(change.password, engineer.name, engineer.email)
+        if problem:
+            raise field_error(400, "password", problem)
+
+        # Also ends the engineer's sessions (storage.set_password)
+        account = accounts.set_password(account_id, hash_password(change.password))
+        if account is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
+
+        return engineer_of(account)
+
+    @app.delete("/admin/engineers/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_engineer(account_id: str, admin: Account = Depends(current_admin)) -> None:
+        # The engineer's sessions go with the account (storage.delete_engineer)
+        if not accounts.delete_engineer(account_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, ACCOUNT_GONE)
 
     @app.get("/admin/passphrase")
     def passphrase(admin: Account = Depends(current_admin)) -> Passphrase:

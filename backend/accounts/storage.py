@@ -296,6 +296,79 @@ class AccountStorage:
 
         return [_account(row) for row in rows]
 
+    def get_engineer(self, account_id: str) -> Account | None:
+        """The engineer account with this id, or None (also for an administrator's id)."""
+
+        account = self.get_account(account_id)
+
+        return account if account is not None and account.role == ROLE_ENGINEER else None
+
+    def set_status(self, account_id: str, status: str) -> Account | None:
+        """Set an engineer's status; return the account, or None if no such engineer.
+
+        Making an account inactive also ends all its sessions at once, so
+        the engineer loses access immediately (ADM-03).
+        """
+
+        if status not in (STATUS_ACTIVE, STATUS_INACTIVE):
+            raise ValueError(f"unknown status: {status}")
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE accounts SET status = ? WHERE id = ? AND role = ?",
+                (status, account_id, ROLE_ENGINEER),
+            )
+            if cursor.rowcount == 0:
+                return None
+
+            if status == STATUS_INACTIVE:
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,),
+                )
+
+        return self.get_account(account_id)
+
+    def set_password(self, account_id: str, password_hash: str) -> Account | None:
+        """Replace an engineer's password; return the account, or None if no such engineer.
+
+        Also ends all the engineer's sessions, so the old password's
+        sessions stop at once (ADM-05), and clears any login pause on
+        their email, so they can log in with the new password straight away.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT email FROM accounts WHERE id = ? AND role = ?",
+                (account_id, ROLE_ENGINEER),
+            ).fetchone()
+            if row is None:
+                return None
+
+            connection.execute(
+                "UPDATE accounts SET password_hash = ? WHERE id = ?",
+                (password_hash, account_id),
+            )
+            connection.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
+            connection.execute("DELETE FROM login_attempts WHERE email = ?", (row[0],))
+
+        return self.get_account(account_id)
+
+    def delete_engineer(self, account_id: str) -> bool:
+        """Delete an engineer account for good; return False if there is no such engineer.
+
+        Its sessions are deleted with it (ON DELETE CASCADE), so the
+        engineer loses access at once, and the email can be used again
+        for a new account (ADM-04).
+        """
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM accounts WHERE id = ? AND role = ?",
+                (account_id, ROLE_ENGINEER),
+            )
+
+        return cursor.rowcount == 1
+
     def find_login(self, email: str) -> LoginRecord | None:
         """Return what login needs for the account with this email, or None."""
 
