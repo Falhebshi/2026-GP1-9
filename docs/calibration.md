@@ -13,7 +13,7 @@ Proposed on 19 Nov 2026 and not yet approved. The values the code uses are in `j
 | Eligible | All four observed intervals reported and none imputed, and every seed has all four simulated intervals |
 | Days | Only days after the late-August demand increase; the National Day week (20–26 Sep 2026) and days with more than 10% imputed intervals are left out |
 | Split | Whole weeks, calibration weeks first, validation weeks later, with the same mix of workdays, Fridays and Saturdays |
-| Hours | The morning and evening peak hour of each day type (workday, Friday, Saturday), taken from the calibration days |
+| Hours | The two busiest hours of each day type (workday, Friday, Saturday), at least 3 hours apart, taken from the calibration weeks; listed in `TEST_HOUR_STARTS`. Quiet hours are left out because GEH is more lenient at low volumes |
 | Pass (primary) | GEH < 5 for at least 85% of eligible detector-hours, checked separately on the calibration and the validation set |
 | Reported, not pass/fail | Observed against simulated occupancy, 15-minute GEH and errors, time-series plots. Occupancy is not pass/fail because it depends on the signal plan: the real controller is actuated, the model runs one fixed plan |
 | Seeds | Tuning on seed 42; acceptance on the mean simulated count of 4 seeds |
@@ -39,8 +39,29 @@ The 85% rule comes from FHWA, *Traffic Analysis Toolbox Volume III* (Dowling, Sk
 | `jaadah/calibration/e1_output.py` | Reads the loops' output into `DetectorInterval` records: detector, interval end in Riyadh time, vehicle count (`nVehContrib`) and occupancy (%). |
 | `jaadah/calibration/geh.py` | Sums four 15-minute counts into an hourly count, compares observed with the mean of the seeds' simulated counts, and computes GEH, the pass share and whether the target is met. |
 | `traffic_source/rcrc_replay/config.py` | `ReplayConfig.from_environment()`: the replay offset can be set with `JAADAH_REPLAY_OFFSET_WEEKS` (see `rcrc_replay_source.md`). |
+| `jaadah/calibration/peak_hours.py` | The day type of a date and its two test hours, in Riyadh time. |
+| `jaadah/calibration/vehicle_type.py` | Checks driver settings (only the attributes in `TUNABLE_VEHICLE_ATTRIBUTES`) and writes a copy of a route file with them set on its vehicle type. |
+| `simulation/scripts/run_calibration.py` | Runs every test hour of a range of days, for each seed, and scores the model. |
 
-Not built yet: the runner that executes the calibration and validation days with several seeds, and the parameter tuning.
+## Running a calibration
+
+```powershell
+$env:JAADAH_REPLAY_OFFSET_WEEKS = "0"
+python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002     # in its own terminal
+python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12
+python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --set tau=1.2 --set sigma=0.4 --seeds 42 43 44 45 --jobs 2
+```
+
+For each test hour and seed the runner:
+
+1. reads the hour, with its warm-up and clearance, from the replay source and builds the SUMO demand with the same steps as `run_baseline.py` (ingestion, demand transformation, departure planning, demand writer, demand checks). An hour whose demand cannot be built is skipped and listed, never filled in;
+2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>/` and reuses it on later runs, so tuning only reruns SUMO;
+3. runs SUMO with the induction loops and without FCD output, with the same settings as a baseline run (`--begin 0`, step 0.4 s, the seed, `--random false`). Settings given with `--set` go on a copy of the route file; the generated demand is never changed;
+4. compares each detector-hour with the observed counts, on the mean of the seeds.
+
+It prints the share of eligible detector-hours with GEH below 5, overall and per approach, and writes the detail (one row per detector-hour, with observed and simulated count, GEH and occupancy) and a summary to `../jaadah-private-data/processed/calibration/results/<label>.csv` and `.json`. These files hold numbers derived from RCRC data, so they stay in the private data folder.
+
+The runner reuses `run_baseline.py`'s constants and building blocks but repeats its short ingestion-to-demand sequence, because `run_baseline.py` runs SUMO in the same function. The tuning itself (choosing which settings to try) is done by hand with `--set`.
 
 ## Rules and why
 
@@ -60,5 +81,5 @@ The positions are the modelled lane end minus 1 m, copied from the synthetic pla
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py
+.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py tests/test_run_calibration.py
 ```
