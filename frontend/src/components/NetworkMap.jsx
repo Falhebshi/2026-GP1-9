@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Map as MapLibreMap, NavigationControl, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { THEME_EVENT } from '../hooks/useTheme'
 import { themeColor } from '../utils/theme'
 import './NetworkMap.css'
 
@@ -381,6 +382,21 @@ function NetworkMap({
       setReady(false) // a new map (after a hot reload) has to load its layers again
     }
   }, [bounds, maxBounds])
+
+  // night mode changes the dots' theme colors (fill and ring): repaint them when it is switched,
+  // since the map read them only once, when it loaded
+  useEffect(() => {
+    if (!ready) return
+    const map = mapRef.current
+    const repaint = () => {
+      const selected = themeColor('--color-selected')
+      map.setPaintProperty('intersections', 'circle-color', selected)
+      map.setPaintProperty('intersections', 'circle-stroke-color', themeColor('--color-surface'))
+      map.setPaintProperty('intersections-pulse', 'circle-color', selected)
+    }
+    window.addEventListener(THEME_EVENT, repaint)
+    return () => window.removeEventListener(THEME_EVENT, repaint)
+  }, [ready])
 
   // segment data
   useEffect(() => {
