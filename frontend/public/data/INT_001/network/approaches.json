@@ -4,7 +4,7 @@
     {
       "approach_id": "APP_E",
       "side": "east",
-      "road": "Imam Saud Rd",
+      "road": "Imam Saud Road",
       "movements": [
         {
           "movement_id": "MOV_E_S",
@@ -21,7 +21,7 @@
     {
       "approach_id": "APP_N",
       "side": "north",
-      "road": "Prince Turki Rd, service road",
+      "road": "Prince Turki Road, service road",
       "movements": [
         {
           "movement_id": "MOV_N_E",
@@ -38,7 +38,7 @@
     {
       "approach_id": "APP_S",
       "side": "south",
-      "road": "Prince Turki Rd, service road",
+      "road": "Prince Turki Road, service road",
       "movements": [
         {
           "movement_id": "MOV_S_W",
@@ -55,7 +55,7 @@
     {
       "approach_id": "APP_W",
       "side": "west",
-      "road": "Imam Saud Rd",
+      "road": "Imam Saud Road",
       "movements": [
         {
           "movement_id": "MOV_W_N",

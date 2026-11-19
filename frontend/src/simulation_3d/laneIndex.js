@@ -9,8 +9,8 @@ const MOVE = { s: 'Through', l: 'Left', r: 'Right', t: 'U-turn', L: 'Left', R: '
 
 // Tell the two main roads apart by direction. Prince Turki runs NW to SE (about 131°), Imam Saud SW to NE (about 40 to 66°).
 function roadName(axis) {
-  if (axis >= 95 && axis <= 170) return 'Prince Turki bin Abdulaziz Al-Awwal Rd'
-  if (axis >= 20 && axis <= 85) return 'Imam Saud bin Abdulaziz Rd'
+  if (axis >= 95 && axis <= 170) return 'Prince Turki bin Abdulaziz Al-Awwal Road'
+  if (axis >= 20 && axis <= 85) return 'Imam Saud bin Abdulaziz Road'
   return 'Side street'
 }
 
