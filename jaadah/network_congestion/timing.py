@@ -7,9 +7,14 @@ module says how they spread over the 96 quarter hours of a given date:
 
 - direction: every outbound trip (home to activity) has a return trip
   (activity to home), the transposed matrix, later in the day;
-- time of day: each purpose leaves at its own times (DEPARTURES): schools
-  early, government work at 07:00, private work around 08:00, shopping
-  mostly in the evening, the airport around the clock. Private work at
+- time of day: each purpose leaves at its own times (DEPARTURES, the
+  times corrected in step 4; the first step 3 times are kept as
+  DEPARTURES_STEP3): school drop-offs staggered by level from 06:00 to
+  07:30, government staff leaving mostly 14:30 to 15:30, private-sector
+  staff later and more spread, 16:00 to 19:30, shopping mostly in the
+  evening, the airport around the clock. School trips are counted leg
+  by leg (school_legs: drop-off, empty trip back, pick-up run, ride
+  home, school buses). Private work at
   the flexible-hours hubs (FLEXIBLE_HUBS) uses a wider morning window,
   and private work at the industrial centres follows their shifts
   (private_work_industry); company buses (in buses) reach the sites
@@ -39,6 +44,7 @@ from jaadah.network_congestion.parameters import (
     OFF_SEASON_SHARE,
     PUBLIC_HOLIDAYS,
     RIYADH_SEASONS,
+    SCHOOL_TRAVEL,
     TERMS,
     TEST_DEPARTURES,
 )
@@ -136,6 +142,34 @@ def slot_shares(purpose: str, direction: str, day: date) -> np.ndarray:
     curves = DEPARTURES[TIMES_OF.get(purpose, purpose)][direction]
 
     return day_factor(purpose, day) * departure_shares(curves)
+
+
+def school_legs(students: np.ndarray, day: date) -> list[tuple[np.ndarray, np.ndarray, bool]]:
+    """
+    School vehicle trips leg by leg (SCHOOL_TRAVEL), from the matrix of
+    students' home-to-school trips: (vehicle trips, share in each quarter
+    hour, buses or not). Cars take children_per_car children and do the
+    drop-off, an empty trip back home (empty_return of them), a pick-up
+    run from home (the same share) and the ride home; school buses go
+    there before school and back with the ride home.
+    """
+
+    s = SCHOOL_TRAVEL
+    cars = (1 - s["bus_share"] - s["walk_share"]) / s["children_per_car"]
+    buses = s["bus_share"] / s["children_per_bus"]
+    out, back = DEPARTURES["school"]["outbound"], DEPARTURES["school"]["return"]
+
+    def at(curves, shift=0.0):
+        return day_factor("school", day) * departure_shares([(w, m + shift, sd) for w, m, sd in curves])
+
+    return [
+        (students * cars, at(out), False),
+        (students.T * cars * s["empty_return"], at(out, s["return_after_h"]), False),
+        (students * cars * s["empty_return"], at(back, -s["pickup_before_h"]), False),
+        (students.T * cars, at(back), False),
+        (students * buses, at(out, -s["bus_before_h"]), True),
+        (students.T * buses, at(back), True),
+    ]
 
 
 def sensitivity_shares(test: str, direction: str) -> np.ndarray:

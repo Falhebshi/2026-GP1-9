@@ -37,6 +37,7 @@ from jaadah.network_congestion.observed import (
     ObservedModel,
     SiteInputs,
     build_model,
+    day_factors,
     load_road_network,
     load_site_inputs,
     site_levels,
@@ -338,10 +339,10 @@ class ObservedSpeedProducer:
         self.latest = latest
         self.levels = levels
 
-    def interval(self, start: datetime, site_level: float) -> IntervalSpeeds:
+    def interval(self, start: datetime, site_level: float, factor: float | None = None) -> IntervalSpeeds:
         """Return the speeds of the interval that starts at start."""
 
-        speeds, network_speed = observed_interval_speeds(self.model, start, site_level)
+        speeds, network_speed = observed_interval_speeds(self.model, start, site_level, factor)
 
         return IntervalSpeeds(
             interval_start=start,
@@ -371,15 +372,19 @@ class ObservedSpeedProducer:
         added = 0
 
         if start < cutoff:
-            levels = sorted(
-                (moment.astimezone(RIYADH), level)
-                for moment, level in self.levels(start, cutoff).items()
-                if start <= moment and moment + INTERVAL <= cutoff
-            )
+            # from the start of start's day, for the day factor so far
+            day_start = datetime(start.year, start.month, start.day, tzinfo=RIYADH)
+            fetched = {
+                moment.astimezone(RIYADH): level
+                for moment, level in self.levels(day_start, cutoff).items()
+                if moment + INTERVAL <= cutoff
+            }
+            factors = day_factors(self.model, fetched)
+            levels = sorted((moment, level) for moment, level in fetched.items() if start <= moment)
 
             # one day at a time, so a long gap does not sit in memory
             for first in range(0, len(levels), 96):
-                batch = [self.interval(moment, level) for moment, level in levels[first:first + 96]]
+                batch = [self.interval(moment, level, factors[moment]) for moment, level in levels[first:first + 96]]
                 self.storage.insert_intervals(batch)
                 added += len(batch)
 

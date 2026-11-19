@@ -46,3 +46,4 @@ Thumbs.db
 # Network map OD matrices: rebuilt from the code (python -m jaadah.network_congestion.trips)
 /data/processed/network/od_matrices.npz
 /data/processed/network/od_sensitivity.npz
+/data/processed/network/assigned_flows.json

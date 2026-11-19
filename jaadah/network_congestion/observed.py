@@ -13,12 +13,16 @@ while the city still has one. So each source sets what it can:
    (parameters.py). TomTom measures it from drivers' trips over the
    whole road network, over a whole year.
 2. Whether today is busier or quieter than usual: the study
-   intersection's HCM critical volume-to-capacity ratio in that
-   15 minutes (from the observed demand, calculated by the KPI engine,
+   intersection's HCM critical volume-to-capacity ratio (from the
+   observed demand, calculated by the KPI engine,
    backend/analytics/kpi/capacity.py) over its usual ratio for the same
-   day of the week and 15 minutes. TomTom's congestion is scaled by
-   this day factor, within DAY_FACTOR_LIMITS, so one intersection
-   cannot turn the whole city green or red.
+   day of the week and 15 minutes, averaged over the day so far
+   (day_factors). TomTom's congestion is scaled by this one factor for
+   the day, within DAY_FACTOR_LIMITS, so one intersection cannot turn
+   the whole city green or red, nor reorder TomTom's pattern within the
+   day: Riyadh's evening (15:00 to 19:00) stays busier than its morning,
+   as TomTom measures it. This is calibration to TomTom, not a
+   measurement of the roads.
 3. Which roads are worse than others. Roads are ranked by their load
    in the demand model (demand.py): trips over capacity. A segment's
    v/c follows how its corridor ranks against the intersection's:
@@ -757,23 +761,60 @@ def day_factor(model: ObservedModel, moment: datetime, site_level: float) -> flo
     return min(max(site_level / usual, low), high)
 
 
+def day_factors(model: ObservedModel, levels: dict[datetime, float]) -> dict[datetime, float]:
+    """
+    The day factor at every interval: the intersection's v/c over its
+    usual value, averaged over that date's intervals up to this one,
+    within DAY_FACTOR_LIMITS (1 until there is a usual value to compare
+    with). One factor for the whole day, instead of one per 15 minutes,
+    keeps TomTom's pattern within the day; an interval's factor depends
+    only on the counts up to it, so it never changes once stored.
+    """
+
+    low, high = DAY_FACTOR_LIMITS
+    totals: dict[date, list[float]] = defaultdict(lambda: [0.0, 0])
+    factors = {}
+
+    for moment in sorted(levels):
+        usual = model.usual.get((moment.weekday(), slot_of(moment)))
+        total = totals[moment.date()]
+        if usual:
+            total[0] += levels[moment] / usual
+            total[1] += 1
+        factors[moment] = min(max(total[0] / total[1], low), high) if total[1] else 1.0
+
+    return factors
+
+
 @lru_cache(maxsize=16)
 def _tomtom_day(day: date) -> tuple[float, ...]:
     return tuple(tomtom_index(day))
 
 
-def target_index(model: ObservedModel, moment: datetime, site_level: float) -> float:
-    """TomTom's travel-time index at this time, its congestion scaled by the day factor."""
+def target_index(
+    model: ObservedModel,
+    moment: datetime,
+    site_level: float,
+    factor: float | None = None,
+) -> float:
+    """
+    TomTom's travel-time index at this time, its congestion scaled by the
+    day factor (day_factors), or by this interval's own factor when none
+    is given.
+    """
 
     usual_index = _tomtom_day(moment.date())[slot_of(moment)]
+    if factor is None:
+        factor = day_factor(model, moment, site_level)
 
-    return 1 + (usual_index - 1) * day_factor(model, moment, site_level)
+    return 1 + (usual_index - 1) * factor
 
 
 def interval_speeds(
     model: ObservedModel,
     moment: datetime,
     site_level: float,
+    factor: float | None = None,
 ) -> tuple[list[int], float]:
     """
     Every segment's speed (percent of free flow) in one interval, and
@@ -783,7 +824,7 @@ def interval_speeds(
 
     slot = slot_of(moment)
     table = model.tables[slot]
-    level = float(np.interp(target_index(model, moment, site_level), table.indices, table.levels))
+    level = float(np.interp(target_index(model, moment, site_level, factor), table.indices, table.levels))
     speeds = speed_percent(segment_volume_to_capacity(
         1.0, model.network.offsets[slot], model.spread, level,
     ))

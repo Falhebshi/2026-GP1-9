@@ -9,6 +9,7 @@ from jaadah.network_congestion.observed import (
     RoadNetwork,
     build_model,
     day_factor,
+    day_factors,
     interval_speeds,
     load_road_network,
     slot_of,
@@ -16,6 +17,7 @@ from jaadah.network_congestion.observed import (
     tomtom_index,
     travel_time_index,
 )
+from jaadah.network_congestion.parameters import DAY_FACTOR_LIMITS, TOMTOM_CONGESTION_LEVEL_PERCENT, TOMTOM_HOURS
 from jaadah.network_congestion.producer import ObservedSpeedProducer
 from jaadah.network_congestion.server import MapSource, create_app
 from jaadah.network_congestion.storage import (
@@ -109,8 +111,43 @@ def test_a_busier_day_at_the_intersection_darkens_the_city(model):
 def test_the_day_factor_stays_within_its_limits(model):
     moment = datetime(2026, 8, 19, 17, 0, tzinfo=RIYADH)
 
-    assert day_factor(model, moment, 6.0) == 1.5
-    assert day_factor(model, moment, 0.0) == 0.5
+    assert day_factor(model, moment, 6.0) == DAY_FACTOR_LIMITS[1]
+    assert day_factor(model, moment, 0.0) == DAY_FACTOR_LIMITS[0]
+
+
+def test_one_factor_for_the_day_so_far(model):
+    morning = datetime(2026, 8, 19, 7, 0, tzinfo=RIYADH)
+    levels = {morning: 0.9, morning + timedelta(minutes=15): 0.3}
+
+    factors = day_factors(model, levels)
+
+    assert factors[morning] == pytest.approx(DAY_FACTOR_LIMITS[1])       # 0.9 / 0.6 = 1.5, capped
+    assert factors[morning + timedelta(minutes=15)] == pytest.approx(1.0)   # (1.5 + 0.5) / 2
+
+
+def test_a_busy_morning_at_the_intersection_keeps_the_evening_busier(model):
+    # Riyadh's TomTom evening is busier than its morning; one busy morning
+    # interval at the intersection must not reverse that on the map
+    day = datetime(2026, 8, 19, tzinfo=RIYADH)
+    levels = {day + timedelta(minutes=15 * i): 0.6 for i in range(96)}
+    levels[day + timedelta(hours=8)] = 6.0
+    levels[day + timedelta(hours=17)] = 0.0
+    factors = day_factors(model, levels)
+    morning, evening = day + timedelta(hours=8), day + timedelta(hours=17)
+
+    assert target_index(model, evening, 0.0, factors[evening]) > target_index(model, morning, 6.0, factors[morning])
+    morning_speeds, _ = interval_speeds(model, morning, 6.0, factors[morning])
+    evening_speeds, _ = interval_speeds(model, evening, 0.0, factors[evening])
+    assert np.mean(evening_speeds) < np.mean(morning_speeds)
+
+
+def test_no_day_factor_can_put_the_morning_above_the_evening():
+    low, high = DAY_FACTOR_LIMITS
+    for levels in TOMTOM_CONGESTION_LEVEL_PERCENT.values():
+        by_hour = dict(zip(TOMTOM_HOURS, levels))
+        morning = max(by_hour[h] for h in (6, 8, 10))
+        evening = max(by_hour[h] for h in (16, 18))
+        assert morning * high < evening * low
 
 
 def test_without_a_usual_value_the_city_follows_tomtom(network):
@@ -199,7 +236,8 @@ def test_later_only_the_new_intervals_are_added(model, storage):
     clock["now"] = REPLAY_NOW + timedelta(minutes=15)
 
     assert producer.synchronize() == 1
-    assert asked[-1] == (REPLAY_NOW, REPLAY_NOW + timedelta(minutes=15))
+    # read from the start of the day, for the day factor so far
+    assert asked[-1] == (datetime(2026, 8, 19, tzinfo=RIYADH), REPLAY_NOW + timedelta(minutes=15))
     assert producer.synchronize() == 0
 
 
@@ -212,8 +250,9 @@ def test_the_speeds_stored_are_the_model_speeds(model, storage):
     moment = datetime(2026, 8, 19, 16, 30, tzinfo=RIYADH)
 
     stored = storage.get_interval(moment)
+    day = every_interval(datetime(2026, 8, 19, tzinfo=RIYADH), moment + timedelta(minutes=15))
 
-    assert stored.speeds == interval_speeds(model, moment, 0.8)[0]
+    assert stored.speeds == interval_speeds(model, moment, 0.8, day_factors(model, day)[moment])[0]
 
 
 # ============================================================

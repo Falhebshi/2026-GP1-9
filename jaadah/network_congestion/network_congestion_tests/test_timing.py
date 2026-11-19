@@ -6,9 +6,11 @@ import pytest
 from jaadah.network_congestion.parameters import (
     DAY_FACTORS,
     DEPARTURES,
+    DEPARTURES_STEP3,
     HOLIDAY_PRIVATE_WORK,
     OFF_SEASON_SHARE,
     PURPOSES,
+    SCHOOL_TRAVEL,
     TEST_DEPARTURES,
 )
 from jaadah.network_congestion.timing import (
@@ -20,6 +22,7 @@ from jaadah.network_congestion.timing import (
     departures_by_slot,
     in_season,
     in_term,
+    school_legs,
     sensitivity_shares,
     slot_shares,
     timed_matrices,
@@ -158,6 +161,32 @@ def test_sensitivity_tests_have_no_map_timing():
         assert test not in PURPOSES
     with pytest.raises(KeyError):
         slot_shares("external_central", "outbound", TERM_WEDNESDAY)
+
+
+def test_school_trips_are_counted_leg_by_leg():
+    students = np.full((2, 2), 100.0)
+    s = SCHOOL_TRAVEL
+    cars = (1 - s["bus_share"] - s["walk_share"]) / s["children_per_car"]
+
+    legs = school_legs(students, TERM_WEDNESDAY)
+    car_trips = sum(m.sum() * shares.sum() for m, shares, bus in legs if not bus)
+    bus_trips = sum(m.sum() * shares.sum() for m, shares, bus in legs if bus)
+
+    # drop-off and ride home for every car, the empty trip back and the
+    # pick-up run for empty_return of them
+    assert car_trips == pytest.approx(400 * cars * 2 * (1 + s["empty_return"]))
+    assert bus_trips == pytest.approx(400 * 2 * s["bus_share"] / s["children_per_bus"])
+    assert school_legs(students, SUMMER_WEDNESDAY)[0][1].sum() == 0
+
+
+def test_government_staff_leave_earlier_than_private_sector_staff():
+    government = slot_shares("government_work", "return", TERM_WEDNESDAY)
+    private = slot_shares("private_work", "return", TERM_WEDNESDAY)
+    mean_hour = lambda shares: (np.arange(96) * shares).sum() / shares.sum() / 4
+
+    assert mean_hour(government) < 15.5 < 16.0 < mean_hour(private)
+    # the step 3 times are kept for comparison, the trips are the same
+    assert set(DEPARTURES_STEP3) <= set(DEPARTURES)
 
 
 def test_sensitivity_timings_add_up_to_one():

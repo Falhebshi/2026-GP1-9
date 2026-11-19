@@ -180,10 +180,16 @@ CALIBRATION_START = datetime(2026, 7, 13, tzinfo=timezone(timedelta(hours=3)))
 CALIBRATION_WEEKS = 5
 
 # How far one intersection can move the city's congestion away from
-# TomTom's usual value for that hour: from half to one and a half times
-# (project assumption), so a quiet or busy day at the intersection
-# shows on the map without turning the whole city green or red.
-DAY_FACTOR_LIMITS = (0.5, 1.5)
+# TomTom's usual value (project assumption), so a quiet or busy day at
+# the intersection shows on the map without turning the whole city green
+# or red. One factor for the whole day (averaged over the day so far,
+# observed.day_factors), so TomTom's pattern within the day, its evening
+# above its morning, is kept. The factor still settles during the day,
+# so the limits are narrow enough that even the extremes (morning at the
+# top, evening at the bottom) can't reverse the peaks: 0.8 / 1.25 = 0.64
+# is above TomTom's largest morning-to-evening ratio on any day
+# (Sunday, 49 / 83 = 0.59).
+DAY_FACTOR_LIMITS = (0.8, 1.25)
 
 # Days of counts before a window used to estimate missing detectors,
 # as the baseline runner for RCRC (simulation/scripts/run_baseline.py)
@@ -539,8 +545,74 @@ FURNESS_TOLERANCE = 1e-4
 # (civil service regulation, Ministry of Human Resources); schools start
 # at 06:15 to 07:00 (Riyadh school timetables, 2025); flexible start in
 # six business hubs from 2 June 2026 (RCRC). Everything else is a
-# project assumption (Macro Map Methodology, Table 6), to be tested.
+# project assumption (Macro Map Methodology, Table 6).
+#
+# DEPARTURES_STEP3 are the times first approved in step 3, kept for
+# comparison; DEPARTURES are the corrected times used from step 4 on
+# (Macro Map Step 4 review, November 2026). The trips themselves (the OD
+# matrices) are the same in both: only their times differ.
 DEPARTURES = {
+    # drop-offs staggered by school level, 06:00 to 07:30: secondary,
+    # intermediate, primary, kindergarten (shares roughly by years of
+    # schooling, assumption); pick-ups staggered the same way. The empty
+    # trips back after a drop-off and the pick-up runs follow from these
+    # (SCHOOL_TRAVEL, timing.school_legs)
+    "school": {"outbound": [(0.22, 6.0, 0.2), (0.22, 6.25, 0.2), (0.45, 6.6, 0.25), (0.11, 7.15, 0.25)],
+               "return": [(0.11, 11.5, 0.3), (0.45, 12.25, 0.3), (0.22, 12.75, 0.3), (0.22, 13.25, 0.3)]},
+    # 60% on fixed hours (07:30 to 14:30, official), leaving 14:30 to
+    # 14:50; 40% with a later, flexible start leaving about 7 hours after
+    # it, 15:00 to 15:30 (ASSUMPTION: flexible share and times unverified)
+    "government_work": {"outbound": [(0.6, 7.0, 0.4), (0.4, 7.75, 0.6)],
+                        "return": [(0.6, 14.65, 0.2), (0.4, 15.25, 0.4)]},
+    # ASSUMPTION, no Riyadh finishing-time data found: private-sector
+    # employees leave later and at more varied times than government
+    # staff, from about 16:00 to 19:30, each group starting about 9 hours
+    # earlier (an 8-hour day under the Labour Law plus a break)
+    "private_work": {"outbound": [(0.25, 7.25, 0.4), (0.35, 8.25, 0.5), (0.25, 9.25, 0.5), (0.15, 10.25, 0.6)],
+                     "return": [(0.25, 16.25, 0.4), (0.35, 17.25, 0.5), (0.25, 18.25, 0.5), (0.15, 19.25, 0.6)]},
+    # flexible-hours hubs: later and wider (ASSUMPTION)
+    "private_work_flexible": {"outbound": [(0.5, 8.5, 0.8), (0.5, 9.5, 0.8)],
+                              "return": [(0.5, 17.5, 0.8), (0.5, 18.5, 0.8)]},
+    "university": {"outbound": [(1.0, 8.0, 0.8)], "return": [(1.0, 14.5, 1.5)]},
+    # evening-weighted: dinner 18:00 to 22:00 (delivery-order and card
+    # spending peaks), some after Asr, a little before noon (assumption)
+    "shopping_leisure": {"outbound": [(0.15, 11.5, 1.5), (0.25, 17.0, 1.2), (0.60, 20.0, 1.5)],
+                         "return": [(0.15, 13.5, 1.5), (0.25, 19.0, 1.2), (0.60, 22.5, 1.5)]},
+    # evening clinics (assumption)
+    "health": {"outbound": [(0.7, 10.0, 2.0), (0.3, 18.5, 1.5)], "return": [(0.7, 11.5, 2.0), (0.3, 20.0, 1.5)]},
+    "other": {"outbound": "uniform", "return": "uniform"},
+    "private_work_industry": {"outbound": [(0.75, 6.5, 0.4), (0.125, 14.5, 0.4), (0.125, 22.5, 0.4)],
+                              "return": [(0.75, 15.5, 0.5), (0.125, 23.0, 0.4), (0.125, 7.0, 0.4)]},
+    "company_bus": {"outbound": [(1.0, 5.9, 0.4)], "return": [(0.6, 15.75, 0.5), (0.4, 17.0, 0.6)]},
+}
+
+# School trips leg by leg, instead of one car trip per student each way:
+# a car takes 1.4 children on average and does the drop-off, an empty
+# trip back home for most cars, a pick-up run and the ride home.
+SCHOOL_TRAVEL = {
+    # Rafed (Ministry of Education transport): about 736,000 to 779,000
+    # students nationally in 2025, of about 6 million
+    "bus_share": 0.12,
+    # no Riyadh evidence of walking to school; private cars are by far
+    # the most common way (Children's mobility in Riyadh, PMC 6429590),
+    # so walking is kept minimal (assumption)
+    "walk_share": 0.02,
+    # siblings sharing a car, limited by separate boys' and girls'
+    # schools and levels (assumption; households of 5, KAPSARC survey)
+    "children_per_car": 1.4,
+    # drop-off cars that go back home empty (household drivers, parents
+    # not going to work); the rest go on to work, counted as work trips
+    # (assumption). The same share drive out again for the pick-up.
+    "empty_return": 0.6,
+    "children_per_bus": 40,
+    # hours between the drop-off and the empty trip back, and before the
+    # ride home for the pick-up run
+    "return_after_h": 0.25,
+    "pickup_before_h": 0.33,
+    "bus_before_h": 0.25,
+}
+
+DEPARTURES_STEP3 = {
     "school": {"outbound": [(1.0, 6.5, 0.25)], "return": [(1.0, 12.75, 0.5)]},
     "government_work": {"outbound": [(1.0, 7.0, 0.33)], "return": [(1.0, 14.75, 0.4)]},
     "private_work": {"outbound": [(1.0, 8.0, 0.6)], "return": [(1.0, 17.5, 0.8)]},
@@ -617,6 +689,42 @@ RIYADH_SEASONS = (
     (date(2025, 10, 10), date(2026, 3, 15)),
     (date(2026, 10, 21), date(2026, 12, 31)),
 )
+
+
+# ============================================================
+# TRIP MODEL: ASSIGNMENT TO THE ROADS (assignment.py)
+# ============================================================
+
+# Each zone joins the network at up to this many junctions on primary
+# or secondary roads within this distance of its centre (the nearest
+# junction when none is that close); its trips are split equally between
+# them (assumption, standard practice in zone models)
+ZONE_CONNECTORS = 4
+CONNECTOR_RADIUS_KM = 2.0
+
+# Zone pairs closer than this (straight line) travel on local streets,
+# which the network doesn't hold: for such trips the main-road route is
+# 2.4 times the straight distance (assumption)
+LOCAL_STREETS_KM = 3.0
+
+# Minutes to and from the network, both ends together, added to the
+# free-flow network time when a trip is spread over the hours it spends
+# on the road (assumption)
+ACCESS_MINUTES = 4.0
+
+# Capacity per lane, vehicles an hour (assumption, typical urban values;
+# primary and secondary roads have signals)
+CAPACITY_PER_LANE = {"motorway": 1900, "trunk": 1600, "primary": 900, "secondary": 700}
+
+# Travel time against traffic: t = t0 (1 + a (v/c)^b), the BPR curve
+# with its standard values
+BPR_ALPHA = 0.15
+BPR_BETA = 4.0
+
+# Each hour's trips are loaded in rounds of these shares; after each
+# round travel times are updated and later rounds take the new fastest
+# routes (incremental assignment)
+ASSIGNMENT_ROUNDS = (0.4, 0.3, 0.2, 0.1)
 
 
 # ============================================================
