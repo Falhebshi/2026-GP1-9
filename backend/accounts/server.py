@@ -20,8 +20,13 @@ Endpoints:
 
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
+
+Setting: JAADAH_SECURE_COOKIE=true marks the session cookie Secure (sent
+over HTTPS only). Set it whenever Jaadah is reached over HTTPS; leave it
+unset for the local http://localhost website.
 """
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -36,6 +41,16 @@ from backend.accounts.storage import (
     AccountStorage,
 )
 
+# The website and the accounts server run on the same address, so the
+# cookie only needs Secure when that address is HTTPS
+SECURE_COOKIE_SETTING = "JAADAH_SECURE_COOKIE"
+
+# Login input longer than this is refused without being hashed. Passwords
+# are at most 64 characters (passwords.py) and an email at most 254
+# (RFC 5321), so no real login is affected.
+MAX_LOGIN_EMAIL = 254
+MAX_LOGIN_PASSWORD = 256
+
 # The browser keeps the session token in this cookie
 SESSION_COOKIE = "jaadah_session"
 
@@ -48,9 +63,9 @@ PAUSED = (
 )
 NOT_LOGGED_IN = "Log in to continue."
 
-# Checked when the email has no account, so an unknown email takes
-# about as long as a wrong password and the time does not reveal
-# which emails have accounts
+# Checked when the email has no account, and while login is paused, so
+# every answer takes about one password check and the time does not
+# reveal which emails have accounts
 UNKNOWN_EMAIL_HASH = hash_password("no account has this password at all")
 
 
@@ -81,15 +96,32 @@ def user_of(account: Account) -> User:
     )
 
 
-def create_app(storage: AccountStorage | None = None) -> FastAPI:
-    """Create the accounts server."""
+def secure_cookie_from_environment() -> bool:
+    """True when JAADAH_SECURE_COOKIE is set to true, 1 or yes."""
+
+    return os.environ.get(SECURE_COOKIE_SETTING, "").strip().lower() in {"true", "1", "yes"}
+
+
+def create_app(
+    storage: AccountStorage | None = None,
+    secure_cookie: bool | None = None,
+) -> FastAPI:
+    """Create the accounts server.
+
+    secure_cookie: mark the session cookie Secure; by default read from
+    JAADAH_SECURE_COOKIE.
+    """
 
     accounts = storage if storage is not None else AccountStorage()
+    cookie_secure = (
+        secure_cookie_from_environment() if secure_cookie is None else secure_cookie
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         accounts.initialize()
         accounts.delete_expired_sessions()
+        accounts.forget_old_attempts()
         yield
 
     app = FastAPI(title="Jaadah accounts", lifespan=lifespan)
@@ -110,30 +142,43 @@ def create_app(storage: AccountStorage | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/auth/login")
-    def login(details: LoginRequest, response: Response) -> LoginResponse:
-        record = accounts.find_login(details.email)
+    def login(details: LoginRequest, request: Request, response: Response) -> LoginResponse:
+        email, password = details.email, details.password
 
-        if record is None:
-            verify_password(UNKNOWN_EMAIL_HASH, details.password)
+        # Far too long to be a real login: refused without hashing it
+        if len(email) > MAX_LOGIN_EMAIL or len(password) > MAX_LOGIN_PASSWORD:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, INCORRECT)
 
-        account = record.account
-
-        # While paused, the password is not even checked
-        if record.paused_until is not None and accounts.now() < record.paused_until:
+        # The pause is kept per email typed, so an email without an
+        # account pauses exactly like one with an account. While paused,
+        # one password check still runs so the answer takes as long as usual.
+        if accounts.login_paused_until(email) is not None:
+            verify_password(UNKNOWN_EMAIL_HASH, password)
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, PAUSED)
 
-        if not verify_password(record.password_hash, details.password):
-            if accounts.record_failed_login(account.id) is not None:
+        record = accounts.find_login(email)
+
+        # Exactly one password check, with or without an account
+        stored = record.password_hash if record is not None else UNKNOWN_EMAIL_HASH
+        correct = verify_password(stored, password) and record is not None
+
+        if not correct:
+            if accounts.record_failed_login(email) is not None:
                 raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, PAUSED)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, INCORRECT)
 
-        accounts.record_successful_login(account.id)
+        accounts.record_successful_login(email)
+        account = record.account
 
         # Only someone with the right password learns that the account
         # is deactivated
         if account.status != STATUS_ACTIVE:
             raise HTTPException(status.HTTP_403_FORBIDDEN, DEACTIVATED)
+
+        # Logging in again in the same browser ends its previous session
+        old_token = request.cookies.get(SESSION_COOKIE)
+        if old_token:
+            accounts.delete_session(old_token)
 
         token = accounts.create_session(account.id)
         response.set_cookie(
@@ -143,9 +188,7 @@ def create_app(storage: AccountStorage | None = None) -> FastAPI:
             httponly=True,          # page scripts cannot read it
             samesite="strict",      # not sent when another site links here
             path="/",
-            # The local website runs on http://localhost, where a Secure
-            # cookie is not needed; a deployment behind HTTPS sets True
-            secure=False,
+            secure=cookie_secure,   # HTTPS only, when JAADAH_SECURE_COOKIE is set
         )
 
         return LoginResponse(user=user_of(account))
@@ -156,7 +199,7 @@ def create_app(storage: AccountStorage | None = None) -> FastAPI:
         if token:
             accounts.delete_session(token)
 
-        response.delete_cookie(SESSION_COOKIE, path="/")
+        response.delete_cookie(SESSION_COOKIE, path="/", secure=cookie_secure, httponly=True, samesite="strict")
 
     @app.get("/auth/me")
     def me(account: Account = Depends(current_account)) -> LoginResponse:

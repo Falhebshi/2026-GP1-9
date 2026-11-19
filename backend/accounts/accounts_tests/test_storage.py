@@ -124,7 +124,6 @@ def test_find_login_returns_the_account_and_its_hash(storage):
     record = storage.find_login("Sara.Q@moh.gov.sa")
 
     assert (record.account, record.password_hash) == (sara, SARA_HASH)
-    assert record.paused_until is None
     assert storage.find_login("nobody@moh.gov.sa") is None
 
 
@@ -139,57 +138,111 @@ def test_an_unknown_id_gives_none(storage):
 
 
 # ============================================================
-# FAILED LOGINS
+# FAILED LOGINS (per email typed)
 # ============================================================
+
+NOBODY = "nobody@moh.gov.sa"     # an email without an account
+
+
+def attempts_rows(storage):
+    with sqlite3.connect(storage.database_path) as connection:
+        return connection.execute("SELECT COUNT(*) FROM login_attempts").fetchone()[0]
+
 
 def test_the_limit_is_5_wrong_passwords_then_30_minutes():
     assert (MAX_FAILED_LOGINS, LOGIN_PAUSE) == (5, timedelta(minutes=30))
 
 
-def test_the_5th_wrong_password_in_a_row_starts_the_pause(storage):
-    sara = add_sara(storage)
+@pytest.mark.parametrize("email", ["sara.q@moh.gov.sa", NOBODY])
+def test_the_5th_wrong_password_pauses_the_email_with_or_without_an_account(storage, email):
+    add_sara(storage)
 
     for _ in range(4):
-        assert storage.record_failed_login(sara.id) is None
-    assert storage.find_login(sara.email).paused_until is None
+        assert storage.record_failed_login(email) is None
+    assert storage.login_paused_until(email) is None
 
-    # 5th at 09:00 Riyadh (06:00 UTC): paused until 09:30 (06:30 UTC)
-    until = storage.record_failed_login(sara.id)
+    # 5th at 09:00 Riyadh: paused until 09:30
+    until = storage.record_failed_login(email)
     assert until == START + timedelta(minutes=30)
-    assert storage.find_login(sara.email).paused_until == until
+    assert storage.login_paused_until(email) == until
+
+
+def test_the_email_is_compared_trimmed_and_lowercased(storage):
+    for _ in range(5):
+        storage.record_failed_login(" Nobody@MOH.gov.sa ")
+
+    assert storage.login_paused_until(NOBODY) is not None
+
+
+def test_the_pause_ends_after_30_minutes(storage, clock):
+    for _ in range(5):
+        storage.record_failed_login(NOBODY)
+
+    clock.moment = START + timedelta(minutes=29, seconds=59)
+    assert storage.login_paused_until(NOBODY) is not None
+
+    clock.moment = START + timedelta(minutes=30)
+    assert storage.login_paused_until(NOBODY) is None
 
 
 def test_after_a_pause_the_count_starts_again(storage, clock):
-    sara = add_sara(storage)
     for _ in range(5):
-        storage.record_failed_login(sara.id)
+        storage.record_failed_login(NOBODY)
 
     clock.moment = START + timedelta(minutes=31)
     for _ in range(4):
-        assert storage.record_failed_login(sara.id) is None
-    assert storage.record_failed_login(sara.id) == clock.moment + LOGIN_PAUSE
+        assert storage.record_failed_login(NOBODY) is None
+    assert storage.record_failed_login(NOBODY) == clock.moment + LOGIN_PAUSE
 
 
 def test_a_correct_password_resets_the_count(storage):
     sara = add_sara(storage)
     for _ in range(4):
-        storage.record_failed_login(sara.id)
+        storage.record_failed_login(sara.email)
 
-    storage.record_successful_login(sara.id)
+    storage.record_successful_login(sara.email)
 
     # 4 more wrong ones are not enough for a pause
     for _ in range(4):
-        assert storage.record_failed_login(sara.id) is None
+        assert storage.record_failed_login(sara.email) is None
 
 
-def test_failed_logins_of_one_account_do_not_touch_another(storage):
-    sara = add_sara(storage)
-    omar = storage.create_account("Omar", "omar@ksu.edu.sa", OMAR_HASH, ROLE_ENGINEER)
-
+def test_one_email_does_not_touch_another(storage):
     for _ in range(5):
-        storage.record_failed_login(sara.id)
+        storage.record_failed_login(NOBODY)
 
-    assert storage.find_login(omar.email).paused_until is None
+    assert storage.login_paused_until("sara.q@moh.gov.sa") is None
+
+
+def test_a_count_is_forgotten_after_30_minutes_without_a_wrong_password(storage, clock):
+    for _ in range(4):
+        storage.record_failed_login(NOBODY)                 # 09:00
+
+    clock.moment = START + timedelta(minutes=30)            # 09:30
+    assert storage.forget_old_attempts() == 1
+    # 4 more are not enough for a pause: the first 4 were forgotten
+    for _ in range(4):
+        assert storage.record_failed_login(NOBODY) is None
+
+
+def test_a_paused_email_is_kept_until_its_pause_is_over(storage, clock):
+    for _ in range(5):
+        storage.record_failed_login(NOBODY)                 # paused until 09:30
+
+    clock.moment = START + timedelta(minutes=29)
+    assert storage.forget_old_attempts() == 0
+    assert storage.login_paused_until(NOBODY) is not None
+
+
+def test_made_up_emails_do_not_pile_up(storage, clock):
+    for number in range(50):
+        storage.record_failed_login(f"made.up.{number}@moh.gov.sa")
+    assert attempts_rows(storage) == 50
+
+    # The next wrong password, 30 minutes later, clears the old rows first
+    clock.moment = START + timedelta(minutes=30)
+    storage.record_failed_login(NOBODY)
+    assert attempts_rows(storage) == 1
 
 
 # ============================================================

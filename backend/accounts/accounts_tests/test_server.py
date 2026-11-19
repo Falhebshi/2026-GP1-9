@@ -279,3 +279,133 @@ def test_a_made_up_token_is_refused(client):
     client.cookies.set(SESSION_COOKIE, "made-up-token")
 
     assert client.get("/auth/me").status_code == 401
+
+
+# ============================================================
+# NOTHING REVEALS WHICH EMAILS HAVE ACCOUNTS (review)
+# ============================================================
+
+def answers(client, email, attempts=6):
+    """(status, message) for each of several wrong passwords in a row."""
+
+    result = []
+    for _ in range(attempts):
+        response = log_in(client, email, "not the right password")
+        result.append((response.status_code, response.json()["detail"]))
+    return result
+
+
+def test_an_unknown_email_gets_the_same_answers_as_a_real_one(client):
+    real = answers(client, SARA["email"])
+    unknown = answers(client, "nobody@moh.gov.sa")
+
+    assert real == unknown == [(401, INCORRECT)] * 4 + [(429, PAUSED)] * 2
+
+
+def count_password_checks(monkeypatch):
+    checks = []
+    original = server.verify_password
+    monkeypatch.setattr(
+        server, "verify_password",
+        lambda stored, password: checks.append(1) or original(stored, password),
+    )
+    return checks
+
+
+@pytest.mark.parametrize("email", [SARA["email"], "nobody@moh.gov.sa"])
+def test_every_answer_checks_one_password_even_while_paused(client, monkeypatch, email):
+    checks = count_password_checks(monkeypatch)
+
+    answers(client, email, attempts=6)          # 4 wrong, the pause, 1 while paused
+
+    assert len(checks) == 6
+
+
+def test_a_paused_unknown_email_pauses_for_30_minutes_too(client, clock):
+    answers(client, "nobody@moh.gov.sa", attempts=5)
+
+    clock.moment = START + timedelta(minutes=29, seconds=59)
+    assert log_in(client, "nobody@moh.gov.sa", "anything").status_code == 429
+
+    clock.moment = START + timedelta(minutes=30)
+    assert log_in(client, "nobody@moh.gov.sa", "anything").status_code == 401
+
+
+# ============================================================
+# INPUT LENGTH (review)
+# ============================================================
+
+def test_far_too_long_input_is_refused_without_hashing(client, monkeypatch):
+    checks = count_password_checks(monkeypatch)
+
+    long_password = log_in(client, SARA["email"], "x" * 257)
+    long_email = log_in(client, "a" * 245 + "@moh.gov.sa", SARA["password"])   # 256
+
+    for response in (long_password, long_email):
+        assert response.status_code == 401
+        assert response.json()["detail"] == INCORRECT
+    assert checks == []
+
+
+def test_input_at_the_limits_is_checked_normally(client, monkeypatch):
+    checks = count_password_checks(monkeypatch)
+
+    log_in(client, SARA["email"], "x" * 256)
+    log_in(client, "a" * 243 + "@moh.gov.sa", "anything")                      # 254
+
+    assert len(checks) == 2
+
+
+# ============================================================
+# SECURE COOKIE SETTING (review)
+# ============================================================
+
+def login_cookie(storage, monkeypatch, setting=None, **app_options):
+    if setting is None:
+        monkeypatch.delenv("JAADAH_SECURE_COOKIE", raising=False)
+    else:
+        monkeypatch.setenv("JAADAH_SECURE_COOKIE", setting)
+
+    with TestClient(create_app(storage, **app_options)) as client:
+        return log_in(client, **SARA).headers["set-cookie"].lower()
+
+
+def test_the_cookie_is_not_secure_by_default(storage, monkeypatch):
+    assert "secure" not in login_cookie(storage, monkeypatch)
+
+
+@pytest.mark.parametrize("setting", ["true", "1", "yes", "TRUE"])
+def test_jaadah_secure_cookie_makes_it_secure(storage, monkeypatch, setting):
+    assert "; secure" in login_cookie(storage, monkeypatch, setting)
+
+
+@pytest.mark.parametrize("setting", ["", "false", "0", "no"])
+def test_other_values_leave_it_not_secure(storage, monkeypatch, setting):
+    assert "secure" not in login_cookie(storage, monkeypatch, setting)
+
+
+# ============================================================
+# LOGGING IN AGAIN (review)
+# ============================================================
+
+def test_logging_in_again_ends_the_previous_session(client):
+    log_in(client, **SARA)
+    first = client.cookies[SESSION_COOKIE]
+
+    log_in(client, **SARA)
+    second = client.cookies[SESSION_COOKIE]
+    assert first != second
+
+    client.cookies.set(SESSION_COOKIE, first)
+    assert client.get("/auth/me").status_code == 401
+
+    client.cookies.set(SESSION_COOKIE, second)
+    assert client.get("/auth/me").status_code == 200
+
+
+def test_a_failed_login_keeps_the_current_session(client):
+    log_in(client, **SARA)
+
+    log_in(client, SARA["email"], "not the right password")
+
+    assert client.get("/auth/me").status_code == 200

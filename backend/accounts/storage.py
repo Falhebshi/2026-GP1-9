@@ -10,6 +10,9 @@ afterwards. Two tables:
               the password itself
     sessions  one row per logged-in browser: the SHA-256 of its token,
               the account, when it expires, and its last request
+    login_attempts
+              wrong passwords per email typed at login, whether or not an
+              account has that email, and the end of a login pause
 
 The database is not committed (see .gitignore): it holds password
 hashes. Why each choice was made is explained in docs/accounts.md.
@@ -41,8 +44,11 @@ SESSION_IDLE_LIMIT = timedelta(minutes=30)
 # 32 random bytes: 256 bits, written as 43 URL-safe characters
 TOKEN_BYTES = 32
 
-# After this many wrong passwords in a row, the account's login pauses
-# (NIST asks for a limit of at most 100; these values are Jaadah's)
+# After this many wrong passwords in a row for one email, login with that
+# email pauses (NIST asks for a limit of at most 100; these values are
+# Jaadah's). The count is kept per email typed, not per account, so an
+# email without an account pauses exactly like one with an account. It is
+# forgotten after this same time without a wrong password.
 MAX_FAILED_LOGINS = 5
 LOGIN_PAUSE = timedelta(minutes=30)
 
@@ -57,7 +63,6 @@ class LoginRecord:
 
     account: "Account"
     password_hash: str
-    paused_until: datetime | None    # None when login is not paused
 
 
 @dataclass(frozen=True)
@@ -168,9 +173,7 @@ class AccountStorage:
                     status TEXT NOT NULL
                         CHECK (status IN ('{STATUS_ACTIVE}', '{STATUS_INACTIVE}')),
                     password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    failed_logins INTEGER NOT NULL DEFAULT 0,
-                    login_paused_until TEXT
+                    created_at TEXT NOT NULL
                 )
                 """
             )
@@ -182,6 +185,16 @@ class AccountStorage:
                         REFERENCES accounts (id) ON DELETE CASCADE,
                     expires_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    email TEXT PRIMARY KEY,
+                    failed_logins INTEGER NOT NULL,
+                    last_failed_at TEXT NOT NULL,
+                    paused_until TEXT
                 )
                 """
             )
@@ -254,7 +267,7 @@ class AccountStorage:
         with self._connect() as connection:
             row = connection.execute(
                 f"""
-                SELECT {ACCOUNT_COLUMNS}, password_hash, login_paused_until
+                SELECT {ACCOUNT_COLUMNS}, password_hash
                 FROM accounts
                 WHERE email = ?
                 """,
@@ -264,61 +277,104 @@ class AccountStorage:
         if row is None:
             return None
 
-        paused_until = row[-1]
+        return LoginRecord(account=_account(row[:-1]), password_hash=row[-1])
 
-        return LoginRecord(
-            account=_account(row[:-2]),
-            password_hash=row[-2],
-            paused_until=(
-                None if paused_until is None
-                else datetime.fromisoformat(paused_until)
-            ),
-        )
+    # ============================================================
+    # WRONG PASSWORDS (per email typed)
+    # ============================================================
 
-    def record_failed_login(self, account_id: str) -> datetime | None:
-        """Count one wrong password; return when the pause ends if this one starts it.
-
-        The 5th wrong password in a row pauses login for 30 minutes and
-        starts the count again from 0.
-        """
+    def login_paused_until(self, email: str) -> datetime | None:
+        """When the login pause for this email ends, or None if it is not paused."""
 
         with self._connect() as connection:
-            connection.execute(
-                "UPDATE accounts SET failed_logins = failed_logins + 1 WHERE id = ?",
-                (account_id,),
-            )
             row = connection.execute(
-                "SELECT failed_logins FROM accounts WHERE id = ?",
-                (account_id,),
+                "SELECT paused_until FROM login_attempts WHERE email = ?",
+                (normalise_email(email),),
             ).fetchone()
 
-            if row is None or row[0] < MAX_FAILED_LOGINS:
-                return None
+        if row is None or row[0] is None:
+            return None
 
-            paused_until = self.now() + LOGIN_PAUSE
+        paused_until = datetime.fromisoformat(row[0])
+
+        return paused_until if self.now() < paused_until else None
+
+    def record_failed_login(self, email: str) -> datetime | None:
+        """Count one wrong password for an email; return when the pause ends if this one starts it.
+
+        The 5th wrong password in a row pauses login with that email for
+        30 minutes and starts the count again from 0. Works the same for
+        an email that has no account.
+        """
+
+        key = normalise_email(email)
+        now = self.now()
+
+        with self._connect() as connection:
+            self._forget_old_attempts(connection, now)
+
             connection.execute(
                 """
-                UPDATE accounts
-                SET failed_logins = 0, login_paused_until = ?
-                WHERE id = ?
+                INSERT INTO login_attempts (email, failed_logins, last_failed_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT (email) DO UPDATE SET
+                    failed_logins = failed_logins + 1,
+                    last_failed_at = excluded.last_failed_at
                 """,
-                (_utc_text(paused_until), account_id),
+                (key, _utc_text(now)),
+            )
+            count = connection.execute(
+                "SELECT failed_logins FROM login_attempts WHERE email = ?",
+                (key,),
+            ).fetchone()[0]
+
+            if count < MAX_FAILED_LOGINS:
+                return None
+
+            paused_until = now + LOGIN_PAUSE
+            connection.execute(
+                """
+                UPDATE login_attempts
+                SET failed_logins = 0, paused_until = ?
+                WHERE email = ?
+                """,
+                (_utc_text(paused_until), key),
             )
 
         return paused_until
 
-    def record_successful_login(self, account_id: str) -> None:
-        """A correct password: the count of wrong ones starts again from 0."""
+    def record_successful_login(self, email: str) -> None:
+        """A correct password: the count of wrong ones for this email starts again."""
 
         with self._connect() as connection:
             connection.execute(
-                """
-                UPDATE accounts
-                SET failed_logins = 0, login_paused_until = NULL
-                WHERE id = ?
-                """,
-                (account_id,),
+                "DELETE FROM login_attempts WHERE email = ?",
+                (normalise_email(email),),
             )
+
+    def forget_old_attempts(self) -> int:
+        """Delete the counts that no longer matter; return how many."""
+
+        with self._connect() as connection:
+            return self._forget_old_attempts(connection, self.now())
+
+    @staticmethod
+    def _forget_old_attempts(connection: sqlite3.Connection, now: datetime) -> int:
+        """A count is forgotten once its pause is over and 30 minutes passed
+        without a wrong password, so typing many made-up emails cannot fill
+        the table.
+        """
+
+        cursor = connection.execute(
+            """
+            DELETE FROM login_attempts
+            WHERE (paused_until IS NULL OR paused_until <= ?)
+              AND last_failed_at <= ?
+            """,
+            (_utc_text(now), _utc_text(now - LOGIN_PAUSE)),
+        )
+
+        return cursor.rowcount
 
     # ============================================================
     # SESSIONS
