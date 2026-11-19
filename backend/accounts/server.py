@@ -18,6 +18,12 @@ Endpoints:
     POST /auth/logout   end the session and remove its cookie
     GET  /auth/me       the logged-in account, or 401
 
+Administrators only (401 without a session, 403 for engineers):
+
+    GET  /admin/engineers    every engineer account (ADM-02)
+    POST /admin/engineers    create an engineer account (ADM-01)
+    GET  /admin/passphrase   a random passphrase for the Generate button
+
 The rules (messages, the pause after wrong passwords, the session
 cookie) are explained in docs/accounts.md.
 
@@ -32,13 +38,24 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
-from backend.accounts.passwords import hash_password, verify_password
+from backend.accounts.passphrase import generate_passphrase
+from backend.accounts.passwords import (
+    hash_password,
+    password_problem,
+    verify_password,
+)
 from backend.accounts.storage import (
     LOGIN_PAUSE,
+    MAX_NAME_LENGTH,
+    ROLE_ADMIN,
+    ROLE_ENGINEER,
     SESSION_LIFETIME,
     STATUS_ACTIVE,
     Account,
     AccountStorage,
+    DuplicateEmailError,
+    normalise_email,
+    valid_email,
 )
 
 # The website and the accounts server run on the same address, so the
@@ -62,6 +79,13 @@ PAUSED = (
     f"{int(LOGIN_PAUSE.total_seconds() // 60)} minutes."
 )
 NOT_LOGGED_IN = "Log in to continue."
+ADMINS_ONLY = "Only administrators can do this."
+
+# Messages for the Create account form, each for one field
+NAME_MISSING = "Enter the engineer's name."
+NAME_TOO_LONG = f"Use at most {MAX_NAME_LENGTH} characters."
+EMAIL_INVALID = "Enter an email address like name@organization.gov.sa."
+EMAIL_TAKEN = "An account with this email already exists."
 
 # Checked when the email has no account, and while login is paused, so
 # every answer takes about one password check and the time does not
@@ -85,6 +109,46 @@ class User(BaseModel):
 
 class LoginResponse(BaseModel):
     user: User
+
+
+class Engineer(BaseModel):
+    """An engineer account as the Admin Dashboard sees it."""
+
+    id: str
+    name: str
+    email: str
+    status: str
+    created_at: str          # ISO 8601, UTC
+
+
+class EngineerList(BaseModel):
+    engineers: list[Engineer]
+
+
+class NewEngineer(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class Passphrase(BaseModel):
+    passphrase: str
+
+
+def engineer_of(account: Account) -> Engineer:
+    return Engineer(
+        id=account.id,
+        name=account.name,
+        email=account.email,
+        status=account.status,
+        created_at=account.created_at.isoformat(),
+    )
+
+
+def field_error(code: int, field: str, message: str) -> HTTPException:
+    """An error the form shows under one field: {"detail": {"field", "message"}}."""
+
+    return HTTPException(code, {"field": field, "message": message})
 
 
 def user_of(account: Account) -> User:
@@ -134,6 +198,14 @@ def create_app(
 
         if account is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, NOT_LOGGED_IN)
+
+        return account
+
+    def current_admin(account: Account = Depends(current_account)) -> Account:
+        """The logged-in administrator; 403 for an engineer."""
+
+        if account.role != ROLE_ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, ADMINS_ONLY)
 
         return account
 
@@ -204,6 +276,47 @@ def create_app(
     @app.get("/auth/me")
     def me(account: Account = Depends(current_account)) -> LoginResponse:
         return LoginResponse(user=user_of(account))
+
+    # ============================================================
+    # ADMINISTRATORS (ADM-01, ADM-02)
+    # ============================================================
+
+    @app.get("/admin/engineers")
+    def list_engineers(admin: Account = Depends(current_admin)) -> EngineerList:
+        return EngineerList(engineers=[engineer_of(a) for a in accounts.list_engineers()])
+
+    @app.post("/admin/engineers", status_code=status.HTTP_201_CREATED)
+    def create_engineer(
+        details: NewEngineer,
+        admin: Account = Depends(current_admin),
+    ) -> Engineer:
+        name = details.name.strip()
+        email = normalise_email(details.email)
+
+        if not name:
+            raise field_error(400, "name", NAME_MISSING)
+        if len(name) > MAX_NAME_LENGTH:
+            raise field_error(400, "name", NAME_TOO_LONG)
+        if not valid_email(email):
+            raise field_error(400, "email", EMAIL_INVALID)
+
+        # A refused password is never hashed
+        problem = password_problem(details.password, name, email)
+        if problem:
+            raise field_error(400, "password", problem)
+
+        try:
+            account = accounts.create_account(
+                name, email, hash_password(details.password), ROLE_ENGINEER,
+            )
+        except DuplicateEmailError:
+            raise field_error(409, "email", EMAIL_TAKEN) from None
+
+        return engineer_of(account)
+
+    @app.get("/admin/passphrase")
+    def passphrase(admin: Account = Depends(current_admin)) -> Passphrase:
+        return Passphrase(passphrase=generate_passphrase())
 
     return app
 

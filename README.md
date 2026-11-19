@@ -64,8 +64,10 @@ Use separate terminals for the frontend, the accounts server, and the traffic so
 Every page except Login needs an account, and there is no default login. Create an administrator once (it asks for the password twice without showing it):
 
 ```powershell
-python -m backend.accounts.create_admin --name "Your Name" --email you@ksu.edu.sa
+python -m backend.accounts.create_admin --name "Your Name" --email you.admin@ksu.edu.sa --engineer-email you@ksu.edu.sa
 ```
+
+`--engineer-email` is optional: it also creates your traffic engineer account with the same password, so you can log in either way. Accounts are stored on each laptop, so every teammate does this once on their own machine.
 
 Then start the accounts server and keep it running while you use the website:
 

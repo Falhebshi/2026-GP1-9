@@ -60,15 +60,14 @@ export async function logIn({ email, password }) {
 const LOGOUT_FAILED = 'Could not log out: the login service is not responding. Try again.'
 
 // Ends the session on the server, which also removes the cookie (PBI 32).
-// The cookie is HttpOnly, so only the server can remove it: if the server
-// cannot be reached, the session is still open and this throws, so the
-// page can say so instead of pretending the user is logged out.
+// The server answers 204 whether or not a session was open. The cookie is
+// HttpOnly, so only the server can remove it: if the server cannot be
+// reached, the session is still open and this throws, so the page can say
+// so instead of pretending the user is logged out.
 export async function logOut() {
   try {
     await request('/logout', { method: 'POST' })
-  } catch (error) {
-    // 401: the session had already ended, so the user is logged out
-    if (error.status === 401) return
+  } catch {
     throw new Error(LOGOUT_FAILED)
   }
 }
