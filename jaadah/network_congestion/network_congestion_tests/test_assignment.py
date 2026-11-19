@@ -122,3 +122,17 @@ def test_tomtom_calibration_reports_the_factor_for_each_quarter_hour():
     factors = tomtom_calibration([0.2, 0.0, 0.8], [1.4, 1.3, 1.4])
 
     assert factors == pytest.approx([2.0, 1.0, 0.5])
+
+
+def test_hourly_vc_gives_every_used_segment_its_v_c_for_each_hour():
+    from jaadah.network_congestion.assignment import hourly_vc
+    from jaadah.network_congestion.parameters import segment_capacity
+
+    segment = road("S0f", "A", "B")
+    content = {"date": "2026-09-16", "hours": {"7": {"segments": {"S0f": [500.0, 30.0]}}}}
+
+    values = hourly_vc(content, [segment])["segments"]["S0f"]
+
+    assert len(values) == 24
+    assert values[7] == pytest.approx(500.0 / segment_capacity(segment), abs=1e-3)
+    assert sum(values) == values[7]

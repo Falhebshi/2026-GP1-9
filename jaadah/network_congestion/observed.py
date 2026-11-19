@@ -23,8 +23,11 @@ while the city still has one. So each source sets what it can:
    day: Riyadh's evening (15:00 to 19:00) stays busier than its morning,
    as TomTom measures it. This is calibration to TomTom, not a
    measurement of the roads.
-3. Which roads are worse than others. Roads are ranked by their load
-   in the demand model (demand.py): trips over capacity. A segment's
+3. Which roads are worse than others. Roads are ranked by their hourly
+   v/c in the trip model (assignment.py, segment_hourly_vc.json), the
+   ranks of one hour blended into the next over its 15-minute slots; when
+   that file is missing, by their load in the earlier demand model
+   (demand.py, segment_demand.json): trips over capacity. A segment's
    v/c follows how its corridor ranks against the intersection's:
 
        v/c = level x exp(spread x (corridor rank - site rank))
@@ -94,6 +97,9 @@ DEFAULT_MAPPING_PATH = (
 DEFAULT_NETWORK_PATH = (
     REPO_ROOT / "data" / "processed" / "road_network" / "jaadah_study_area.net.xml"
 )
+# Each segment's v/c for every hour in the trip model (assignment.py);
+# without it, roads are ranked from segment_demand.json
+DEFAULT_HOURLY_VC = DEFAULT_DEMAND.parent / "segment_hourly_vc.json"
 # The study intersection's centre, from the same record the website uses
 INTERSECTIONS_PATH = REPO_ROOT / "frontend" / "public" / "data" / "intersections.json"
 
@@ -616,8 +622,12 @@ def load_road_network(
     mappings_path: Path = DEFAULT_MAPPINGS,
     demand_path: Path = DEFAULT_DEMAND,
     centre: tuple[float, float] | None = None,
+    hourly_vc_path: Path | None = DEFAULT_HOURLY_VC,
 ) -> RoadNetwork:
-    """Read the segments and the demand model, and rank every corridor."""
+    """
+    Read the segments and rank every corridor: by the trip model's v/c
+    of each hour when hourly_vc_path exists, else by the demand model.
+    """
 
     segments = [
         RoadSegment(**record)
@@ -627,26 +637,37 @@ def load_road_network(
         record["segment_id"]: record["osm_way_id"]
         for record in json.loads(mappings_path.read_text(encoding="utf-8"))["mappings"]
     }
-    demand = json.loads(demand_path.read_text(encoding="utf-8"))
     capacities = {s.segment_id: segment_capacity(s) for s in segments}
     corridors = segment_corridors(segments, way_ids)
     at_site = site_segments(segments, centre or site_centre())
 
-    offsets = {}
-    for part, key in (("morning", "to_activities"), ("evening", "to_homes")):
-        ranks = corridor_ranks(segments, corridors, segment_loads(segments, demand[key], capacities))
-        offsets[part] = rank_offsets(segments, corridors, ranks, site_rank(at_site, corridors, ranks))
+    def offsets_for(loads: dict[str, float]) -> np.ndarray:
+        ranks = corridor_ranks(segments, corridors, loads)
+        return rank_offsets(segments, corridors, ranks, site_rank(at_site, corridors, ranks))
+
+    if hourly_vc_path is not None and hourly_vc_path.exists():
+        hourly = json.loads(hourly_vc_path.read_text(encoding="utf-8"))["segments"]
+        by_hour = [offsets_for({sid: values[h] for sid, values in hourly.items()}) for h in range(24)]
+        slot_offsets = []
+        for slot in range(24 * INTERVALS_PER_HOUR):
+            hour, share = divmod(slot, INTERVALS_PER_HOUR)
+            share /= INTERVALS_PER_HOUR
+            slot_offsets.append((1 - share) * by_hour[hour] + share * by_hour[(hour + 1) % 24])
+    else:
+        demand = json.loads(demand_path.read_text(encoding="utf-8"))
+        morning = offsets_for(segment_loads(segments, demand["to_activities"], capacities))
+        evening = offsets_for(segment_loads(segments, demand["to_homes"], capacities))
+        slot_offsets = [
+            (1 - evening_share(slot)) * morning + evening_share(slot) * evening
+            for slot in range(24 * INTERVALS_PER_HOUR)
+        ]
 
     return RoadNetwork(
         segments=segments,
         capacities=capacities,
         capacity_array=np.array([capacities[s.segment_id] for s in segments]),
         length_array=np.array([line_length_m(s.geometry) for s in segments]),
-        offsets=[
-            (1 - evening_share(slot)) * offsets["morning"]
-            + evening_share(slot) * offsets["evening"]
-            for slot in range(24 * INTERVALS_PER_HOUR)
-        ],
+        offsets=slot_offsets,
     )
 
 

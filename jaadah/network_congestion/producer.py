@@ -31,6 +31,7 @@ from backend.ingestion.service import ingest_rcrc_observations
 from jaadah.network_congestion.observed import (
     BPR_ALPHA,
     BPR_BETA,
+    DEFAULT_HOURLY_VC,
     DEFAULT_MAPPING_PATH,
     DEFAULT_NETWORK_PATH,
     MAX_VOLUME_TO_CAPACITY,
@@ -306,6 +307,7 @@ def observed_source_metadata(model: ObservedModel) -> SourceMetadata:
         (CALIBRATION_START, CALIBRATION_WEEKS, IMPUTATION_HISTORY_DAYS),
         file_fingerprint(DEFAULT_MAPPING_PATH),
         file_fingerprint(DEFAULT_NETWORK_PATH),
+        file_fingerprint(DEFAULT_HOURLY_VC) if DEFAULT_HOURLY_VC.exists() else "demand model",
     ):
         fingerprint.update(repr(part).encode())
 

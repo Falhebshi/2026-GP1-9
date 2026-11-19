@@ -74,6 +74,9 @@ from jaadah.network_congestion.zones import DEFAULT_ZONES, read_centres
 
 # rebuilt from the code when needed, not committed
 DEFAULT_ASSIGNED = DEFAULT_OUTPUT_DIR / "assigned_flows.json"
+# each segment's v/c for every hour, which the map ranks roads by
+# (observed.py); small and open data only, so committed
+DEFAULT_HOURLY_VC = DEFAULT_OUTPUT_DIR / "segment_hourly_vc.json"
 
 KM_PER_DEGREE_LAT = 110.54
 KM_PER_DEGREE_LON = 101.2       # at Riyadh's latitude
@@ -298,6 +301,32 @@ def tomtom_calibration(model_index: list[float], tomtom_index: list[float]) -> l
     return factors
 
 
+def hourly_vc(content: dict, segments: list[RoadSegment]) -> dict:
+    """
+    Each segment's v/c in every hour of an assignment run (0 where no
+    trip uses it), with the map's capacities (parameters.segment_capacity).
+    """
+
+    from jaadah.network_congestion.parameters import segment_capacity
+
+    capacity = {s.segment_id: segment_capacity(s) for s in segments}
+    values = defaultdict(lambda: [0.0] * 24)
+
+    for hour, result in content["hours"].items():
+        for sid, (flow, _seconds) in result["segments"].items():
+            values[sid][int(hour)] = round(flow / capacity[sid], 3)
+
+    return {
+        "source": {
+            "built": date.today().isoformat(),
+            "date": content["date"],
+            "what": "v/c of each segment for every hour, trip model assignment (assignment.py); "
+                    "used only to rank roads, the map's level comes from TomTom",
+        },
+        "segments": dict(sorted(values.items())),
+    }
+
+
 # ============================================================
 # COMMAND LINE
 # ============================================================
@@ -313,12 +342,20 @@ def main() -> None:
     parser.add_argument("--segments", type=Path, default=DEFAULT_SEGMENTS)
     parser.add_argument("--mappings", type=Path, default=DEFAULT_MAPPINGS)
     parser.add_argument("--out", type=Path, default=DEFAULT_ASSIGNED)
+    parser.add_argument("--hourly-vc", type=Path, default=DEFAULT_HOURLY_VC)
+    parser.add_argument("--hourly-vc-only", action="store_true",
+                        help="only write the hourly v/c from an earlier run (--out)")
     args = parser.parse_args()
+
+    segments = [RoadSegment(**r) for r in json.loads(args.segments.read_text(encoding="utf-8"))["segments"]]
+    if args.hourly_vc_only:
+        content = json.loads(args.out.read_text(encoding="utf-8"))
+        args.hourly_vc.write_text(json.dumps(hourly_vc(content, segments)), encoding="utf-8")
+        return
 
     zones = json.loads(args.zones.read_text(encoding="utf-8"))["zones"]
     stored = np.load(args.od)
     od = {k: stored[k].astype(float) for k in stored.files if k not in NOT_MATRICES}
-    segments = [RoadSegment(**r) for r in json.loads(args.segments.read_text(encoding="utf-8"))["segments"]]
     mappings = {r["segment_id"]: r for r in json.loads(args.mappings.read_text(encoding="utf-8"))["mappings"]}
 
     network = Network(segments, mappings)
@@ -346,6 +383,9 @@ def main() -> None:
         print(f"{h:02d}:00 {hours[h].sum():>10,.0f} vehicles, congestion {content['hours'][str(h)]['congestion_index']:.2f}, "
               f"{time.perf_counter() - started:.0f} s", flush=True)
         args.out.write_text(json.dumps(content), encoding="utf-8")
+
+    if len(content["hours"]) == 24:
+        args.hourly_vc.write_text(json.dumps(hourly_vc(content, segments)), encoding="utf-8")
 
 
 if __name__ == "__main__":

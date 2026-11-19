@@ -167,6 +167,23 @@ def test_the_usual_value_is_the_mean_for_that_weekday_and_time(network):
     assert model.usual[(1, 32)] == pytest.approx(0.1)
 
 
+def test_roads_are_ranked_by_the_trip_model_and_fall_back_to_the_demand_model(tmp_path):
+    import json
+    from jaadah.network_congestion.observed import DEFAULT_HOURLY_VC
+
+    trip_model = load_road_network()
+    fallback = load_road_network(hourly_vc_path=tmp_path / "missing.json")
+
+    assert DEFAULT_HOURLY_VC.exists()
+    assert len(trip_model.offsets) == len(fallback.offsets) == 96
+    assert not np.array_equal(trip_model.offsets[17 * 4], fallback.offsets[17 * 4])
+    # a quarter hour between two hours blends their ranks
+    hourly = json.loads(DEFAULT_HOURLY_VC.read_text(encoding="utf-8"))["segments"]
+    assert all(len(values) == 24 for values in hourly.values())
+    middle = trip_model.offsets[17 * 4 + 2]
+    assert np.allclose(middle, 0.5 * trip_model.offsets[17 * 4] + 0.5 * trip_model.offsets[18 * 4])
+
+
 def test_the_real_road_network_has_offsets_for_every_15_minutes():
     network = load_road_network()
 
