@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import Notice from './Notice'
 import { HOME_BY_ROLE, logOut } from '../services/authService'
 import './NavBar.css'
 
@@ -24,31 +26,48 @@ function NavBar() {
   // links: they only have the Admin Dashboard.
   const showLinks = !isAdmin && pathname !== '/overview'
 
+  // Shown under the bar when logging out did not reach the server
+  const [logoutError, setLogoutError] = useState('')
+
   async function handleLogout() {
-    // Ends the session on the server and removes its cookie (PBI 32)
-    await logOut()
-    navigate('/login', { replace: true })
+    setLogoutError('')
+    try {
+      // Ends the session on the server and removes its cookie (PBI 32)
+      await logOut()
+      navigate('/login', { replace: true })
+    } catch (error) {
+      // Still logged in: stay on the page and say so
+      setLogoutError(error.message)
+    }
   }
 
   return (
-    <header className="nav-bar">
-      <Link to={isAdmin ? HOME_BY_ROLE.admin : HOME_BY_ROLE.engineer} className="nav-brand">
-        Jaadah
-      </Link>
+    <>
+      <header className="nav-bar">
+        <Link to={isAdmin ? HOME_BY_ROLE.admin : HOME_BY_ROLE.engineer} className="nav-brand">
+          Jaadah
+        </Link>
 
-      <nav className="nav-links">
-        {showLinks &&
-          links.map((link) => (
-            <NavLink key={link.to} to={link.to} className="nav-link">
-              {link.label}
-            </NavLink>
-          ))}
+        <nav className="nav-links">
+          {showLinks &&
+            links.map((link) => (
+              <NavLink key={link.to} to={link.to} className="nav-link">
+                {link.label}
+              </NavLink>
+            ))}
 
-        <button type="button" className="nav-link" onClick={handleLogout}>
-          Log out
-        </button>
-      </nav>
-    </header>
+          <button type="button" className="nav-link" onClick={handleLogout}>
+            Log out
+          </button>
+        </nav>
+      </header>
+
+      {logoutError && (
+        <Notice variant="warning" className="nav-notice">
+          {logoutError}
+        </Notice>
+      )}
+    </>
   )
 }
 

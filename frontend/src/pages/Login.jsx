@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BrandMark from '../components/BrandMark'
 import Button from '../components/Button'
-import { HOME_BY_ROLE, logIn } from '../services/authService'
+import { HOME_BY_ROLE, getCurrentUser, logIn } from '../services/authService'
 import { CONTACT_EMAIL, CONTACT_HREF } from '../utils/contact'
 import './Login.css'
 
@@ -22,6 +22,24 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function Login() {
   const navigate = useNavigate()
+
+  // Someone already logged in goes straight to their first page
+  useEffect(() => {
+    let current = true
+
+    getCurrentUser()
+      .then((user) => {
+        if (current && user) {
+          navigate(HOME_BY_ROLE[user.role] ?? HOME_BY_ROLE.engineer, { replace: true })
+        }
+      })
+      // Server unreachable: show the form; logging in will say so
+      .catch(() => {})
+
+    return () => {
+      current = false
+    }
+  }, [navigate])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
