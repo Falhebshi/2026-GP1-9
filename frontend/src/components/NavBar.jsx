@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import Notice from './Notice'
+import ThemeToggle from './ThemeToggle'
 import { HOME_BY_ROLE, logOut } from '../services/authService'
 import './NavBar.css'
 
@@ -59,6 +60,8 @@ function NavBar() {
           <button type="button" className="nav-link" onClick={handleLogout}>
             Log out
           </button>
+
+          <ThemeToggle />
         </nav>
       </header>
 

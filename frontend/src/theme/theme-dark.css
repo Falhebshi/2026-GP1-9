@@ -1,0 +1,175 @@
+/* ==========================================================================
+   Night mode  (frontend/src/theme/theme-dark.css)
+
+   Every component reads its colors from the roles in index.css, so night
+   mode only gives those roles new values. It is on when <html> has
+   data-theme="dark" (set by index.html on load and by useTheme on toggle).
+   Import it in main.jsx AFTER index.css.
+
+   The file has two parts:
+     1. Roles   new values for the index.css roles, plus three night-only ones
+     2. Fixes   the few places where a component pairs colors in a way that
+                only works on white
+
+   Kept as in light mode on purpose: chart series, LOS, congestion, the
+   heatmap scale and the 3D scene. They carry meaning (A = good, F = bad)
+   and must match the map and the legends.
+
+   Every text color below passes WCAG AA (4.5:1) on the surfaces it sits on.
+   ========================================================================== */
+
+/* ---- 1. ROLES ------------------------------------------------------------ */
+
+:root[data-theme='dark'] {
+  /* The browser draws its own parts dark too: scrollbars, dropdown lists,
+     date pickers, autofill */
+  color-scheme: dark;
+
+  /* Backgrounds: three steps, darkest at the back */
+  --color-bg: #0f1117;
+  --color-surface: #171a23;
+  --color-surface-muted: #1f2330;
+  --color-border: #2a2f3d;
+  --color-border-strong: #3a4052;
+
+  /* Text */
+  --color-text: #e6e8ef;                 /* 14.2:1 on surface */
+  --color-text-muted: #9ba2b4;           /*  6.8:1 on surface */
+
+  /* Actions and selection. Jaadah Indigo is too dark to read on a dark page,
+     so it is lifted and nudged slightly toward blue. Light mode uses one
+     color for both link text and filled buttons; night mode needs two:
+     a light one for text, a deeper one behind white text. */
+  --color-action: #7981ec;               /* links, hover text: 5.1:1 */
+  --color-action-hover: #9aa0f4;
+  --color-selected: #4a53cf;             /* fills: white text on it 6.1:1 */
+  --color-selected-bg: rgba(121, 129, 236, 0.14);
+
+  /* Status: dark tinted backgrounds, bright text (7-8:1) */
+  --color-success-bg: #12301f;
+  --color-success-text: #6fdc9c;
+  --color-warning-bg: #3a2a0c;
+  --color-warning-text: #f5c25b;
+  --color-danger-bg: #3d1619;
+  --color-danger-text: #ff9090;
+
+  /* Chart backgrounds only (the series colors stay as in light mode): faint
+     grid lines, the shaded window under a line, the empty part of a bar */
+  --chart-grid: #262b38;
+  --chart-fill: #212540;
+  --chart-track: #262b38;
+
+  /* Alert types. The light tags are pastel blocks that glare on a dark card:
+     here a dark tint of the same hue with bright text (6.8-7.4:1). The dots
+     are lifted just enough to show on the dark page (5:1). */
+  --alert-current: #4a86cc;
+  --alert-current-bg: #1c2f48;
+  --alert-current-text: #9cc3f0;
+  --alert-forecast-bg: #1d3c49;
+  --alert-forecast-text: #86d3e3;
+  --alert-pattern: #8a76dd;
+  --alert-pattern-bg: #332e55;
+  --alert-pattern-text: #c3b6f5;
+
+  /* Shadows must be darker to show at all; the hairline keeps a floating
+     panel's edge visible on the dark page */
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  /* Night-only roles, used by the fixes below */
+  --color-selected-hover: #545dd8;       /* filled button on hover */
+  --color-text-on-light: #14161d;        /* letters on pale LOS fills */
+  --outline-on-dark: rgba(255, 255, 255, 0.35); /* edge for fills as dark as the page */
+}
+
+/* Cross-fade between the modes (see useTheme). Short, so it never feels slow. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.2s;
+}
+
+/* ---- 2. FIXES ------------------------------------------------------------ */
+
+/* Filled primary button: --color-action is now the light text color */
+:root[data-theme='dark'] .btn-primary {
+  background: var(--color-selected);
+}
+
+:root[data-theme='dark'] .btn-primary:hover:not(:disabled) {
+  background: var(--color-selected-hover);
+}
+
+/* Text in the "selected" indigo: right on white, too dark on a dark card
+   (2.8:1). Night mode uses the link color instead (5.1:1). */
+:root[data-theme='dark'] :is(.network-map-hover-status-active, .approach-movement-more) {
+  color: var(--color-action);
+}
+
+/* Pale fills (LOS A-D, two recommendation phases) take --color-text, which
+   is now light: keep their letters dark, as in light mode */
+:root[data-theme='dark']
+  :is(.los-badge-a, .los-badge-b, .los-badge-c, .los-badge-d,
+      .losd-los-a, .losd-los-b, .losd-los-c, .losd-los-d,
+      .recommendation-phase-3, .recommendation-phase-4) {
+  color: var(--color-text-on-light);
+}
+
+/* LOS F is navy, the same as a dark card and an empty "no data" square
+   (1.1:1). Same color, plus a thin edge so it reads as filled. */
+:root[data-theme='dark'] :is(.los-badge-f, .losd-los-f, .heat-los-f) {
+  box-shadow: inset 0 0 0 1px var(--outline-on-dark);
+}
+
+:root[data-theme='dark'] .heat-missing {
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+
+/* Map (MapLibre). Its hover card, pointer and buttons are styled by
+   MapLibre's own CSS as white boxes with dark icons. */
+:root[data-theme='dark'] .maplibregl-popup-content {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+}
+
+/* The pointer is a triangle made from one colored border; which border
+   depends on the side of the dot the card opens on */
+:root[data-theme='dark'] :is(.maplibregl-popup-anchor-top, .maplibregl-popup-anchor-top-left, .maplibregl-popup-anchor-top-right) .maplibregl-popup-tip {
+  border-bottom-color: var(--color-surface);
+}
+
+:root[data-theme='dark'] :is(.maplibregl-popup-anchor-bottom, .maplibregl-popup-anchor-bottom-left, .maplibregl-popup-anchor-bottom-right) .maplibregl-popup-tip {
+  border-top-color: var(--color-surface);
+}
+
+:root[data-theme='dark'] .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--color-surface);
+}
+
+:root[data-theme='dark'] .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--color-surface);
+}
+
+/* Zoom buttons and the credits: dark box, light icons */
+:root[data-theme='dark'] .maplibregl-ctrl-group {
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+:root[data-theme='dark'] .maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-border);
+}
+
+:root[data-theme='dark'] .maplibregl-ctrl-group button:not(:disabled):hover {
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme='dark'] :is(.maplibregl-ctrl-icon, .maplibregl-ctrl-attrib-button) {
+  filter: invert(1);
+}
+
+:root[data-theme='dark'] .maplibregl-ctrl-attrib {
+  color: var(--color-text-muted);
+}
+
+:root[data-theme='dark'] .maplibregl-ctrl-attrib a {
+  color: var(--color-action);
+}
