@@ -8,10 +8,16 @@ intersection cannot set the congestion of the whole city: in the
 summer holidays the study intersection has almost no morning peak,
 while the city still has one. So each source sets what it can:
 
-1. How congested the city is in each 15 minutes: the TomTom Traffic
-   Index congestion level for Riyadh, by day of the week and hour
-   (parameters.py). TomTom measures it from drivers' trips over the
-   whole road network, over a whole year.
+1. How congested the city is in each 15 minutes: TomTom's average time
+   for a 10 km drive in Riyadh, by day of the week and hour
+   (parameters.py), over the time the same drive takes on the map's
+   roads at their free-flow speeds (tomtom_travel_index). TomTom
+   measures it from drivers' trips over the whole road network, over a
+   whole year. TomTom's own congestion level compares each hour with
+   Riyadh at night, when drivers already go slower than the roads'
+   free-flow speeds (signals, junctions); the map's speed levels
+   compare with the free-flow speed, so the travel time is the
+   comparable measure.
 2. Whether today is busier or quieter than usual: the study
    intersection's HCM critical volume-to-capacity ratio (from the
    observed demand, calculated by the KPI engine,
@@ -77,8 +83,10 @@ from jaadah.models.signals import SignalProgram
 from jaadah.models.traffic import SimulationDemand
 from jaadah.network_congestion.parameters import (
     DAY_FACTOR_LIMITS,
+    TIMELINE_SLOWEST_SHARE,
     TOMTOM_CONGESTION_LEVEL_PERCENT,
     TOMTOM_HOURS,
+    TOMTOM_TRAVEL_TIME_10KM_S,
     segment_capacity,
 )
 from jaadah.network_congestion.segments import REPO_ROOT, line_length_m
@@ -97,9 +105,14 @@ DEFAULT_MAPPING_PATH = (
 DEFAULT_NETWORK_PATH = (
     REPO_ROOT / "data" / "processed" / "road_network" / "jaadah_study_area.net.xml"
 )
-# Each segment's v/c for every hour in the trip model (assignment.py);
-# without it, roads are ranked from segment_demand.json
+# Each segment's v/c for every hour in the trip model (assignment.py),
+# on a term Wednesday for Sunday to Thursday and on a term Friday for
+# Friday and Saturday; without them, roads are ranked from
+# segment_demand.json (and the weekday file serves every day without the
+# weekend one)
 DEFAULT_HOURLY_VC = DEFAULT_DEMAND.parent / "segment_hourly_vc.json"
+DEFAULT_WEEKEND_HOURLY_VC = DEFAULT_DEMAND.parent / "segment_hourly_vc_friday.json"
+WEEKEND_DAYS = (4, 5)       # Friday and Saturday, as date.weekday()
 # The study intersection's centre, from the same record the website uses
 INTERSECTIONS_PATH = REPO_ROOT / "frontend" / "public" / "data" / "intersections.json"
 
@@ -451,6 +464,43 @@ def tomtom_index(day: date) -> list[float]:
     return index
 
 
+def tomtom_travel_index(day: date, free_flow_10km_s: float) -> list[float]:
+    """
+    TomTom's time for a 10 km drive in every 15 minutes of a day over the
+    free-flow time of the same drive on the map's roads. TomTom gives it
+    every 2 hours for each day of the week; the values in between are
+    joined by straight lines, and after 22:00 the line runs to 00:00 of
+    the next day.
+    """
+
+    today = TOMTOM_TRAVEL_TIME_10KM_S[day.weekday()]
+    tomorrow = TOMTOM_TRAVEL_TIME_10KM_S[(day.weekday() + 1) % 7]
+    hours = list(TOMTOM_HOURS) + [24]
+    times = list(today) + [tomorrow[0]]
+    index = []
+
+    for slot in range(24 * INTERVALS_PER_HOUR):
+        hour = slot / INTERVALS_PER_HOUR
+        i = max(k for k, h in enumerate(hours[:-1]) if h <= hour)
+        share = (hour - hours[i]) / (hours[i + 1] - hours[i])
+        seconds = times[i] + share * (times[i + 1] - times[i])
+        index.append(seconds / free_flow_10km_s)
+
+    return index
+
+
+def free_flow_10km_s(segments: list[RoadSegment], capacities: np.ndarray, lengths: np.ndarray) -> float:
+    """
+    Seconds for 10 km at the map roads' free-flow speeds, each road
+    weighted by capacity x length as in the travel-time index.
+    """
+
+    speeds = np.array([s.free_flow_speed_kmh for s in segments], dtype=float)
+    weights = capacities * lengths
+
+    return 10.0 / (weights.sum() / (weights / speeds).sum()) * 3600
+
+
 @dataclass(frozen=True)
 class CalibrationSample:
     """One interval: its time, the intersection's v/c, the offsets and TomTom's index."""
@@ -611,10 +661,19 @@ class RoadNetwork:
     capacities: dict[str, float]
     capacity_array: np.ndarray
     length_array: np.ndarray
-    # each segment's rank offset in every 15 minutes of the day: the
-    # morning ranks (trips to activities) before 11:00, the evening ranks
-    # (trips home) from 13:00, blended in between, as synthetic.py does
+    # each segment's rank offset in every 15 minutes of the day (Sunday
+    # to Thursday): from the trip model's hourly v/c, or else the
+    # morning and evening ranks of the demand model, blended
     offsets: list[np.ndarray]
+    # the same for Friday and Saturday; None when the same as offsets
+    weekend_offsets: list[np.ndarray] | None = None
+
+    def offsets_on(self, moment: datetime) -> list[np.ndarray]:
+        """The offsets for the kind of day of this moment."""
+
+        if self.weekend_offsets is not None and moment.weekday() in WEEKEND_DAYS:
+            return self.weekend_offsets
+        return self.offsets
 
 
 def load_road_network(
@@ -623,10 +682,12 @@ def load_road_network(
     demand_path: Path = DEFAULT_DEMAND,
     centre: tuple[float, float] | None = None,
     hourly_vc_path: Path | None = DEFAULT_HOURLY_VC,
+    weekend_hourly_vc_path: Path | None = DEFAULT_WEEKEND_HOURLY_VC,
 ) -> RoadNetwork:
     """
     Read the segments and rank every corridor: by the trip model's v/c
-    of each hour when hourly_vc_path exists, else by the demand model.
+    of each hour when hourly_vc_path exists, else by the demand model;
+    Friday and Saturday by weekend_hourly_vc_path when it exists too.
     """
 
     segments = [
@@ -645,14 +706,21 @@ def load_road_network(
         ranks = corridor_ranks(segments, corridors, loads)
         return rank_offsets(segments, corridors, ranks, site_rank(at_site, corridors, ranks))
 
-    if hourly_vc_path is not None and hourly_vc_path.exists():
-        hourly = json.loads(hourly_vc_path.read_text(encoding="utf-8"))["segments"]
+    def hourly_offsets(path: Path) -> list[np.ndarray]:
+        hourly = json.loads(path.read_text(encoding="utf-8"))["segments"]
         by_hour = [offsets_for({sid: values[h] for sid, values in hourly.items()}) for h in range(24)]
-        slot_offsets = []
+        result = []
         for slot in range(24 * INTERVALS_PER_HOUR):
             hour, share = divmod(slot, INTERVALS_PER_HOUR)
             share /= INTERVALS_PER_HOUR
-            slot_offsets.append((1 - share) * by_hour[hour] + share * by_hour[(hour + 1) % 24])
+            result.append((1 - share) * by_hour[hour] + share * by_hour[(hour + 1) % 24])
+        return result
+
+    weekend_offsets = None
+    if hourly_vc_path is not None and hourly_vc_path.exists():
+        slot_offsets = hourly_offsets(hourly_vc_path)
+        if weekend_hourly_vc_path is not None and weekend_hourly_vc_path.exists():
+            weekend_offsets = hourly_offsets(weekend_hourly_vc_path)
     else:
         demand = json.loads(demand_path.read_text(encoding="utf-8"))
         morning = offsets_for(segment_loads(segments, demand["to_activities"], capacities))
@@ -668,6 +736,7 @@ def load_road_network(
         capacity_array=np.array([capacities[s.segment_id] for s in segments]),
         length_array=np.array([line_length_m(s.geometry) for s in segments]),
         offsets=slot_offsets,
+        weekend_offsets=weekend_offsets,
     )
 
 
@@ -681,7 +750,7 @@ def calibration_samples(
         CalibrationSample(
             moment=moment,
             site_level=level,
-            offsets=network.offsets[slot_of(moment)],
+            offsets=network.offsets_on(moment)[slot_of(moment)],
             tomtom_index=tomtom_index(moment.date())[slot_of(moment)],
         )
         for moment, level in levels.items()
@@ -746,6 +815,13 @@ class ObservedModel:
     spread: float
     usual: dict[tuple[int, int], float]
     tables: list[IndexTable]
+    # the tables of Friday and Saturday; None when the same as tables
+    weekend_tables: list[IndexTable] | None = None
+
+    def tables_on(self, moment: datetime) -> list[IndexTable]:
+        if self.weekend_tables is not None and moment.weekday() in WEEKEND_DAYS:
+            return self.weekend_tables
+        return self.tables
 
 
 def build_model(
@@ -762,6 +838,10 @@ def build_model(
         spread=spread,
         usual=usual_site_levels(levels),
         tables=[index_table(offsets, spread, network) for offsets in network.offsets],
+        weekend_tables=(
+            [index_table(offsets, spread, network) for offsets in network.weekend_offsets]
+            if network.weekend_offsets is not None else None
+        ),
     )
 
 
@@ -808,8 +888,8 @@ def day_factors(model: ObservedModel, levels: dict[datetime, float]) -> dict[dat
 
 
 @lru_cache(maxsize=16)
-def _tomtom_day(day: date) -> tuple[float, ...]:
-    return tuple(tomtom_index(day))
+def _tomtom_day(day: date, free_flow_s: float) -> tuple[float, ...]:
+    return tuple(tomtom_travel_index(day, free_flow_s))
 
 
 def target_index(
@@ -819,12 +899,14 @@ def target_index(
     factor: float | None = None,
 ) -> float:
     """
-    TomTom's travel-time index at this time, its congestion scaled by the
-    day factor (day_factors), or by this interval's own factor when none
-    is given.
+    TomTom's travel time at this time over the map's free-flow time
+    (tomtom_travel_index), its delay scaled by the day factor
+    (day_factors), or by this interval's own factor when none is given.
     """
 
-    usual_index = _tomtom_day(moment.date())[slot_of(moment)]
+    network = model.network
+    free_flow = free_flow_10km_s(network.segments, network.capacity_array, network.length_array)
+    usual_index = _tomtom_day(moment.date(), round(free_flow, 3))[slot_of(moment)]
     if factor is None:
         factor = day_factor(model, moment, site_level)
 
@@ -839,15 +921,28 @@ def interval_speeds(
 ) -> tuple[list[int], float]:
     """
     Every segment's speed (percent of free flow) in one interval, and
-    the network speed for the timeline (their mean, as synthetic.py).
-    The level is the one whose network index equals the target index.
+    the network speed for the timeline (timeline_speed). The level is
+    the one whose network index equals the target index.
     """
 
     slot = slot_of(moment)
-    table = model.tables[slot]
-    level = float(np.interp(target_index(model, moment, site_level, factor), table.indices, table.levels))
+    table = model.tables_on(moment)[slot]
+    target = target_index(model, moment, site_level, factor)
+    level = float(np.interp(target, table.indices, table.levels))
     speeds = speed_percent(segment_volume_to_capacity(
-        1.0, model.network.offsets[slot], model.spread, level,
+        1.0, model.network.offsets_on(moment)[slot], model.spread, level,
     ))
 
-    return speeds.tolist(), round(float(speeds.mean()), 1)
+    return speeds.tolist(), timeline_speed(speeds, model.network.length_array)
+
+
+def timeline_speed(speeds: np.ndarray, lengths: np.ndarray, share: float = TIMELINE_SLOWEST_SHARE) -> float:
+    """
+    The speed that the slowest share of the road length is at or below
+    (length-weighted percentile), for the timeline bar.
+    """
+
+    order = np.argsort(speeds)
+    cumulative = np.cumsum(lengths[order]) / lengths.sum()
+
+    return round(float(np.asarray(speeds)[order][np.searchsorted(cumulative, share)]), 1)

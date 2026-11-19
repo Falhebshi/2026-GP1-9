@@ -84,14 +84,30 @@ LOW_UP_TO_VC = 0.70
 MODERATE_UP_TO_VC = 0.90
 
 
-# Level by speed, used for the map colours: HCM urban street segment
-# level of service by travel speed as a share of free-flow speed (HCM
-# 2010, Urban Streets; to be checked against the HCM 7th edition
-# copy): A above 85 %, B 67-85, C 50-67, D 40-50, E 30-40, F 30 or
-# less. The same three groups as the v/c bands above:
+# Level by speed, used for the map colours.
+#
+# HCM criteria (HCM 7th edition, 2022, Chapter 18, Urban Street
+# Segments, LOS criteria for the motorized vehicle mode; exhibit and
+# page to be added from the manual): LOS by average travel speed, given
+# in mi/h for each base free-flow speed from 25 to 55 mi/h. Those speeds
+# are about these shares of the base free-flow speed: A above 80 %
+# (85 % in HCM 2010; lowered in the 6th edition), B 67-80, C 50-67,
+# D 40-50, E 30-40, F 30 or less; also F, at any speed, when the
+# through movement at the downstream boundary intersection has v/c
+# above 1.0. Urban street facilities (Chapter 16) use the same speed
+# thresholds over a whole facility; the map rates segments.
+#
+# The map's three groups, at the HCM B/C and D/E boundaries:
 #   low       LOS A and B  speed above 67 % of free flow
 #   moderate  LOS C and D  above 40 %, up to 67 %
 #   high      LOS E and F  40 % or less
+#
+# Project simplifications (not HCM):
+#   - speed only: the v/c above 1.0 rule for LOS F is not applied;
+#   - free-flow speed is the OSM speed limit, not the HCM base
+#     free-flow speed estimate;
+#   - motorway and trunk segments use these urban street speed
+#     criteria, not the HCM freeway method (Chapter 12, by density).
 LOW_ABOVE_SPEED_RATIO = 0.67
 MODERATE_ABOVE_SPEED_RATIO = 0.40
 
@@ -187,9 +203,17 @@ CALIBRATION_WEEKS = 5
 # above its morning, is kept. The factor still settles during the day,
 # so the limits are narrow enough that even the extremes (morning at the
 # top, evening at the bottom) can't reverse the peaks: 0.8 / 1.25 = 0.64
-# is above TomTom's largest morning-to-evening ratio on any day
-# (Sunday, 49 / 83 = 0.59).
+# is above TomTom's largest morning-to-evening ratio of extra travel time
+# on any day (Sunday, about 0.60 against the map's free-flow time).
 DAY_FACTOR_LIMITS = (0.8, 1.25)
+
+# The timeline's bar for each 15 minutes shows the speed that the
+# slowest share of the road length is at or below (length-weighted), so
+# a bar turns high when at least this share of the roads is in the high
+# level, as a driver crossing the city would meet it. A city average
+# would never reach the high level, even at the weekday evening peak
+# (project choice, for the timeline only; the segments are unchanged).
+TIMELINE_SLOWEST_SHARE = 0.20
 
 # Days of counts before a window used to estimate missing detectors,
 # as the baseline runner for RCRC (simulation/scripts/run_baseline.py)

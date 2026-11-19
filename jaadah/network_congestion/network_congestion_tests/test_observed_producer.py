@@ -13,11 +13,14 @@ from jaadah.network_congestion.observed import (
     interval_speeds,
     load_road_network,
     slot_of,
+    free_flow_10km_s,
     target_index,
+    timeline_speed,
     tomtom_index,
+    tomtom_travel_index,
     travel_time_index,
 )
-from jaadah.network_congestion.parameters import DAY_FACTOR_LIMITS, TOMTOM_CONGESTION_LEVEL_PERCENT, TOMTOM_HOURS
+from jaadah.network_congestion.parameters import DAY_FACTOR_LIMITS
 from jaadah.network_congestion.producer import ObservedSpeedProducer
 from jaadah.network_congestion.server import MapSource, create_app
 from jaadah.network_congestion.storage import (
@@ -78,8 +81,10 @@ def test_slot_of():
 def test_a_usual_day_follows_tomtom(model):
     moment = datetime(2026, 8, 19, 8, 0, tzinfo=RIYADH)     # Wednesday 08:00
 
+    free_flow = free_flow_10km_s(model.network.segments, model.network.capacity_array, model.network.length_array)
+
     assert day_factor(model, moment, 0.6) == 1.0
-    assert target_index(model, moment, 0.6) == pytest.approx(tomtom_index(moment.date())[32])
+    assert target_index(model, moment, 0.6) == pytest.approx(tomtom_travel_index(moment.date(), free_flow)[32])
 
 
 def test_the_network_index_reaches_the_target(model):
@@ -94,7 +99,8 @@ def test_the_network_index_reaches_the_target(model):
     assert index == pytest.approx(target, abs=0.02)
     # the busier-ranked road is slower
     assert speeds[0] > speeds[1] > speeds[2]
-    assert network_speed == round(float(np.mean(speeds)), 1)
+    # the timeline shows the speed of the slowest share of the road length
+    assert network_speed == timeline_speed(np.array(speeds), model.network.length_array)
 
 
 def test_a_busier_day_at_the_intersection_darkens_the_city(model):
@@ -142,12 +148,34 @@ def test_a_busy_morning_at_the_intersection_keeps_the_evening_busier(model):
 
 
 def test_no_day_factor_can_put_the_morning_above_the_evening():
+    network = load_road_network()
+    free_flow = free_flow_10km_s(network.segments, network.capacity_array, network.length_array)
     low, high = DAY_FACTOR_LIMITS
-    for levels in TOMTOM_CONGESTION_LEVEL_PERCENT.values():
-        by_hour = dict(zip(TOMTOM_HOURS, levels))
-        morning = max(by_hour[h] for h in (6, 8, 10))
-        evening = max(by_hour[h] for h in (16, 18))
+    for day in range(7):
+        moment = datetime(2026, 8, 16, tzinfo=RIYADH) + timedelta(days=day)
+        index = tomtom_travel_index(moment.date(), free_flow)
+        morning = max(index[6 * 4:10 * 4]) - 1
+        evening = max(index[15 * 4:19 * 4]) - 1
         assert morning * high < evening * low
+
+
+def test_the_city_is_measured_against_the_map_roads_free_flow():
+    network = load_road_network()
+    free_flow = free_flow_10km_s(network.segments, network.capacity_array, network.length_array)
+    wednesday = tomtom_travel_index(datetime(2026, 9, 16).date(), free_flow)
+
+    # quiet at 04:00, slow at the evening peak: about 40% of free flow
+    assert wednesday[4 * 4] < 1.3
+    assert 100 / wednesday[17 * 4] == pytest.approx(40, abs=3)
+    assert len(tomtom_index(datetime(2026, 9, 16).date())) == 96
+
+
+def test_the_timeline_bar_is_high_when_enough_road_length_is_high():
+    lengths = np.array([10.0, 10.0, 80.0])
+
+    assert timeline_speed(np.array([30, 90, 90]), lengths, share=0.15) == 90
+    assert timeline_speed(np.array([30, 30, 90]), lengths, share=0.15) == 30
+    assert timeline_speed(np.array([90, 30, 30]), lengths, share=0.15) == 30
 
 
 def test_without_a_usual_value_the_city_follows_tomtom(network):
@@ -182,6 +210,42 @@ def test_roads_are_ranked_by_the_trip_model_and_fall_back_to_the_demand_model(tm
     assert all(len(values) == 24 for values in hourly.values())
     middle = trip_model.offsets[17 * 4 + 2]
     assert np.allclose(middle, 0.5 * trip_model.offsets[17 * 4] + 0.5 * trip_model.offsets[18 * 4])
+
+
+def test_friday_and_saturday_use_the_weekend_profile(tmp_path):
+    from jaadah.network_congestion.observed import DEFAULT_WEEKEND_HOURLY_VC
+
+    network = load_road_network()
+    without_weekend = load_road_network(weekend_hourly_vc_path=tmp_path / "missing.json")
+
+    assert DEFAULT_WEEKEND_HOURLY_VC.exists()
+    assert network.weekend_offsets is not None and len(network.weekend_offsets) == 96
+    assert not np.array_equal(network.weekend_offsets[20 * 4], network.offsets[20 * 4])
+    for day, weekend in ((13, False), (16, False), (17, False), (18, True), (19, True)):   # Sun, Wed, Thu, Fri, Sat
+        moment = datetime(2026, 9, day, 17, 0, tzinfo=RIYADH)
+        expected = network.weekend_offsets if weekend else network.offsets
+        assert network.offsets_on(moment) is expected
+    # without the weekend file every day uses the weekday profile
+    assert without_weekend.weekend_offsets is None
+    assert without_weekend.offsets_on(datetime(2026, 9, 18, 17, 0, tzinfo=RIYADH)) is without_weekend.offsets
+
+
+def test_the_weekend_profile_changes_the_weekend_map_and_repeats_exactly(network):
+    weekend = RoadNetwork(
+        segments=network.segments, capacities=network.capacities,
+        capacity_array=network.capacity_array, length_array=network.length_array,
+        offsets=network.offsets, weekend_offsets=[np.array([0.4, 0.0, -0.4])] * 96,
+    )
+    model = build_model(None, weekend, usual_week(), spread=0.5)
+    wednesday = datetime(2026, 8, 19, 17, 0, tzinfo=RIYADH)
+    friday = datetime(2026, 8, 21, 17, 0, tzinfo=RIYADH)
+
+    weekday_speeds, _ = interval_speeds(model, wednesday, 0.6, 1.0)
+    friday_speeds, _ = interval_speeds(model, friday, 0.6, 1.0)
+
+    assert weekday_speeds[0] > weekday_speeds[2]        # weekday ranks: road 3 busiest
+    assert friday_speeds[0] < friday_speeds[2]          # weekend ranks: road 1 busiest
+    assert interval_speeds(model, friday, 0.6, 1.0) == interval_speeds(model, friday, 0.6, 1.0)
 
 
 def test_the_real_road_network_has_offsets_for_every_15_minutes():

@@ -47,3 +47,4 @@ Thumbs.db
 /data/processed/network/od_matrices.npz
 /data/processed/network/od_sensitivity.npz
 /data/processed/network/assigned_flows.json
+/data/processed/network/assigned_flows_friday.json
