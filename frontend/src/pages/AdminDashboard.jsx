@@ -17,7 +17,7 @@ import './admin/AdminDashboard.css'
 //
 //   left    the engineer accounts (ADM-02); clicking one selects it
 //   right   the panel: the selected engineer's details and account actions
-//           (ADM-03, ADM-05), or the Create account form (ADM-01)
+//           (ADM-03, ADM-05, ADM-04), or the Create account form (ADM-01)
 function AdminDashboard() {
   const { user } = useOutletContext()
 
@@ -79,6 +79,13 @@ function AdminDashboard() {
     setMessage({ text, variant: 'info' })
   }
 
+  // After deleting the selected engineer (ADM-04)
+  async function handleDeleted(engineer) {
+    setSelectedId(null)
+    await load()
+    setMessage({ text: `${engineer.name}'s account was deleted.`, variant: 'info' })
+  }
+
   // The account was deleted in another tab: refresh and say so
   async function handleGone() {
     setSelectedId(null)
@@ -97,6 +104,7 @@ function AdminDashboard() {
         key={selected.id}
         engineer={selected}
         onChanged={handleChanged}
+        onDeleted={handleDeleted}
         onGone={handleGone}
       />
     )

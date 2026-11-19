@@ -3,7 +3,7 @@ import Badge from '../../components/Badge'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
 import InfoList from '../../components/InfoList'
-import { setStatus } from '../../services/adminService'
+import { deleteEngineer, setStatus } from '../../services/adminService'
 import { STATUS_LABELS, STATUS_VARIANTS, createdDate } from './accountFormat'
 import ChangePassword from './ChangePassword'
 
@@ -12,18 +12,20 @@ import ChangePassword from './ChangePassword'
 //
 //   Deactivate / Activate   ADM-03; deactivating asks for confirmation first
 //   Change password         ADM-05; a form for the new password
+//   Delete account          ADM-04; asks for confirmation first
 //
 //   engineer              { id, name, email, status, created_at }
 //   onChanged(engineer, message)
 //                         called after an action, with the updated account
 //                         and a line to show to the administrator
+//   onDeleted(engineer)   called after the account was deleted
 //   onGone()              called when the account no longer exists (another
 //                         tab deleted it)
 //
 // The parent gives each engineer their own panel (key={engineer.id}), so a
 // half-finished action never carries over to another engineer.
-function EngineerDetails({ engineer, onChanged, onGone }) {
-  // 'view' | 'confirm-deactivate' | 'change-password'
+function EngineerDetails({ engineer, onChanged, onDeleted, onGone }) {
+  // 'view' | 'confirm-deactivate' | 'change-password' | 'confirm-delete'
   const [mode, setMode] = useState('view')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,6 +43,19 @@ function EngineerDetails({ engineer, onChanged, onGone }) {
       else setError(failure.message)
     }
     setBusy(false)
+  }
+
+  async function remove() {
+    setBusy(true)
+    setError('')
+    try {
+      await deleteEngineer(engineer.id)
+      onDeleted(engineer)
+    } catch (failure) {
+      setBusy(false)
+      if (failure.gone) onGone()
+      else setError(failure.message)
+    }
   }
 
   const details = (
@@ -79,6 +94,27 @@ function EngineerDetails({ engineer, onChanged, onGone }) {
           onCancel={() => setMode('view')}
           onGone={onGone}
         />
+      </Card>
+    )
+  }
+
+  if (mode === 'confirm-delete') {
+    return (
+      <Card title={engineer.name} className="admin-panel">
+        {details}
+        {errorBox}
+        <p className="admin-confirm-text">
+          Delete {engineer.name}&apos;s account? This can&apos;t be undone. They won&apos;t be able
+          to log in, and the account is removed from the list.
+        </p>
+        <div className="admin-actions">
+          <Button variant="secondary" onClick={() => setMode('view')} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={remove} disabled={busy}>
+            {busy ? 'Deleting…' : 'Delete account'}
+          </Button>
+        </div>
       </Card>
     )
   }
@@ -129,6 +165,9 @@ function EngineerDetails({ engineer, onChanged, onGone }) {
         )}
         <Button variant="secondary" onClick={() => setMode('change-password')} disabled={busy}>
           Change password
+        </Button>
+        <Button variant="danger" onClick={() => setMode('confirm-delete')} disabled={busy}>
+          Delete account
         </Button>
       </div>
     </Card>

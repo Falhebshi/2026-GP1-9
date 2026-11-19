@@ -88,6 +88,13 @@ export async function changePassword(id, password) {
   })
 }
 
+// Deletes an engineer account for good (ADM-04). The engineer is logged out
+// at once and the email can be used again. An account that no longer
+// exists answers with error.gone.
+export async function deleteEngineer(id) {
+  await request(`/engineers/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
 // A random five-word passphrase for the Generate button
 export async function generatePassphrase() {
   const { passphrase } = await request('/passphrase')
