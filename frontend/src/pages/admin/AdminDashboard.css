@@ -233,3 +233,21 @@
 .info-list + .admin-field-hint {
   margin-top: var(--space-sm);
 }
+
+/* ---------- Account actions (ADM-03 onwards) ---------- */
+
+/* The action buttons under the details sit on the left */
+.admin-actions-start {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+/* The question asked before an action, e.g. "Deactivate …?" */
+.admin-confirm-text {
+  margin: var(--space-md) 0 0;
+  font-size: var(--text-sm);
+}
+
+.admin-panel-error {
+  margin: var(--space-md) 0 0;
+}
