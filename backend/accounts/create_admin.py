@@ -14,7 +14,6 @@ line or the terminal history.
 
 import argparse
 import getpass
-import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -26,10 +25,8 @@ from backend.accounts.storage import (
     AccountStorage,
     DuplicateEmailError,
     normalise_email,
+    valid_email,
 )
-
-# The same simple check as the login page (frontend/src/pages/Login.jsx)
-EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -66,7 +63,7 @@ def main(
     if not name:
         say("Enter a name.")
         return 1
-    if not EMAIL_PATTERN.match(email):
+    if not valid_email(email):
         say("Enter an email address like name@organization.gov.sa.")
         return 1
 

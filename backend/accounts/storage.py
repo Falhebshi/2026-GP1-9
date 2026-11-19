@@ -19,6 +19,7 @@ hashes. Why each choice was made is explained in docs/accounts.md.
 """
 
 import hashlib
+import re
 import secrets
 import sqlite3
 import uuid
@@ -51,6 +52,24 @@ TOKEN_BYTES = 32
 # forgotten after this same time without a wrong password.
 MAX_FAILED_LOGINS = 5
 LOGIN_PAUSE = timedelta(minutes=30)
+
+
+# A name or email longer than this is refused. An email address is at most
+# 254 characters (RFC 5321); a name of 100 characters is far longer than
+# any real one.
+MAX_NAME_LENGTH = 100
+MAX_EMAIL_LENGTH = 254
+
+# The same simple check as the login page (frontend/src/pages/Login.jsx):
+# something, an @, something, a dot, something; no spaces
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def valid_email(email: str) -> bool:
+    """True if the email (trimmed) looks like name@organization.gov.sa."""
+
+    email = email.strip()
+    return len(email) <= MAX_EMAIL_LENGTH and EMAIL_PATTERN.match(email) is not None
 
 
 class DuplicateEmailError(ValueError):
@@ -260,6 +279,22 @@ class AccountStorage:
             ).fetchone()
 
         return None if row is None else _account(row)
+
+    def list_engineers(self) -> list[Account]:
+        """Every engineer account, ordered by name (A to Z, ignoring case), then email."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT {ACCOUNT_COLUMNS}
+                FROM accounts
+                WHERE role = ?
+                ORDER BY name COLLATE NOCASE, email
+                """,
+                (ROLE_ENGINEER,),
+            ).fetchall()
+
+        return [_account(row) for row in rows]
 
     def find_login(self, email: str) -> LoginRecord | None:
         """Return what login needs for the account with this email, or None."""
