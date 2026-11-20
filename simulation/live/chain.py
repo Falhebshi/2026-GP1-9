@@ -165,11 +165,18 @@ class ChainRecord:
     segments: list[SegmentRecord] = field(default_factory=list)
     estimated_intervals: list[EstimatedInterval] = field(default_factory=list)
     departures_sha256: str | None = None
+    warmup_s: float = WARMUP_S
     format_version: int = RECORD_FORMAT_VERSION
 
     @property
     def epoch_time(self) -> datetime:
         return datetime.fromisoformat(self.epoch)
+
+    @property
+    def analysis_start_time(self) -> datetime:
+        """The end of the warm-up: the first moment the page shows."""
+
+        return self.epoch_time + timedelta(seconds=self.warmup_s)
 
     @property
     def last_interval_end(self) -> datetime | None:

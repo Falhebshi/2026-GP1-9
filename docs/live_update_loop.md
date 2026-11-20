@@ -51,14 +51,14 @@ A2 also leaves a saved state of "now" at every update, which Release 2's forecas
 
 ## 2. One chain
 
-A **chain** is one run of the live twin. It starts with a 15-minute warm-up and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
+A **chain** is one run of the live twin. It starts with a warm-up (15 minutes at 03:00, up to an hour during the day) and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
 
 | | |
 | --- | --- |
 | Second 0 | The start of the warm-up, as in every Jaadah run, so the KPI engine and the playback builder read a chain as they read a baseline run |
 | Run ID | `RUN_LIVE_<second 0>_S<seed>`, e.g. `RUN_LIVE_20260819T0245_S42` |
 | Daily chain | Starts at 03:00 (warm-up from 02:45), the quietest hour. A day runs from 03:00 to 03:00, so 01:00 belongs to the day before |
-| Other chains | A chain started at another time (the first start, after a pause, after a long stop) begins with the **newest** interval as its warm-up, so the page shows results one interval later instead of after simulating the whole day so far |
+| Other chains | A chain started at another time (the first start, after a pause, after a long stop) starts at the newest data instead of simulating the whole day so far. It warms up on the intervals before the newest one, as many as can be built up to an hour (`RESTART_WARMUP_INTERVALS`), and shows the newest interval at once. Just after an outage, when the intervals before cannot be built, the newest interval alone is the warm-up and results follow one interval later. A warm-up that crosses 03:00 belongs to the chain: a chain belongs to the day its results start in |
 
 ### 2.1 Where a segment stops: the 60-second lag
 
@@ -84,10 +84,10 @@ Checked on SUMO 1.27.1:
 
 ### 2.3 How close a chain is to one uninterrupted run
 
-Checked on 19 Nov 2026 with RCRC demand (a 2-hour weekday morning, 9 segments):
+Checked with RCRC demand (a 2-hour weekday morning, 9 segments), first with the old 120 s signal plan on 19 Nov 2026 and again with the Webster plan on 20 Nov:
 
 - **Identical through the first reload.** After that, single vehicles start to differ by tiny amounts, because after a reload SUMO times the 3-second yellows (not a whole number of 0.4 s steps) one step differently. The signal cycle moves by one step (0.4 s) once and stays there; it does not drift further.
-- **Every KPI result has the same status** (ok, unavailable, not applicable) as in the uninterrupted run. The values differ less than they do between two seeds of the uninterrupted run: about a third as much.
+- **Every KPI result has the same status** (ok, unavailable, not applicable) as in the uninterrupted run. The values differ much less than they do between two seeds of the uninterrupted run: about a third as much with the old plan, and about a tenth as much with the Webster plan.
 
 The exact figures are on the team's A2 page, outside the repository (PBI 8, Decision 4).
 
@@ -150,7 +150,7 @@ The playback index of every run (`run.json` in the [3D scene guide](../simulatio
 
 While it follows the live run, the page plays the traffic at the time it happened in data time, **20 minutes behind it**: the moment shown is the source's "now" (the real time minus `clock_offset_s`) minus 20 minutes. By then that moment has always been simulated: an interval arrives only after it ends, the loop stops 60 s early, an update takes up to about a minute, and the page looks for new files every minute. The scene is moved to that moment at every frame, so reloading the page, a second tab or another laptop all show the same moment, and a tab left in the background is right again when it comes back. A new interval is published a few minutes before the clock reaches it, so the playback runs on without a jump. If the simulation has not reached the moment yet (the loop is late or stopped), the scene waits at the end of what has been simulated; a new chain is shown from its start until the clock catches up. The time on the page is the time of the traffic; the "Live" badge explains the delay in its tooltip. Clicking an earlier interval replays it; clicking the newest interval follows the clock again.
 
-`kpis.json` names the provisional interval too (`provisional_interval_start`, [KPI engine](kpi_engine.md), section 16.4). The vehicle file of the warm-up interval is listed in `intervals` but not written: the page shows only the analysis period, as for every run.
+`kpis.json` names the provisional interval too (`provisional_interval_start`, [KPI engine](kpi_engine.md), section 16.4). The vehicle files of the warm-up intervals are listed in `intervals` but not written: the page shows only the analysis period, as for every run.
 
 ---
 
@@ -163,11 +163,11 @@ While it follows the live run, the page plays the traffic at the time it happene
 | The traffic source cannot be reached | Keeps its chain, reports `waiting` and tries again at every pass | "The traffic source cannot be reached", with the results so far and a "Not updating" badge |
 | Detectors silent, up to 8 intervals | Simulates on estimated traffic and marks the intervals | "No sensor data" for those intervals; no KPIs and no cars |
 | An interval cannot be built (silent for more than 2 hours, or too few earlier days of the same type to estimate from) | Pauses, and tries the newest interval at every pass | A warning with the reason; the last results stay |
-| Data again after a pause | Starts a new chain with the first interval that can be built as its warm-up | "A new run has started" while it warms up; results again one interval later, from the new chain only |
+| Data again after a pause | Starts a new chain at the first interval that can be built; the silent hour before cannot be built, so that interval is its warm-up | "A new run has started" while it warms up; results again one interval later, from the new chain only |
 | 03:00 | Starts the new day's chain | The previous day until 03:15, marked as starting; then the new day from 03:00 |
 | The loop is stopped (Ctrl+C) | Writes `state: stopped` | "Live updates have stopped" |
 | The loop stops without saying so (the laptop sleeps) | Nothing | After 30 minutes without a report, "Live updates are not arriving" |
-| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data | The missed intervals appear one by one, or a new chain |
+| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up on the hour before | The missed intervals appear one by one, or the new chain's newest interval at once |
 
 A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The page then shows the day only from the restart.
 
@@ -196,7 +196,8 @@ RUN_LIVE_20260819T0245_S42/
 
 | Limitation | What would remove it |
 | --- | --- |
-| A chain is about as close to an uninterrupted run as a third of the difference between two seeds, not identical (section 2.3) | A nightly rebuild of the day with one uninterrupted run (anchored replay), if live and historical results must match exactly |
+| A chain started during a peak (the first start, after a pause or a long stop) shows less delay than the day's chain would. Where an approach is over capacity under the fixed signal plan, its queue keeps growing for hours, so the result depends on how long the simulation has been running, and an hour of warm-up narrows the gap only a little | Start the loop before 03:00, so the day runs as one chain; an actuated signal plan (issue #70) would stop the queue from growing without limit |
+| A chain is very close to an uninterrupted run (about a tenth of the difference between two seeds), but not identical (section 2.3) | A nightly rebuild of the day with one uninterrupted run (anchored replay), if live and historical results must match exactly |
 | After a pause, the page shows the day only from the restart | Keeping several chains of a day on the page (PBI 15's earlier-periods work) |
 | At a site whose outages recur at the same time of the week, those time slots have few earlier values, so an outage there may not be estimable even within 8 intervals, and the loop pauses | More history, or a fallback to a related day type |
 | The provisional interval's delay is biased low: the vehicles that finish first are the least delayed ([KPI engine](kpi_engine.md), section 16.5) | None needed: it becomes final at the next update |

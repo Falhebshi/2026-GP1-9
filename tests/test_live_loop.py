@@ -183,19 +183,24 @@ def test_the_loop_publishes_each_interval(source, tmp_path):
     client = source(latest=NOON)
     loop = make_loop(client, tmp_path)
 
-    loop.step()  # starts a chain: 11:45-12:00 is its warm-up, nothing to show yet
-    assert not (tmp_path / "live" / "run.json").exists()
+    # A new chain warms up on the hour before the newest interval (10:45-11:45)
+    # and shows the newest interval, 11:45-12:00, at once
+    loop.step()
+    run = published(tmp_path)
+    assert run["run_id"] == "RUN_LIVE_20260806T1045_S42"
+    assert run["analysis_start_s"] == 4 * 900
+    assert run["live"]["data_until"] == NOON.isoformat()
 
     client.latest = NOON + 4 * STEP
     state = loop.step()  # catches up four intervals
 
     assert state["state"] == "running"
     run = published(tmp_path)
-    assert run["run_id"] == "RUN_LIVE_20260806T1145_S42"
+    assert run["run_id"] == "RUN_LIVE_20260806T1045_S42"
     assert (run["source"], run["status"]) == ("live", "running")
-    assert run["analysis_end_s"] == 5 * 900
+    assert run["analysis_end_s"] == 9 * 900
     assert run["live"]["data_until"] == (NOON + 4 * STEP).isoformat()
-    assert run["live"]["simulated_until_s"] == 5 * 900 - 60
+    assert run["live"]["simulated_until_s"] == 9 * 900 - 60
     assert run["live"]["estimated_intervals"] == []
     assert run["live"]["clock_offset_s"] == 0  # this test source has no replay clock
 
@@ -203,16 +208,16 @@ def test_the_loop_publishes_each_interval(source, tmp_path):
     assert kpis["run_id"] == run["run_id"]
     assert kpis["provisional_interval_start"] == (NOON + 3 * STEP).isoformat()
     starts = {result["interval_start"] for result in kpis["results"]}
-    assert starts == {(NOON + k * STEP).isoformat() for k in range(4)}
+    assert starts == {(NOON + k * STEP).isoformat() for k in range(-1, 4)}
 
-    for item in run["intervals"][1:]:
+    for item in run["intervals"][4:]:
         assert (tmp_path / "live" / item["file"]).is_file()
     assert published(tmp_path, "signals.json")["run_id"] == run["run_id"]
 
     # Only the last 3 segments keep their FCD, the last 4 their state
     segments = sorted((tmp_path / "work" / run["run_id"] / "segments").iterdir())
-    assert [(s / "raw" / "fcd.xml").exists() for s in segments] == [False, False, True, True, True]
-    assert [(s / "state.xml.gz").exists() for s in segments] == [False, True, True, True, True]
+    assert [(s / "raw" / "fcd.xml").exists() for s in segments] == [False] * 6 + [True] * 3
+    assert [(s / "state.xml.gz").exists() for s in segments] == [False] * 5 + [True] * 4
 
 
 @needs_sumo
@@ -224,8 +229,8 @@ def test_a_restarted_loop_continues_its_chain(source, tmp_path):
     loop = make_loop(client, tmp_path)  # a new process
     loop.step()
 
-    assert loop.record.run_id == "RUN_LIVE_20260806T1145_S42"
-    assert len(loop.record.segments) == 4
+    assert loop.record.run_id == "RUN_LIVE_20260806T1045_S42"
+    assert len(loop.record.segments) == 8
     assert published(tmp_path)["live"]["data_until"] == (NOON + 3 * STEP).isoformat()
 
 
@@ -238,8 +243,11 @@ def test_a_loop_far_behind_starts_again_at_the_newest_data(source, tmp_path):
     loop = make_loop(client, tmp_path)
     loop.step()
 
-    assert loop.record.epoch_time == client.latest - STEP
-    assert len(loop.record.segments) == 1
+    # the hour before the newest interval is its warm-up, and the newest is shown
+    assert loop.record.epoch_time == client.latest - 5 * STEP
+    assert loop.record.warmup_s == 4 * 900
+    assert len(loop.record.segments) == 5
+    assert published(tmp_path)["run_id"] == loop.record.run_id
 
 
 @needs_sumo
@@ -269,7 +277,8 @@ def test_an_outage_is_estimated_then_paused_and_the_loop_restarts(source, tmp_pa
 
     client.latest = outage[-1] + STEP  # data again: a new chain warms up on it
     loop.step()
-    assert loop.record.epoch_time == outage[-1]
+    assert loop.record.epoch_time == outage[-1]  # the hour before is silent: no longer warm-up
+    assert loop.record.warmup_s == 900
     assert published(tmp_path)["run_id"] == run["run_id"]  # nothing new to show yet
     assert published(tmp_path)["live"]["state"] == "starting"  # so the old results are not "live"
 
@@ -290,7 +299,20 @@ def test_a_new_day_starts_a_new_chain_at_02_45(source, tmp_path):
 
     assert loop.record.run_id == "RUN_LIVE_20260807T0245_S42"
     assert published(tmp_path)["run_id"] == "RUN_LIVE_20260807T0245_S42"
-    assert (tmp_path / "work" / "RUN_LIVE_20260807T0215_S42").is_dir()  # kept for 24 hours
+    assert (tmp_path / "work" / "RUN_LIVE_20260807T0115_S42").is_dir()  # kept for 24 hours
+
+
+@needs_sumo
+def test_a_restart_just_after_03_00_warms_up_across_it(source, tmp_path):
+    """A chain whose warm-up crosses 03:00 belongs to the day its results start in."""
+
+    client = source(latest=datetime(2026, 8, 7, 3, 30, tzinfo=RIYADH))
+    loop = make_loop(client, tmp_path)
+    loop.step()
+
+    assert loop.record.run_id == "RUN_LIVE_20260807T0215_S42"
+    assert published(tmp_path)["run_id"] == "RUN_LIVE_20260807T0215_S42"
+    assert not (tmp_path / "work" / "RUN_LIVE_20260807T0245_S42").exists()
 
 
 # ============================================================

@@ -210,3 +210,22 @@ def test_tripinfo_keeps_each_vehicles_newest_record(tmp_path):
 
     trips = {t.get("id"): t.attrib for t in ET.parse(tmp_path / "out.xml").getroot()}
     assert trips == {"v0": {"id": "v0", "arrival": "10.0"}, "v1": {"id": "v1", "arrival": "31.2"}}
+
+
+def test_a_record_saved_before_the_warm_up_setting_loads_with_15_minutes(tmp_path):
+    import json
+    from simulation.live.chain import ChainRecord, load_record, save_record
+
+    record = ChainRecord(
+        run_id="RUN_LIVE_20260806T1145_S42", scenario_id="SCN_LIVE_20260806T1145",
+        epoch="2026-08-06T11:45:00+03:00", seed=42, step_length_s=0.4, sumo_version="1.27.1",
+        network_version="test", mapping_version="test", started_at="2026-08-06T12:00:00+03:00",
+    )
+    path = save_record(record, tmp_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["warmup_s"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    loaded = load_record(tmp_path)
+    assert loaded.warmup_s == 900
+    assert loaded.analysis_start_time.isoformat() == "2026-08-06T12:00:00+03:00"

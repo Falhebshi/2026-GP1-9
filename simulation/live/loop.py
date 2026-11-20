@@ -29,9 +29,10 @@ What the loop does, and why:
   its warm-up, because the old chain cannot continue across intervals
   that have no demand.
 - New chain at the newest data: a chain started in the middle of a day
-  (first start, after a pause or a long stop) begins with the newest
-  interval as its warm-up, so the page shows results one interval later,
-  rather than after simulating the whole day so far.
+  (first start, after a pause or a long stop) warms up on the hour
+  before the newest interval, as far as it can be built, and shows the
+  newest interval at once, rather than simulating the whole day so far.
+  Just after an outage, the newest interval alone is the warm-up.
 - Cleaning up: the FCD of a segment is deleted once it is older than the
   45 minutes the KPIs and playback read; the last KEEP_STATES saved
   states are kept, so a segment can be rerun; trip information and
@@ -83,6 +84,12 @@ MAX_STEPS_PER_PASS = 2 * MAX_CATCH_UP + 4
 KEEP_STATES = 4
 KEEP_CHAIN = timedelta(hours=24)
 POLL_S = 10
+# A chain started during the day warms up on up to this many intervals
+# before the newest one (an hour). At a peak where an approach is over
+# capacity, its queue keeps growing for hours, so a chain started then
+# shows less delay than the day's chain would, however long its warm-up;
+# an hour narrows the gap a little (docs/live_update_loop.md, section 8).
+RESTART_WARMUP_INTERVALS = 4
 
 
 @dataclass
@@ -150,7 +157,7 @@ class LiveLoop:
             return None
         return record
 
-    def _new_chain(self, epoch: datetime) -> ChainRecord:
+    def _new_chain(self, epoch: datetime, warmup_s: float = WARMUP_S) -> ChainRecord:
         record = ChainRecord(
             run_id=run_id_of(epoch, self.settings.seed),
             scenario_id=f"SCN_LIVE_{epoch.astimezone(RIYADH):%Y%m%dT%H%M}",
@@ -161,6 +168,7 @@ class LiveLoop:
             network_version=self.mapping.network.version,
             mapping_version=self.mapping.mapping_version,
             started_at=self.now().isoformat(),
+            warmup_s=warmup_s,
         )
         folder = self.chain_dir(record)
         if folder.exists():
@@ -171,12 +179,12 @@ class LiveLoop:
             json.dumps({"run_id": record.run_id}) + "\n", encoding="utf-8"
         )
         self.record = record
-        log.info("new chain %s from %s", record.run_id, epoch.isoformat())
+        log.info("new chain %s from %s, warm-up %d min", record.run_id, epoch.isoformat(), warmup_s // 60)
         return record
 
     @staticmethod
     def chain_day_of(record: ChainRecord):
-        return chain_day(record.epoch_time + timedelta(seconds=WARMUP_S))
+        return chain_day(record.analysis_start_time)
 
     # ------------------------------------------------------------
     # one pass
@@ -215,7 +223,8 @@ class LiveLoop:
             # A new day's interval starts the new day's chain. A chain's own
             # warm-up (its first segment) is always simulated: for the daily
             # chain it is 02:45-03:00, which belongs to the day before.
-            if record.segments and interval_day != self.chain_day_of(record):
+            in_warmup = interval_end <= record.analysis_start_time
+            if not in_warmup and interval_day != self.chain_day_of(record):
                 self._new_chain(day_epoch(interval_day))
                 continue
 
@@ -261,9 +270,18 @@ class LiveLoop:
 
     def _start_at_newest(self, latest: datetime) -> bool:
         """
-        Start a chain whose warm-up is the newest interval, if its demand
+        Start a chain at the newest data, if the newest interval's demand
         can be built. Returns False when it cannot (the loop stays paused
         or waiting).
+
+        A chain that starts during the day starts on empty roads while
+        the real ones are busy. So it warms up on the intervals before
+        the newest one, as many as can be built up to
+        RESTART_WARMUP_INTERVALS (an hour), and the newest interval is
+        shown at once. When none of them can be built
+        (just after an outage), the newest interval is the warm-up, and
+        the page shows results from the next one. The pass then simulates
+        the warm-up and the newest interval one by one, as a catch-up.
         """
 
         if self.paused and latest <= datetime.fromisoformat(self.paused["since_interval_end"]):
@@ -275,9 +293,17 @@ class LiveLoop:
                 self._pause(latest, demand.problems)
             return False
 
-        record = self._new_chain(latest - INTERVAL)
+        earlier = 0
+        while earlier < RESTART_WARMUP_INTERVALS and self._build(
+            latest - (earlier + 1) * INTERVAL, latest
+        ).complete:
+            earlier += 1
+
+        if earlier:
+            self._new_chain(latest - (earlier + 1) * INTERVAL, warmup_s=earlier * INTERVAL.total_seconds())
+        else:
+            self._new_chain(latest - INTERVAL)
         self.paused = None
-        self._update(record, demand)
         return True
 
     def _update(self, record: ChainRecord, demand) -> None:
@@ -292,7 +318,7 @@ class LiveLoop:
             sumo_bin=self.settings.sumo_bin,
         )
         interval_end = record.last_interval_end
-        if interval_end - record.epoch_time > timedelta(seconds=WARMUP_S):
+        if interval_end > record.analysis_start_time:
             self.publisher.publish(
                 record, folder, folder / "demand", result.generated,
                 self._state("running", "Updated."),

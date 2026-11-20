@@ -41,7 +41,7 @@ Rules applied, and why:
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from backend.analytics.kpi.intervals import AnalysisInterval
@@ -62,7 +62,7 @@ from backend.outputs.vehicles import load_vehicle_movements
 from jaadah.models.mappings import NetworkMappingConfig
 from jaadah.models.scenario import SimulationRun, SimulationRunStatus
 from jaadah.sumo_demand.planner import RunWindow
-from simulation.live.chain import INTERVAL, INTERVAL_S, LAG_S, WARMUP_S, ChainRecord
+from simulation.live.chain import INTERVAL, INTERVAL_S, LAG_S, ChainRecord
 from simulation.live.outputs import combine_fcd, combine_tls_states, combine_tripinfo
 from simulation.live.segments import segment_files
 
@@ -124,7 +124,7 @@ def chain_window(record: ChainRecord, interval_end: datetime) -> RunWindow:
     epoch = record.epoch_time
     return RunWindow(
         epoch=epoch,
-        analysis_start=epoch + timedelta(seconds=WARMUP_S),
+        analysis_start=record.analysis_start_time,
         analysis_end=interval_end,
         run_end=interval_end,
     )
@@ -133,7 +133,7 @@ def chain_window(record: ChainRecord, interval_end: datetime) -> RunWindow:
 def reported_window(record: ChainRecord, interval_end: datetime) -> AnalysisInterval:
     """The intervals an update reports: the previous and the newest, inside the analysis period."""
 
-    analysis_start = record.epoch_time + timedelta(seconds=WARMUP_S)
+    analysis_start = record.analysis_start_time
     start = max(analysis_start, interval_end - REPORTED_INTERVALS * INTERVAL)
     return AnalysisInterval(start, interval_end)
 
@@ -244,7 +244,7 @@ class LivePublisher:
             scenario=LIVE_SCENARIO,
             run_start=record.epoch_time,
             duration_s=int((interval_end - record.epoch_time).total_seconds()),
-            warm_up_s=WARMUP_S,
+            warm_up_s=int(record.warmup_s),
             clearance_s=0,
         )
         start_s = (reported.start - record.epoch_time).total_seconds()
