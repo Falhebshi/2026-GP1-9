@@ -21,16 +21,16 @@ INTERVAL = timedelta(minutes=15)
 MAX_GAP_INTERVALS = 5
 
 # Longest run of missing intervals the live update loop estimates once
-# MAX_GAP_INTERVALS is passed, with the plain time-slot average (the
-# hour before the gap no longer helps after MAX_GAP_INTERVALS). Only the
-# live loop uses it (fallback_gap_intervals); every other run keeps
-# longer gaps missing. 8 intervals (2 hours) is a project choice, not a
-# value from a standard: by then the day's own deviation from a typical
-# day has mostly faded, so simulating on would only show a typical day,
-# and it leaves a margin over the outages in the RCRC report (the
-# evidence is kept with the team's notes, outside the repository).
-# docs/live_update_loop.md explains it.
-LIVE_FALLBACK_GAP_INTERVALS = 8
+# MAX_GAP_INTERVALS is passed, with the plain time-slot average (the hour
+# before the gap no longer helps after MAX_GAP_INTERVALS): no limit. Only
+# the live loop uses it (fallback_gap_intervals); every other run keeps
+# longer gaps missing. The live page shows such intervals as "No sensor
+# data", so the estimate is never shown as traffic: it only keeps the
+# simulation going through the outage, so the queues after it are right.
+# A chain restarted after the outage instead would start on empty roads,
+# and at a workday evening peak shows far less delay than the day had
+# (docs/live_update_loop.md, 2.5).
+LIVE_FALLBACK_GAP_INTERVALS = math.inf
 
 # Intervals before a gap used to measure how busy the day was.
 RECENT_LEVEL_INTERVALS = 4

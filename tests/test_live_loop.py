@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.demand.imputation import LIVE_FALLBACK_GAP_INTERVALS, MAX_GAP_INTERVALS
+from backend.demand.imputation import MAX_GAP_INTERVALS
 from backend.ingestion.client import RcrcBatch
 from jaadah.mapping.loader import load_network_mappings
 from jaadah.models.traffic import ImputationMethod
@@ -31,6 +31,7 @@ STEP = timedelta(minutes=15)
 FIRST_DAY = datetime(2026, 7, 13, tzinfo=RIYADH)  # a Monday
 DAYS = 28
 NOON = datetime(2026, 8, 6, 12, 0, tzinfo=RIYADH)  # a Thursday
+FRIDAY_NOON = datetime(2026, 8, 7, 12, 0, tzinfo=RIYADH)  # Fridays are a day type of their own
 
 # The 12 stop-bar detectors of site 1444, with a constant artificial count.
 DETECTORS = {
@@ -145,13 +146,23 @@ def test_after_the_gap_limit_the_live_loop_uses_the_plain_average(source):
         ImputationMethod.HISTORICAL_AVERAGE}
 
 
-def test_after_the_live_limit_the_interval_cannot_be_built(source):
-    silent = {NOON - k * STEP for k in range(LIVE_FALLBACK_GAP_INTERVALS + 1)}
+def test_a_long_outage_is_still_estimated(source):
+    silent = {NOON - k * STEP for k in range(12)}  # 3 hours
 
     demand = demand_at(source(missing=silent), NOON)
 
+    assert demand.complete, demand.problems
+    assert {d.method for item in demand.demands for d in item.imputed_detectors} == {
+        ImputationMethod.HISTORICAL_AVERAGE}
+
+
+def test_an_interval_whose_time_slot_has_no_earlier_values_cannot_be_built(source):
+    silent = {FRIDAY_NOON - timedelta(weeks=k) for k in range(4)}  # every Friday at 11:45
+
+    demand = demand_at(source(missing=silent, latest=FRIDAY_NOON), FRIDAY_NOON)
+
     assert not demand.complete
-    assert any("no observation" in problem for problem in demand.problems)
+    assert demand.problems
 
 
 # ============================================================
@@ -188,7 +199,7 @@ def test_the_loop_publishes_each_interval(source, tmp_path):
     # and shows the newest interval, 11:45-12:00, at once
     loop.step()
     run = published(tmp_path)
-    assert run["run_id"] == "RUN_LIVE_20260806T1045_S42"
+    assert run["run_id"] == "RUN_LIVE_20260806T1045_R1145_S42"
     assert run["analysis_start_s"] == 4 * 900
     assert run["live"]["data_until"] == NOON.isoformat()
 
@@ -197,7 +208,7 @@ def test_the_loop_publishes_each_interval(source, tmp_path):
 
     assert state["state"] == "running"
     run = published(tmp_path)
-    assert run["run_id"] == "RUN_LIVE_20260806T1045_S42"
+    assert run["run_id"] == "RUN_LIVE_20260806T1045_R1145_S42"
     assert (run["source"], run["status"]) == ("live", "running")
     assert run["analysis_end_s"] == 9 * 900
     assert run["live"]["data_until"] == (NOON + 4 * STEP).isoformat()
@@ -230,7 +241,7 @@ def test_a_restarted_loop_continues_its_chain(source, tmp_path):
     loop = make_loop(client, tmp_path)  # a new process
     loop.step()
 
-    assert loop.record.run_id == "RUN_LIVE_20260806T1045_S42"
+    assert loop.record.run_id == "RUN_LIVE_20260806T1045_R1145_S42"
     assert len(loop.record.segments) == 8
     assert published(tmp_path)["live"]["data_until"] == (NOON + 3 * STEP).isoformat()
 
@@ -252,33 +263,45 @@ def test_a_loop_far_behind_starts_again_at_the_newest_data(source, tmp_path):
 
 
 @needs_sumo
-def test_an_outage_is_estimated_then_paused_and_the_loop_restarts(source, tmp_path):
-    """
-    Silent from 12:30 for 9 intervals: the first 8 are estimated and marked,
-    the 9th cannot be built and the loop pauses. Data returns with the interval
-    ending 14:45, and a new chain starts with it as its warm-up (from 14:30).
-    """
-    outage = [NOON + (2 + k) * STEP for k in range(LIVE_FALLBACK_GAP_INTERVALS + 1)]
+def test_a_long_outage_is_estimated_and_marked_and_the_chain_goes_on(source, tmp_path):
+    """Silent from 12:30 for 3 hours: every interval is estimated and marked, in one chain."""
+    outage = [NOON + (2 + k) * STEP for k in range(12)]
     client = source(missing=set(outage), latest=NOON)
     loop = make_loop(client, tmp_path)
 
-    states = run_until(loop, client, outage[-2])
-    assert states[-1]["state"] == "running"
+    states = run_until(loop, client, outage[-1] + STEP)
+
+    assert {state["state"] for state in states} == {"running"}
     run = published(tmp_path)
+    assert run["run_id"] == "RUN_LIVE_20260806T1045_R1145_S42"  # still the first chain
     marked = [(item["start_s"], item["end_s"]) for item in run["live"]["estimated_intervals"]]
     epoch = datetime.fromisoformat(run["run_start"])
     assert marked == [
-        ((end - STEP - epoch).total_seconds(), (end - epoch).total_seconds()) for end in outage[:-1]
+        ((end - STEP - epoch).total_seconds(), (end - epoch).total_seconds()) for end in outage
     ]
 
-    client.latest = outage[-1]
+
+@needs_sumo
+def test_an_interval_that_cannot_be_estimated_pauses_the_loop_and_it_restarts(source, tmp_path):
+    """
+    Friday 12:15-12:30 is silent, and so was that slot on every earlier Friday, so
+    it cannot be estimated: the loop pauses. Data returns with the interval ending
+    12:45; the interval before it cannot be built, so it is the new chain's warm-up.
+    """
+    gap = FRIDAY_NOON + 2 * STEP
+    client = source(missing={gap - timedelta(weeks=k) for k in range(4)}, latest=FRIDAY_NOON)
+    loop = make_loop(client, tmp_path)
+    run_until(loop, client, FRIDAY_NOON + STEP)
+    run = published(tmp_path)
+
+    client.latest = gap
     assert loop.step()["state"] == "paused"
     assert published(tmp_path)["live"]["state"] == "paused"
     assert "cannot be built" in published(tmp_path)["live"]["message"]
 
-    client.latest = outage[-1] + STEP  # data again: a new chain warms up on it
+    client.latest = gap + STEP  # data again: a new chain warms up on it
     loop.step()
-    assert loop.record.epoch_time == outage[-1]  # the hour before is silent: no longer warm-up
+    assert loop.record.epoch_time == gap
     assert loop.record.warmup_s == 900
     assert published(tmp_path)["run_id"] == run["run_id"]  # nothing new to show yet
     assert published(tmp_path)["live"]["state"] == "starting"  # so the old results are not "live"
@@ -286,10 +309,25 @@ def test_an_outage_is_estimated_then_paused_and_the_loop_restarts(source, tmp_pa
     client.latest += STEP
     loop.step()
     run = published(tmp_path)
-    assert run["run_id"] == "RUN_LIVE_20260806T1430_S42"
+    assert run["run_id"] == "RUN_LIVE_20260807T1230_R1245_S42"
     assert run["live"]["state"] == "running"
-    assert not (tmp_path / "live" / "vehicles_1230.json").exists()  # the old chain's files moved
-    assert (tmp_path / "live" / "previous" / "vehicles_1230.json").is_file()
+    assert not (tmp_path / "live" / "vehicles_1215.json").exists()  # the old chain's files moved
+    assert (tmp_path / "live" / "previous" / "vehicles_1215.json").is_file()
+
+
+@needs_sumo
+def test_by_default_a_restart_warms_up_from_the_start_of_the_day(source, tmp_path):
+    client = source(latest=NOON)
+    loop = LiveLoop(client, LoopSettings(
+        source="rcrc", work_root=tmp_path / "work", mapping_path=MAPPING, network_path=NETWORK,
+        sumo_version="1.27.1", output_dir=tmp_path / "live",
+    ))
+    loop.step()
+
+    assert loop.record.run_id == "RUN_LIVE_20260806T0245_R1145_S42"
+    assert loop.record.warmup_s == 36 * 900  # 02:45 to 11:45
+    assert len(loop.record.segments) == 37
+    assert published(tmp_path)["live"]["data_until"] == NOON.isoformat()
 
 
 @needs_sumo
@@ -301,7 +339,7 @@ def test_a_new_day_starts_a_new_chain_at_02_45(source, tmp_path):
 
     assert loop.record.run_id == "RUN_LIVE_20260807T0245_S42"
     assert published(tmp_path)["run_id"] == "RUN_LIVE_20260807T0245_S42"
-    assert (tmp_path / "work" / "RUN_LIVE_20260807T0115_S42").is_dir()  # kept for 24 hours
+    assert (tmp_path / "work" / "RUN_LIVE_20260807T0115_R0215_S42").is_dir()  # kept for 24 hours
 
 
 @needs_sumo
@@ -312,8 +350,8 @@ def test_a_restart_just_after_03_00_warms_up_across_it(source, tmp_path):
     loop = make_loop(client, tmp_path)
     loop.step()
 
-    assert loop.record.run_id == "RUN_LIVE_20260807T0215_S42"
-    assert published(tmp_path)["run_id"] == "RUN_LIVE_20260807T0215_S42"
+    assert loop.record.run_id == "RUN_LIVE_20260807T0215_R0315_S42"
+    assert published(tmp_path)["run_id"] == "RUN_LIVE_20260807T0215_R0315_S42"
     assert not (tmp_path / "work" / "RUN_LIVE_20260807T0245_S42").exists()
 
 
@@ -407,13 +445,13 @@ def test_the_loop_reports_how_far_the_source_clock_is_behind(source, tmp_path):
     assert loop._state("running", "Updated.")["clock_offset_s"] == 13 * 7 * 24 * 3600
 
 
-def test_a_restart_warms_up_on_3_hours_by_default():
+def test_a_restart_has_no_warm_up_limit_by_default():
     from simulation.live.loop import RESTART_WARMUP_INTERVALS
 
-    assert RESTART_WARMUP_INTERVALS == 12
+    assert RESTART_WARMUP_INTERVALS is None
     assert LoopSettings(
         source="rcrc", work_root=Path("w"), mapping_path=MAPPING, network_path=NETWORK,
-    ).restart_warmup_intervals == 12
+    ).restart_warmup_intervals is None
 
 
 def test_a_source_that_cannot_be_reached_keeps_the_chain(source, tmp_path, monkeypatch):

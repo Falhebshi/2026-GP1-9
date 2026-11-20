@@ -26,11 +26,13 @@ Rules applied, and why:
   needs 3 of the same day type). The history holds the chain's own
   earlier intervals, so a gap is counted back from now, as the live
   rule requires (PBI 8, Decision 12).
-- Long gaps: the live loop estimates a silent detector for up to
-  LIVE_FALLBACK_GAP_INTERVALS (8, two hours), with the plain time-slot
-  average after the 5th interval (backend/demand/imputation.py). A
-  longer gap leaves the interval without demand, and the loop pauses
-  (simulation/live/loop.py).
+- Long gaps: the live loop estimates a silent detector however long it
+  has been silent (LIVE_FALLBACK_GAP_INTERVALS), with the plain
+  time-slot average after the 5th interval
+  (backend/demand/imputation.py). An interval is left without demand,
+  and the loop pauses (simulation/live/loop.py), only when it cannot be
+  estimated at all: its time slot has too few earlier values of its day
+  type.
 - Rejected source rows are left out and reported, as in ingestion
   everywhere; their detectors count as not reported for that interval,
   so they are estimated and the interval is marked as estimated.

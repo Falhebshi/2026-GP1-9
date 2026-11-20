@@ -19,20 +19,21 @@ What the loop does, and why:
   wait for it.
 - New day: an interval that starts at or after 03:00 of a new day starts
   a new chain, with its warm-up from 02:45 (simulation/live/chain.py).
-- Sensor outages: a silent detector is estimated for up to 8 intervals
-  (backend/demand/imputation.py), and the interval is marked as
+- Sensor outages: a silent detector is estimated however long it is
+  silent (backend/demand/imputation.py), and the interval is marked as
   estimated, so the page shows "No sensor data" for it (team decision,
-  option 3). When an interval cannot be built (a gap longer than 8
-  intervals, or any other demand problem), the loop pauses: run.json
-  says so and why, and the last results stay on the page. As soon as an
-  interval can be built again, a new chain starts with that interval as
-  its warm-up, because the old chain cannot continue across intervals
-  that have no demand.
+  option 3). The chain goes on through the outage, so the queues after
+  it are right. When an interval cannot be built at all (its time slot
+  has too few earlier values to estimate from, or any other demand
+  problem), the loop pauses: run.json says so and why, and the last
+  results stay on the page. As soon as an interval can be built again,
+  a new chain starts, because the old chain cannot continue across an
+  interval that has no demand.
 - New chain at the newest data: a chain started in the middle of a day
-  (first start, after a pause or a long stop) warms up on the 3 hours
-  before the newest interval, as far as they can be built, and shows the
-  newest interval at once, rather than simulating the whole day so far.
-  Just after an outage, the newest interval alone is the warm-up.
+  (first start, after a pause or a long stop) warms up from the start of
+  the day (02:45), as far back as the intervals can be built, and shows
+  the newest interval at once. The warm-up runs SUMO only, so it takes a
+  few minutes; it gives the chain the queues the day's chain would have.
 - Cleaning up: the FCD of a segment is deleted once it is older than the
   45 minutes the KPIs and playback read; the last KEEP_STATES saved
   states are kept, so a segment can be rerun; trip information and
@@ -80,18 +81,23 @@ log = logging.getLogger("jaadah.live")
 ACTIVE_FILE = "active.json"
 MAX_CATCH_UP = 8
 MAX_FAILURES = 3
-MAX_STEPS_PER_PASS = 2 * MAX_CATCH_UP + 4
+# A pass can run a whole day's intervals: a chain started during the day
+# warms up from 03:00 (up to 96 intervals), plus a new chain and catching up.
+MAX_STEPS_PER_PASS = 2 * 96 + 4
 KEEP_STATES = 4
 KEEP_CHAIN = timedelta(hours=24)
 POLL_S = 10
-# A chain started during the day warms up on up to this many intervals
-# before the newest one (3 hours). Where an approach is over capacity at
-# a peak, its queue builds up over a few hours, and a chain started in
-# the middle of it only shows the same delay as the day's chain when its
-# warm-up began before the build-up (docs/live_update_loop.md, 2.4).
-# Warm-up intervals run SUMO only (no KPIs, no playback), so a 3-hour
-# warm-up takes a few minutes even at a peak.
-RESTART_WARMUP_INTERVALS = 12
+# A chain started during the day warms up from the start of the day
+# (02:45, as the day's chain), as far back as the intervals can be built,
+# so it has the same queues the day's chain would have. Where an approach
+# is over capacity, its queue builds up over the afternoon: no fixed
+# warm-up length was enough at the workday evening peak, but warming up
+# from 03:00 matches the day's chain by construction
+# (docs/live_update_loop.md, 2.5). Warm-up intervals run SUMO only (no
+# KPIs, no playback), so this takes a few minutes even late in the day.
+# None means from the start of the day; a number limits the warm-up to
+# that many intervals (the tests use 4, to stay quick).
+RESTART_WARMUP_INTERVALS = None
 
 
 @dataclass
@@ -108,7 +114,7 @@ class LoopSettings:
     sumo_version: str = "unknown"
     output_dir: Path | None = None
     history_days: int = HISTORY_DAYS
-    restart_warmup_intervals: int = RESTART_WARMUP_INTERVALS
+    restart_warmup_intervals: int | None = RESTART_WARMUP_INTERVALS
 
 
 class LiveLoop:
@@ -129,6 +135,7 @@ class LiveLoop:
         self.record: ChainRecord | None = self._load_active()
         self.paused: dict | None = None
         self.failures = 0
+        self._built: dict[datetime, object] = {}  # demand built while choosing a warm-up
         self.clock_offset_s = 0
 
     # ------------------------------------------------------------
@@ -160,10 +167,12 @@ class LiveLoop:
             return None
         return record
 
-    def _new_chain(self, epoch: datetime, warmup_s: float = WARMUP_S) -> ChainRecord:
+    def _new_chain(self, epoch: datetime, warmup_s: float = WARMUP_S, restart: bool = False) -> ChainRecord:
+        shown_from = epoch + timedelta(seconds=warmup_s) if restart else None
+        run_id = run_id_of(epoch, self.settings.seed, shown_from)
         record = ChainRecord(
-            run_id=run_id_of(epoch, self.settings.seed),
-            scenario_id=f"SCN_LIVE_{epoch.astimezone(RIYADH):%Y%m%dT%H%M}",
+            run_id=run_id,
+            scenario_id=run_id.replace("RUN_LIVE_", "SCN_LIVE_").rsplit("_S", 1)[0],
             epoch=epoch.isoformat(),
             seed=self.settings.seed,
             step_length_s=self.settings.step_length_s,
@@ -199,6 +208,7 @@ class LiveLoop:
         published in run.json.
         """
 
+        self._built = {}
         latest = self.client.fetch_latest_available_timestamp()
         self.clock_offset_s = self._clock_offset_s()
         if latest is None:
@@ -263,6 +273,9 @@ class LiveLoop:
         return round((self.now() - source_now).total_seconds())
 
     def _build(self, interval_end: datetime, latest: datetime):
+        built = self._built.pop(interval_end, None)
+        if built is not None:
+            return built
         return build_interval_demand(
             self.client, interval_end,
             source=self.settings.source,
@@ -279,12 +292,13 @@ class LiveLoop:
 
         A chain that starts during the day starts on empty roads while
         the real ones are busy. So it warms up on the intervals before
-        the newest one, as many as can be built up to
-        RESTART_WARMUP_INTERVALS (3 hours), and the newest interval is
-        shown at once. When none of them can be built
-        (just after an outage), the newest interval is the warm-up, and
-        the page shows results from the next one. The pass then simulates
-        the warm-up and the newest interval one by one, as a catch-up.
+        the newest one, back to the start of the day (02:45) or as many
+        as RESTART_WARMUP_INTERVALS allows, stopping at the first one
+        that cannot be built, and the newest interval is shown at once.
+        When none of them can be built, the newest interval is the
+        warm-up, and the page shows results from the next one. The pass
+        then simulates the warm-up and the newest interval one by one, as
+        a catch-up, with the demand built here.
         """
 
         if self.paused and latest <= datetime.fromisoformat(self.paused["since_interval_end"]):
@@ -296,16 +310,28 @@ class LiveLoop:
                 self._pause(latest, demand.problems)
             return False
 
+        limit = self.settings.restart_warmup_intervals
+        if limit is None:
+            day_start = day_epoch(chain_day(latest - INTERVAL))
+            limit = int((latest - INTERVAL - day_start) / INTERVAL)
+
+        self._built = {latest: demand}
         earlier = 0
-        while earlier < self.settings.restart_warmup_intervals and self._build(
-            latest - (earlier + 1) * INTERVAL, latest
-        ).complete:
+        while earlier < limit:
+            interval_end = latest - (earlier + 1) * INTERVAL
+            built = self._build(interval_end, latest)
+            if not built.complete:
+                break
+            self._built[interval_end] = built
             earlier += 1
 
         if earlier:
-            self._new_chain(latest - (earlier + 1) * INTERVAL, warmup_s=earlier * INTERVAL.total_seconds())
+            self._new_chain(
+                latest - (earlier + 1) * INTERVAL,
+                warmup_s=earlier * INTERVAL.total_seconds(), restart=True,
+            )
         else:
-            self._new_chain(latest - INTERVAL)
+            self._new_chain(latest - INTERVAL, restart=True)
         self.paused = None
         return True
 
@@ -337,9 +363,9 @@ class LiveLoop:
         self.paused = {"since_interval_end": interval_end.isoformat(), "problems": problems[:10]}
         message = (
             f"Paused: the traffic for the interval ending {interval_end.strftime('%H:%M')} "
-            "cannot be built. Detectors sent no data and could not be estimated (silent for "
-            "more than 2 hours, or too few earlier days to estimate from). Updates restart "
-            "with the first interval that can be built."
+            "cannot be built. Detectors sent no data and it could not be estimated (too few "
+            "earlier days of the same type to estimate from). Updates restart with the first "
+            "interval that can be built."
         )
         log.warning("%s %s", message, "; ".join(problems[:3]))
         self._publish_state("paused", message, problems=problems[:10])

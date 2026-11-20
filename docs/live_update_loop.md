@@ -51,14 +51,14 @@ A2 also leaves a saved state of "now" at every update, which Release 2's forecas
 
 ## 2. One chain
 
-A **chain** is one run of the live twin. It starts with a warm-up (15 minutes at 03:00, up to 3 hours during the day) and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
+A **chain** is one run of the live twin. It starts with a warm-up (15 minutes at 03:00; from 02:45 up to the newest interval when it starts during the day) and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
 
 | | |
 | --- | --- |
 | Second 0 | The start of the warm-up, as in every Jaadah run, so the KPI engine and the playback builder read a chain as they read a baseline run |
 | Run ID | `RUN_LIVE_<second 0>_S<seed>`, e.g. `RUN_LIVE_20260819T0245_S42` |
 | Daily chain | Starts at 03:00 (warm-up from 02:45), the quietest hour. A day runs from 03:00 to 03:00, so 01:00 belongs to the day before |
-| Other chains | A chain started at another time (the first start, after a pause, after a long stop) starts at the newest data instead of simulating the whole day so far. It warms up on the intervals before the newest one, as many as can be built up to 3 hours (`RESTART_WARMUP_INTERVALS`, section 2.5), and shows the newest interval at once. Just after an outage, when the intervals before cannot be built, the newest interval alone is the warm-up and results follow one interval later. A warm-up that crosses 03:00 belongs to the chain: a chain belongs to the day its results start in |
+| Other chains | A chain started at another time (the first start, after a pause, after a long stop) starts at the newest data instead of simulating the whole day so far. It warms up from the start of the day (02:45), as far back as the intervals can be built (section 2.5), and shows the newest interval at once; its run ID names the moment it is first shown (`RUN_LIVE_<epoch>_R<HHMM>_S<seed>`), because it can start at the day chain's epoch. When the interval before the newest cannot be built (a pause), the newest interval alone is the warm-up and results follow one interval later. A warm-up that crosses 03:00 belongs to the chain: a chain belongs to the day its results start in |
 
 ### 2.1 Where a segment stops: the 60-second lag
 
@@ -108,17 +108,26 @@ The remaining difference comes from signal times that are not whole multiples of
 
 0.2 s divides the plan on paper but is not exact in binary, so rounding returns. A 0.5 s step would also make runs a little faster. It is not adopted: the step length is part of the calibrated model (`docs/calibration.md`), so changing it needs the team's agreement and a new calibration run.
 
-### 2.5 Warm-up of a chain started during the day
+### 2.5 Warm-up of a chain started during the day, and outages
 
-A chain that starts during the day (first start, after a pause or a long stop) starts on empty roads. Where an approach is over capacity at a peak (the West approach in the evening, under the fixed signal plan), its queue builds up over a few hours, so the warm-up must begin before that build-up. Mean delay of the vehicles departing 17:30–18:30 on a weekday (18 Aug), 4 seeds, against a run from 03:00:
+A chain that starts during the day (first start, after a pause or a long stop) starts on empty roads. Where an approach is over capacity at a peak (the West approach in the evening, under the fixed signal plan), its queue builds up over hours, so a short warm-up shows too little delay. `analysis/rcrc_site_1444/warmup_evaluation.py` measured it: restarts at the busy times of a workday, a Friday and a Saturday, each warm-up on empty roads on the same demand, against a run from 03:00. Mean delay of the vehicles departing in the hour after the restart, mean of 3 seeds:
 
-| Warm-up before 17:30 | Mean delay against the run from 03:00 (4 seeds) |
-| --- | --- |
-| 15 minutes | 43–46 % lower |
-| 60 minutes | 37–40 % lower |
-| 2.5 hours | −2 to +3 %, within the spread between seeds (9.5 %) |
+| Restart | 15 min | 30 min | 60 min | 90 min | 2 h | 3 h | 4 h |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Tue 6 Oct 07:45 | −1.6 % | −0.7 % | −0.4 % | −1.3 % | −0.1 % | +0.1 % | −0.6 % |
+| Tue 6 Oct 14:15 | −1.5 % | −0.5 % | +0.2 % | −0.9 % | −1.9 % | −1.8 % | −1.8 % |
+| **Tue 6 Oct 17:30** | **−29.7 %** | **−30.0 %** | **−29.7 %** | **−30.0 %** | **−30.5 %** | **−26.1 %** | **−6.8 %** |
+| Thu 8 Oct 07:45 | −0.1 % | +0.3 % | −0.3 % | +0.3 % | +0.3 % | −0.1 % | 0.0 % |
+| Thu 8 Oct 14:15 | −0.5 % | −0.7 % | −0.3 % | −0.1 % | +0.2 % | −0.3 % | +0.6 % |
+| **Thu 8 Oct 17:30** | **−46.9 %** | **−18.8 %** | **−15.8 %** | **−15.8 %** | **−15.7 %** | **−15.3 %** | **−0.7 %** |
+| Fri 25 Sep 17:30 | 0.0 % | 0.0 % | −0.3 % | +0.2 % | −0.1 % | +0.6 % | −0.2 % |
+| Fri 25 Sep 21:30 | −0.6 % | −1.2 % | −0.2 % | +0.3 % | +1.9 % | +1.3 % | +1.5 % |
+| Sat 3 Oct 17:30 | +0.6 % | −0.1 % | +0.1 % | −0.3 % | −0.1 % | −0.5 % | −0.2 % |
+| Sat 3 Oct 21:30 | −0.5 % | −0.5 % | −0.4 % | −0.2 % | −0.5 % | −0.3 % | −0.9 % |
 
-So such a chain warms up on up to 3 hours (`RESTART_WARMUP_INTERVALS = 12`) of the data before the newest interval. Warm-up intervals run SUMO only, so this takes a few minutes even at a peak.
+Most restarts need no more than 15 minutes, but at the workday evening peak no warm-up up to 4 hours is reliably enough: the queue builds through the afternoon, by more on busier days (on 18 Aug, 2.5 hours was enough). So a chain started during the day warms up **from the start of the day** (02:45, as the day's chain), as far back as the intervals can be built (`RESTART_WARMUP_INTERVALS = None`), which gives it the queues the day's chain would have. Warm-up intervals run SUMO only (no KPIs, no playback), so this takes a few minutes even late in the day.
+
+**Outages.** After a 3-hour outage ending at 17:30 on those two workdays, a chain warmed up from 03:00 on the real counts with the 3 silent hours estimated shows +0.6 % and +0.5 % against the real day (3 seeds each, all within about 1 %). Without the hours before the outage (warm-up on estimated traffic only) it is 5–8 % off, and a restart after the outage on empty roads is as far off as the table above. So the live loop goes on simulating through an outage of any length on estimated traffic (`LIVE_FALLBACK_GAP_INTERVALS` has no limit), shown on the page as "No sensor data", rather than pausing and restarting. It pauses only when an interval cannot be estimated at all: its time slot has too few earlier values of its day type (fewer than 3). At site 1444 this happens on Friday and Saturday afternoons, where outages recur in the same slots; Friday and Saturday evenings need no long warm-up (table above), so the restart after such a pause is close to the day's chain.
 
 ---
 
@@ -128,7 +137,7 @@ Each update builds the movement demand of the **newest interval only**, with the
 
 - **Built once, kept unchanged.** The intervals already simulated must keep the demand they were simulated with. Demand IDs and each record's departures depend only on the movement, the interval and the seed, so adding an interval changes nothing before it. Each update also checks this: the departures already simulated are fingerprinted, and an update whose plan would change them stops with an error instead of running.
 - **History.** The 35 whole days before the interval's day, plus that day up to the interval, fetched again at every update (about a second). Whole days give every time slot the same days behind it. The history includes the chain's own day, so a gap is counted back from now (PBI 8, Decision 12).
-- **Missing counts** are estimated as in every run: neighbouring detectors first, otherwise the time-slot average scaled by the hour before the gap, for up to 5 intervals. **Only the live loop** then goes on for 3 more intervals with the plain time-slot average (`fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS`, 8 intervals in all). After 5 intervals the hour before no longer helps, but the plain average is as accurate at the 6th interval as at the 1st, so the simulation can keep running through a typical outage. After 8 intervals (2 hours) the day's own deviation from a typical day has faded, so simulating on would only show a typical day, and the loop pauses (section 6). 8 is a project choice, not a value from a standard. Baseline and historical runs keep the gap limit of 5.
+- **Missing counts** are estimated as in every run: neighbouring detectors first, otherwise the time-slot average scaled by the hour before the gap, for up to 5 intervals. **Only the live loop** then goes on with the plain time-slot average, however long the gap (`fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS`, no limit). After 5 intervals the hour before no longer helps, but the plain average is as accurate at the 6th interval as at the 1st. These intervals are shown as "No sensor data", never as traffic; simulating them keeps the queues right for the results after the outage (section 2.5). Baseline and historical runs keep the gap limit of 5.
 - **Estimated intervals.** An interval in which any count was estimated for a silent detector is recorded with its approaches and methods. The page shows "No sensor data" for it instead of KPIs and cars (team decision, option 3: hide estimated results on Current Traffic, keep them in the trends). The simulation still runs on the estimate, so the chain stays continuous and the intervals after the outage start from realistic queues. Allocated shared lanes and the slip and bypass shares are assumptions of every interval, not missing data, so they do not mark an interval.
 - **Rejected rows** are left out and reported, as in all ingestion. Their detectors count as not reported, so they are estimated and the interval is marked.
 
@@ -195,13 +204,13 @@ While it follows the live run, the page plays the traffic at the time it happene
 | A new interval has arrived | Simulates and publishes it | The newest interval, provisional; the one before, final |
 | No new interval yet | Reports that it is up to date | Unchanged |
 | The traffic source cannot be reached | Keeps its chain, reports `waiting` and tries again at every pass | "The traffic source cannot be reached", with the results so far and a "Not updating" badge |
-| Detectors silent, up to 8 intervals | Simulates on estimated traffic and marks the intervals | "No sensor data" for those intervals; no KPIs and no cars |
-| An interval cannot be built (silent for more than 2 hours, or too few earlier days of the same type to estimate from) | Pauses, and tries the newest interval at every pass | A warning with the reason; the last results stay |
+| Detectors silent, however long | Simulates on estimated traffic and marks the intervals | "No sensor data" for those intervals; no KPIs and no cars |
+| An interval cannot be built (silent, and too few earlier days of the same type to estimate from) | Pauses, and tries the newest interval at every pass | A warning with the reason; the last results stay |
 | Data again after a pause | Starts a new chain at the first interval that can be built; the silent hour before cannot be built, so that interval is its warm-up | "A new run has started" while it warms up; results again one interval later, from the new chain only |
 | 03:00 | Starts the new day's chain | The previous day until 03:15, marked as starting; then the new day from 03:00, with the previous day still on the timeline until it is 24 hours old |
 | The loop is stopped (Ctrl+C) | Writes `state: stopped` | "Live updates have stopped" |
 | The loop stops without saying so (the laptop sleeps) | Nothing | After 30 minutes without a report, "Live updates are not arriving" |
-| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up on the 3 hours before | The missed intervals appear one by one, or the new chain's newest interval at once |
+| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up from the start of the day | The missed intervals appear one by one, or the new chain's newest interval at once |
 
 A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The old chain moves to `live/previous/`, so the page still shows it on the timeline, with a gap where the loop was paused.
 
@@ -233,7 +242,7 @@ RUN_LIVE_20260819T0245_S42/
 | A chain started during the day matches the day's chain only if its 3-hour warm-up began before a peak's queue started to build (section 2.5); a restart late in a longer over-capacity period, or just after an outage (when the hours before cannot be built), shows less delay | Keep the loop running from 03:00, so the day runs as one chain; an actuated signal plan (issue #70) would keep the queues from building up |
 | A chain is very close to an uninterrupted run (about a tenth of the difference between two seeds), but not identical (section 2.3) | A nightly rebuild of the day with one uninterrupted run (anchored replay), if live and historical results must match exactly |
 | The page keeps only the run before the newest one: after two restarts in 24 hours, the oldest of the three runs leaves the timeline early | Earlier periods from the history (PBI 15) |
-| At a site whose outages recur at the same time of the week, those time slots have few earlier values, so an outage there may not be estimable even within 8 intervals, and the loop pauses | More history, or a fallback to a related day type |
+| At a site whose outages recur at the same time of the week (site 1444: Friday and Saturday afternoons), those time slots have too few earlier values to estimate, and the loop pauses and restarts after them | A fallback to neighbouring time slots or to all day types when a slot has too few values (follow-up issue) |
 | The provisional interval's delay is biased low: the vehicles that finish first are the least delayed ([KPI engine](kpi_engine.md), section 16.5) | None needed: it becomes final at the next update |
 | Saved states belong to one SUMO version, network and computer type | Start a new chain after any of these changes (the loop does when the record cannot be read) |
 | One intersection, one source | A loop per intersection |

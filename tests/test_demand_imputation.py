@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta
 
 from backend.demand.imputation import (
@@ -976,7 +977,7 @@ def live_outage(intervals_before: int, **options):
 
 
 def test_the_live_fallback_estimates_a_longer_gap_with_the_plain_average() -> None:
-    """NOW is the 6th silent interval: past the gap limit, inside the live limit."""
+    """NOW is the 6th silent interval: past the gap limit."""
 
     result = live_outage(MAX_GAP_INTERVALS, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
 
@@ -988,15 +989,26 @@ def test_the_live_fallback_estimates_a_longer_gap_with_the_plain_average() -> No
     } == {ImputationMethod.HISTORICAL_AVERAGE}
 
 
-def test_the_live_fallback_ends_at_its_limit() -> None:
-    result = live_outage(LIVE_FALLBACK_GAP_INTERVALS, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+def test_a_fallback_with_a_limit_ends_there() -> None:
+    assert live_outage(8, fallback_gap_intervals=8).demands == []
 
-    assert result.demands == []
+
+def test_the_live_fallback_has_no_limit() -> None:
+    """NOW is the 41st silent interval (10 hours): still estimated, with the plain average."""
+
+    result = live_outage(40, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert {
+        detector.method for demand in result.demands for detector in demand.imputed_detectors
+    } == {ImputationMethod.HISTORICAL_AVERAGE}
 
 
 def test_without_the_live_fallback_the_gap_limit_is_unchanged() -> None:
     assert live_outage(MAX_GAP_INTERVALS).demands == []
 
 
-def test_the_live_limit_is_longer_than_the_gap_limit() -> None:
-    assert LIVE_FALLBACK_GAP_INTERVALS == 8 > MAX_GAP_INTERVALS
+def test_the_live_loop_estimates_gaps_of_any_length() -> None:
+    assert LIVE_FALLBACK_GAP_INTERVALS == math.inf

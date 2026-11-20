@@ -75,10 +75,16 @@ def day_epoch(day: date) -> datetime:
     return datetime.combine(day, CHAIN_DAY_START, RIYADH) - timedelta(seconds=WARMUP_S)
 
 
-def run_id_of(epoch: datetime, seed: int) -> str:
-    """RUN_LIVE_<epoch>_S<seed>, e.g. RUN_LIVE_20260819T0245_S42."""
+def run_id_of(epoch: datetime, seed: int, shown_from: datetime | None = None) -> str:
+    """
+    RUN_LIVE_<epoch>_S<seed>, e.g. RUN_LIVE_20260819T0245_S42. A chain
+    started during the day also names the moment it is first shown,
+    RUN_LIVE_<epoch>_R<HHMM>_S<seed>, because it can start at the same
+    epoch as the day's chain (02:45).
+    """
 
-    return f"RUN_LIVE_{epoch.astimezone(RIYADH):%Y%m%dT%H%M}_S{seed}"
+    restart = f"_R{shown_from.astimezone(RIYADH):%H%M}" if shown_from else ""
+    return f"RUN_LIVE_{epoch.astimezone(RIYADH):%Y%m%dT%H%M}{restart}_S{seed}"
 
 
 def segment_end_s(epoch: datetime, interval_end: datetime) -> float:
