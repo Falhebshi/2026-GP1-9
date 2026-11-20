@@ -29,7 +29,7 @@ The 3D scene keeps its colors too, with one exception: an approach without an LO
 
 ## Known limitations
 
-- **The map background stays light.** Network Overview uses OpenFreeMap's light `positron` style (`NetworkMap.jsx`), so in night mode the map is a bright area on a dark page. Switching to a dark style later needs care: `map.setStyle()` removes our own layers (segments, heat, intersections), so they must be added again after the switch. Tracked as an open issue.
+- **The map background stays light.** Network Overview uses OpenFreeMap's light `positron` style (`NetworkMap.jsx`), so in night mode the map is a bright area on a dark page. Switching to a dark style later needs care: `map.setStyle()` removes our own layers (segments, heat, intersections), so they must be added again after the switch.
 - **No toggle on Welcome and Login.** The button lives in the nav bar, which those pages don't have. A user whose computer is set to dark gets night mode there and can switch it off only after logging in.
 - **Open tabs don't follow each other.** Switching the mode in one tab updates other open tabs only when they reload.
 
