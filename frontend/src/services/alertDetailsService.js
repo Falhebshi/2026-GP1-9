@@ -19,7 +19,7 @@
 //       title: 'Queue spillback',
 //       description: 'The left-turn queue ...',
 //       intersection_id: 'INT_001',
-//       intersection_name: 'Prince Turki Al-Awwal Rd × Imam Saud Rd',
+//       intersection_name: 'Prince Turki Al-Awwal Road × Imam Saud Road',
 //       approach_id: 'APP_N',
 //       location: 'North approach',
 //       interval_start: '2026-10-14T07:45:00+03:00',   the period the
@@ -160,7 +160,7 @@ function wait(ms) {
 
 const INTERSECTION = {
   intersection_id: 'INT_001',
-  intersection_name: 'Prince Turki Al-Awwal Rd × Imam Saud Rd',
+  intersection_name: 'Prince Turki Al-Awwal Road × Imam Saud Road',
 }
 
 const DID_NOT_FINISH =
