@@ -38,7 +38,7 @@ The target GEH < 5 for at least 85% of hourly flows follows the Wisconsin DOT ca
 
 ## Results 
 
-Calibration (30 Aug – 12 Sep 2026) and validation (27 Sep – 3 Oct 2026) were both run with 4 seeds and SUMO's default driver settings. No parameter was tuned, for the reasons below. The figures stay outside the repository, with the other RCRC-derived numbers, in `../jaadah-private-data/processed/calibration/results/calibration_final.*` and `validation_final.*`.
+Calibration (30 Aug – 12 Sep 2026) and validation (27 Sep – 3 Oct 2026) were both run with 4 seeds and SUMO's default driver settings. One round of driver-parameter tuning was run and did not improve the result by the required margin, so the defaults were kept (see [Tuning round](#tuning-round)). The figures stay outside the repository, with the other RCRC-derived numbers, in `../jaadah-private-data/processed/calibration/results/calibration_final.*` and `validation_final.*`.
 
 - **Validation meets the target; calibration falls just short of it.** On all eligible detector-hours, validation reaches the 85% target and calibration misses it by a single detector-hour. Both sets are within sampling uncertainty of the 85% line, and the model behaves the same way on the unseen validation week as on the calibration weeks. The sampling uncertainty is the standard error of a proportion, √(p (1 − p) / n), with p the pass rate and n the number of eligible detector-hours.
 - **Within capacity, both sets exceed the target.**
@@ -49,6 +49,31 @@ The misses have two causes, and neither is driver behaviour, so tuning the drive
 
 1. **Signal plan.** At its busiest hours, the West approach carries more traffic than the fixed Webster plan's green can serve, so SUMO passes fewer vehicles than were counted. The real controller is actuated and can give that approach more green. This is a limitation of the single fixed plan; see issue #70 (actuated signal).
 2. **Shared-lane split.** Where the plan has capacity, the remaining misses are on the East and West approaches: each approach's total matches, but vehicles are distributed differently across the lanes, in opposite directions on the two approaches, around the shared lanes `LANE_E_2` and `LANE_W_2`. This follows from the proportional split of the shared-lane counts between the left-turn and through movements, which is a demand assumption: RCRC supplied no turning counts. The split is not tuned, because the same detectors build the demand and check it, so fitting it to the score would be circular. The shared-lane sensitivity check (left-turn share shifted by −0.2 and +0.2, see below) confirms the split as the cause: North and South do not change, while East and West change by a few percentage points in opposite directions, East matching better with a lower left-turn share and West with a higher one. No single shift suits both approaches, and the official result keeps the current rule. Without turning counts the split stays a documented limitation; replacing the proportional rule with the HCM lane distribution already used by the KPI engine is proposed as future work.
+
+### Tuning round
+
+One round was run on the calibration weeks with 4 seeds, moving one parameter at a time a step down and a step up from SUMO's defaults: `tau` 0.8 and 1.2 (default 1.0), `sigma` 0.3 and 0.7 (default 0.5). Each was compared with the official run on the same 4 seeds, as the criteria require at least 4 matched seed pairs for a before/after comparison. Result files: `tune_tau0.8`, `tune_tau1.2`, `tune_sigma0.3` and `tune_sigma0.7` in the same folder.
+
+- **No setting improved the pass rate by 1 percentage point or more**, so tuning stopped under the stop rule and the defaults were kept. The best setting (`sigma` 0.3) passed one more detector-hour than the defaults, which reaches the 85% line but is smaller than the spread between seeds; choosing it would mean picking, after seeing the results, whichever of four settings happened to land on the right side of the line.
+- **Raising either parameter lowered the pass rate by several points**, mainly on the West approach at its over-capacity hours: less efficient drivers pass fewer vehicles through a green that is already too short. Lowering either changed little. This confirms that the remaining misses come from the signal plan and the shared-lane split, not from driver behaviour.
+- **Lane-change parameters were not tried**, although lane-level counts stay off on East and West: the lane errors go in opposite directions on the two approaches, so a single global lane-change setting would improve one approach only by worsening the other.
+
+### Conclusion
+
+The model is accepted for use by Jaadah's simulation and intervention-evaluation features at site 1444, with SUMO's default driver settings and the Release 1 Webster plan. Validation meets the target, and calibration falls short of it by one detector-hour, which is within sampling uncertainty. It is accepted with three limitations, which apply to every result the model produces:
+
+1. **The West approach at its busiest hours is limited by the signal plan.**
+   - *Cause:* the model runs one all-day fixed Webster plan, while the real controller is actuated and lengthens the green of whichever approach is busy. At the West approach's busiest hours, the counted traffic exceeds what the fixed plan's green can serve.
+   - *Effect:* SUMO passes fewer vehicles than were counted, so delays, queues and level of service on West at those hours are overstated, and the traffic it sends downstream is understated. Results there describe the fixed plan rather than the real intersection. This matters most when an intervention changes the West green: part of any improvement shown is the plan's own shortfall being removed.
+   - *Removed by:* actuated signal control (issue #70) or time-of-day plans.
+2. **Lane-level results on the East and West approaches rest on an assumption.**
+   - *Cause:* each of these approaches has a shared left-and-through lane whose count is split between the two movements in proportion to the neighbouring lanes, because RCRC supplied no turning counts.
+   - *Effect:* approach totals match the counts, but vehicles are distributed differently across the lanes than in reality, in opposite directions on the two approaches. Results per lane or per lane group on East and West (lane queues, the left-turn and through lane groups' volume-to-capacity ratios) are less reliable than approach totals; the shared-lane sensitivity check shows the assumption moves the pass rate by a few percentage points. North and South have no shared lane and are not affected.
+   - *Removed by:* turning counts. Issue #82 evaluates replacing the proportional split with the HCM lane distribution the KPI engine already uses: a standard method that would make the split better founded, although still an assumption about how drivers choose lanes.
+3. **Delays and queues are model outputs, not validated measurements.**
+   - *Cause:* calibration compares vehicle counts at the stop-bar detectors only. RCRC supplied no travel times or queue lengths, and occupancy is compared only as a pattern, because it depends on the signal plan and on the loop length.
+   - *Effect:* the delay, queue and level-of-service values the KPI engine reports have not been checked against observations. They are consistent with the calibrated counts, but their absolute values carry the model's assumptions.
+   - *Removed by:* observed travel times or queue lengths.
 
 ## What is built
 
