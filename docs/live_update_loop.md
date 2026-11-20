@@ -208,6 +208,12 @@ RUN_LIVE_20260819T0245_S42/
 
 ## 9. Tests
 
+**A day in an hour.** `simulation/scripts/tests/run_live_fast.py` runs the loop through a stretch of the replay's report as fast as it can go: it gives the loop the intervals back to back instead of every 15 minutes, with the loop's clock set to the data time. A whole day, with its peaks, the 03:00 handover and the cleaning up, takes about as long as its updates, around an hour. After every update it prints how long the update took, the disk use of the working and page folders, and the memory used, and it writes them to `simulation/outputs/tests/live_fast/report.csv` (ignored by git). It checks what a day-long run would show about the loop, but not the parts that depend on real time (waiting for the source, the page's clock).
+
+```bash
+python simulation/scripts/tests/run_live_fast.py --first 2026-08-18T02:45 --last 2026-08-19T03:30
+```
+
 | Test file | Covers |
 | --- | --- |
 | `tests/test_live_chain.py` | Chain days, run IDs, the lag, which departures a segment inserts, the chain record, joining FCD, signal states and trip information |
