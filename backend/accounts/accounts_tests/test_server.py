@@ -21,7 +21,7 @@ START = datetime(2026, 11, 18, 9, 0, tzinfo=RIYADH)     # Wednesday 09:00
 
 # Artificial accounts, not real people
 SARA = {"email": "sara.q@moh.gov.sa", "password": "orbit maple quiet river"}
-ALIYAH = {"email": "aliyah@ksu.edu.sa", "password": "lantern desert noon falcon"}
+NOURA = {"email": "noura@ksu.edu.sa", "password": "lantern desert noon falcon"}
 
 
 class Clock:
@@ -45,7 +45,7 @@ def storage(tmp_path, clock):
         "Sara Alqahtani", SARA["email"], hash_password(SARA["password"]), ROLE_ENGINEER,
     )
     storage.create_account(
-        "Aliyah Alharbi", ALIYAH["email"], hash_password(ALIYAH["password"]), ROLE_ADMIN,
+        "Noura Almutairi", NOURA["email"], hash_password(NOURA["password"]), ROLE_ADMIN,
     )
     return storage
 
@@ -89,7 +89,7 @@ def test_an_engineer_logs_in_and_gets_a_session_cookie(client):
 
 
 def test_an_admin_logs_in_with_the_admin_role(client):
-    response = log_in(client, **ALIYAH)
+    response = log_in(client, **NOURA)
 
     assert response.json()["user"]["role"] == "admin"
 
@@ -214,7 +214,7 @@ def test_a_pause_on_one_account_does_not_affect_another(client):
     for _ in range(5):
         wrong(client)
 
-    assert log_in(client, **ALIYAH).status_code == 200
+    assert log_in(client, **NOURA).status_code == 200
 
 
 # ============================================================
@@ -409,3 +409,21 @@ def test_a_failed_login_keeps_the_current_session(client):
     log_in(client, SARA["email"], "not the right password")
 
     assert client.get("/auth/me").status_code == 200
+
+
+# ============================================================
+# CACHING
+# ============================================================
+
+def test_every_answer_says_never_cache_it(client):
+    responses = [
+        client.get("/health"),
+        client.get("/auth/me"),                                     # 401
+        log_in(client, SARA["email"], "not the right password"),    # 401
+        log_in(client, **SARA),
+        client.get("/auth/me"),
+        client.post("/auth/logout"),
+    ]
+
+    assert [r.status_code for r in responses] == [200, 401, 401, 200, 200, 204]
+    assert all(r.headers["cache-control"] == "no-store" for r in responses)

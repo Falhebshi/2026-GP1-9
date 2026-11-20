@@ -377,7 +377,7 @@ def test_deleting_an_account_deletes_its_sessions(storage):
 
 
 def test_admin_and_engineer_sessions_both_work(storage):
-    admin = storage.create_account("Aliyah", "aliyah@ksu.edu.sa", OMAR_HASH, ROLE_ADMIN)
+    admin = storage.create_account("Noura", "noura@ksu.edu.sa", OMAR_HASH, ROLE_ADMIN)
     token = storage.create_session(admin.id)
 
     assert storage.get_session_account(token).role == ROLE_ADMIN
