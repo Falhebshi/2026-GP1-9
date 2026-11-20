@@ -58,9 +58,20 @@ One round was run on the calibration weeks with 4 seeds, moving one parameter at
 - **Raising either parameter lowered the pass rate by several points**, mainly on the West approach at its over-capacity hours: less efficient drivers pass fewer vehicles through a green that is already too short. Lowering either changed little. This confirms that the remaining misses come from the signal plan and the shared-lane split, not from driver behaviour.
 - **Lane-change parameters were not tried**, although lane-level counts stay off on East and West: the lane errors go in opposite directions on the two approaches, so a single global lane-change setting would improve one approach only by worsening the other.
 
+### Longer split (3 + 2)
+
+The criteria allow a 3 + 2 split if runs are fast, so it was run as a check on the official 2 + 1 result: calibration 30 Aug – 19 Sep and validation 27 Sep – 10 Oct, with the same test hours, the same 4 seeds and SUMO's default driver settings. No day in either range was left out. Result files: `calibration_3plus2` and `validation_3plus2` in the same folder.
+
+- **The result is the same.** The 3-week calibration set meets the target and the 2-week validation set misses it by a single detector-hour: the mirror image of the 2 + 1 split. Across the four sets, two meet the target and two miss it by one detector-hour each, so the model sits at the 85% line, within sampling uncertainty of it, on every set.
+- **Within capacity, both sets exceed the target**, as in the 2 + 1 split.
+- **The pattern per approach does not change:** North and South match almost completely, East matches well, West does not. Adding weeks moves no approach by more than a few percentage points.
+- **The seeds agree closely** again. In the validation set every individual seed reaches 85%, while the acceptance measure, the GEH of the mean over the seeds, falls just below it: averaging the seeds moves a few borderline detector-hours across GEH 5 in either direction.
+
+The official result stays the 2 + 1 split, because it was fixed before the runs; the 3 + 2 split shows that the result does not depend on which weeks were chosen.
+
 ### Conclusion
 
-The model is accepted for use by Jaadah's simulation and intervention-evaluation features at site 1444, with SUMO's default driver settings and the Release 1 Webster plan. Validation meets the target, and calibration falls short of it by one detector-hour, which is within sampling uncertainty. It is accepted with three limitations, which apply to every result the model produces:
+The model is accepted for use by Jaadah's simulation and intervention-evaluation features at site 1444, with SUMO's default driver settings and the Release 1 Webster plan. Validation meets the target, and calibration falls short of it by one detector-hour, which is within sampling uncertainty; the longer 3 + 2 split gives the same result with the two sets reversed (see [Longer split](#longer-split-3--2)). It is accepted with three limitations, which apply to every result the model produces:
 
 1. **The West approach at its busiest hours is limited by the signal plan.**
    - *Cause:* the model runs one all-day fixed Webster plan, while the real controller is actuated and lengthens the green of whichever approach is busy. At the West approach's busiest hours, the counted traffic exceeds what the fixed plan's green can serve.
