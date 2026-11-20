@@ -65,7 +65,7 @@ second 0, analysis start minus warm-up), `--duration-s`, and `--warm-up-s` and `
 | `signals.json` | The indication (green, yellow, red) of every signal-controlled movement each time one changes |
 | `kpis.json` | The run's KPI results (`KpiResult`) for every 15-minute analysis interval, at intersection, approach and movement level |
 
-The live update loop (`simulation/scripts/run_live.py`) writes the same files into `live/` as each interval arrives, building only the newest intervals' vehicle files with `build_interval_payloads()`, from the last 45 minutes of FCD. Its `run.json` also has `source: "live"`, `status: "running"` and a `live` part (the loop's state, the newest interval, the provisional interval and the intervals without sensor data); see [Live update loop](../../docs/live_update_loop.md), section 5.
+The live update loop (`simulation/scripts/run_live.py`) writes the same files into `live/` as each interval arrives, building only the newest intervals' vehicle files with `build_interval_payloads()`, from the last 45 minutes of FCD. When a new run starts, the run before it moves to `live/previous/` and stays there until its intervals are 24 hours old, so the page can show the last 24 hours. Its `run.json` also has `source: "live"`, `status: "running"` and a `live` part (the loop's state, the newest interval, the provisional interval and the intervals without sensor data); see [Live update loop](../../docs/live_update_loop.md), section 5.
 
 The vehicle records and signal changes are produced by `backend/outputs/vehicles.py` and
 `backend/outputs/signals.py` (M10-B) and are checked against the `VehicleState` and

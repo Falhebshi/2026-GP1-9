@@ -23,6 +23,9 @@
 //         simulatedUntilSeconds,         where the simulation stopped, in seconds from the run
 //                                        start (the warm-up)
 //         version }                      changes whenever a new interval is published
+//     previous: null, or for a live run the run before it, while it is less than 24 hours old
+//       (live/previous/): { scenario: 'live/previous', run, hasKpis, isTest, intervals,
+//       timeline } as below, with only the intervals before the newest run's first one
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
 //     run: { id, status, failureReason, start, duration, intervalSeconds, analysisStartSeconds },
 //                                        null when there is no run yet. status 'completed',
@@ -278,9 +281,38 @@ export async function getCurrentTraffic() {
       isTest: Boolean(run?.is_test),
       intervals: [],
       timeline: [],
+      previous: null,
     }
   }
 
+  const status = liveRun ? 'running' : 'completed'
+  const current = await runView(folder, scenario, run, approaches, demo, status)
+
+  // Live only: the run before this one (the day before, or the chain before a restart), kept
+  // in live/previous/ until its intervals are 24 hours old, so the timeline shows the last
+  // 24 hours. Its intervals start where they end in the newest run, never overlapping it.
+  let previous = null
+  const previousRun =
+    liveRun && demo !== 'empty' ? await getJson(`${folder}/live/previous/run.json`) : null
+  if (previousRun && previousRun.run_id !== run.run_id && previousRun.status !== 'failed') {
+    const view = await runView(folder, 'live/previous', previousRun, approaches, demo, 'completed')
+    const firstStart = current.intervals[0] ? Date.parse(current.intervals[0].start) : Infinity
+    const intervals = view.intervals.filter((item) => Date.parse(item.start) < firstStart)
+    if (intervals.length) {
+      previous = {
+        ...view,
+        scenario: 'live/previous',
+        intervals,
+        timeline: intervals.map(timelineBar),
+      }
+    }
+  }
+
+  return { ...page, ...current, previous }
+}
+
+// One run as the page shows it: the run, its intervals with their KPIs and the timeline bars
+async function runView(folder, scenario, run, approaches, demo, status) {
   // Only the KPI results of this run; a kpis.json left from another run is not used
   const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/${scenario}/kpis.json`)
   const results = kpis?.run_id === run.run_id ? kpis.results : null
@@ -288,10 +320,9 @@ export async function getCurrentTraffic() {
     demo === 'empty' ? [] : groupByInterval(run, results ?? [], approaches.approaches)
 
   return {
-    ...page,
     run: {
       id: run.run_id,
-      status: liveRun ? 'running' : 'completed',
+      status,
       failureReason: null,
       start: addSeconds(run.run_start, run.analysis_start_s),
       duration: run.analysis_end_s - run.analysis_start_s,

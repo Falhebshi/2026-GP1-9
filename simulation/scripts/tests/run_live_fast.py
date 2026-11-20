@@ -14,9 +14,9 @@ update finishes well inside 15 minutes, also at the evening peak; that
 the disk use stays flat because old files are removed; and that the
 03:00 handover starts the next day's chain. It does not show the parts
 that depend on real time: waiting for the source, the page's clock, a
-laptop going to sleep. The loop's own clock is set to the data time, so
-cleaning up by age (chains are removed 24 hours after their last
-update) behaves as it would over a real day.
+laptop going to sleep, and removing a chain's working folder 24 hours
+after its last update (that rule reads the files' real times). The
+loop's own clock is set to the data time.
 
 Usage, from the repository root (the replay's report must be loaded;
 the replay server does not need to run):

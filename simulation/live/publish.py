@@ -39,9 +39,11 @@ Rules applied, and why:
 """
 
 import json
+import math
 import os
+import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from backend.analytics.kpi.intervals import AnalysisInterval
@@ -78,6 +80,10 @@ REPORTED_INTERVALS = 2
 UPDATE_DIR = "update"
 RUN_FILE = "run.json"
 SIGNALS_FILE = "signals.json"
+# The page shows the last 24 hours: the newest run in live/, and the run
+# before it in live/previous/ until its intervals are 24 hours old.
+PREVIOUS_DIR = "previous"
+KEEP_PUBLISHED = timedelta(hours=24)
 
 
 def live_folder(intersection_id: str) -> Path:
@@ -275,6 +281,7 @@ class LivePublisher:
         # run.json, last
         run_json = live_run_index(run_index, record, state)
         write_json_atomic(self.output_dir / RUN_FILE, run_json, compact=False)
+        self.trim_previous(interval_end)
         return run_json
 
     def published_run_id(self) -> str | None:
@@ -304,8 +311,12 @@ class LivePublisher:
 
     def _start_folder(self, record: ChainRecord) -> None:
         """
-        Make the folder ready for this chain: created if missing, and
-        emptied if it holds another run (run.json first).
+        Make the folder ready for this chain: created if missing. If it
+        holds another run, that run moves to previous/ (replacing the one
+        there), so the page can still show its last 24 hours; each folder
+        holds one run. run.json leaves live/ first and arrives in
+        previous/ last, so the page never reads a run whose files are
+        not all there.
         """
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -315,11 +326,63 @@ class LivePublisher:
         if current is not None and current.get("run_id") == record.run_id:
             return
 
-        if run_path.exists():
+        # Without a run.json (a first start, or a first publish that failed
+        # half way) live/ holds no complete run: previous/ stays as it is.
+        previous = self.output_dir / PREVIOUS_DIR
+        if current is not None:
+            remove_published(previous)
+            previous.mkdir()
             run_path.unlink()
         for path in self.output_dir.iterdir():
-            if path.is_file() and path.suffix in (".json", ".tmp"):
+            if not path.is_file():
+                continue
+            if current is not None and path.suffix == ".json":
+                os.replace(path, previous / path.name)
+            elif path.suffix in (".json", ".tmp"):
                 path.unlink()
+        if current is not None:
+            write_json_atomic(previous / RUN_FILE, current, compact=False)
+
+    def trim_previous(self, newest_end: datetime) -> None:
+        """
+        Drop the previous run's intervals that are 24 hours older than the
+        newest interval: run.json first (its analysis period then starts
+        later), then their vehicle files; the whole folder once none is
+        left.
+        """
+
+        previous = self.output_dir / PREVIOUS_DIR
+        path = previous / RUN_FILE
+        if not path.is_file():
+            return
+
+        run_json = json.loads(path.read_text(encoding="utf-8"))
+        run_start = datetime.fromisoformat(run_json["run_start"])
+        step = run_json["interval_s"]
+        cutoff_s = (newest_end - KEEP_PUBLISHED - run_start).total_seconds()
+        keep_from_s = math.ceil(cutoff_s / step) * step
+
+        if keep_from_s <= run_json["analysis_start_s"]:
+            return
+        if keep_from_s >= run_json["analysis_end_s"]:
+            remove_published(previous)
+            return
+
+        gone = [item for item in run_json["intervals"] if item["end_s"] <= keep_from_s]
+        run_json["intervals"] = [item for item in run_json["intervals"] if item["end_s"] > keep_from_s]
+        run_json["analysis_start_s"] = keep_from_s
+        write_json_atomic(path, run_json, compact=False)
+        for item in gone:
+            (previous / item["file"]).unlink(missing_ok=True)
+
+
+def remove_published(folder: Path) -> None:
+    """Remove a published run's folder, run.json first, so the page never reads half of it."""
+
+    if not folder.exists():
+        return
+    (folder / RUN_FILE).unlink(missing_ok=True)
+    shutil.rmtree(folder)
 
 
 LOOP_STATUSES = {

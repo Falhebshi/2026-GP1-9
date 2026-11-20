@@ -37,6 +37,8 @@ function CurrentTraffic() {
   // the scene reports its time, so the KPIs follow within a second. Clicking an earlier bar
   // stops following; clicking the newest bar follows again
   const [followLatest, setFollowLatest] = useState(true)
+  // live: true while an interval of the run before the newest one (live/previous/) is shown
+  const [onPrevious, setOnPrevious] = useState(false)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
 
   // Load the data when the page opens
@@ -89,8 +91,14 @@ function CurrentTraffic() {
     return <EmptyState>Loading current traffic…</EmptyState>
   }
 
-  const { intersection, run, hasKpis, isTest, isSample, intervals, timeline, alerts } = data
+  const { intersection, isSample, alerts } = data
   const liveInfo = data.live
+  // Live: the timeline covers the last 24 hours, the run before the newest one (previous)
+  // and the newest run. The scene, the KPIs and the clock show the run the selected bar is in.
+  const previous = data.previous ?? null
+  const shown = onPrevious && previous ? previous : data
+  const { run, hasKpis, isTest, intervals } = shown
+  const timeline = [...(previous?.timeline ?? []), ...data.timeline]
   // Why there is nothing to play, if so: no run yet, or the run failed
   const runProblem = !run
     ? 'No simulated run is available yet.'
@@ -116,7 +124,7 @@ function CurrentTraffic() {
   const kpiInterval = interval
     ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
     : null
-  const following = live && followLatest && !runProblem
+  const following = live && followLatest && !runProblem && shown === data
   // Live: where the scene is now, in seconds from the start of the analysis period. The scene
   // plays the traffic at the time it happened in data time, LIVE_DELAY behind it: by then that
   // moment is always simulated (an interval arrives after it ends, the loop stops 60 s early
@@ -142,14 +150,23 @@ function CurrentTraffic() {
       : [],
   )
 
-  // A bar on the timeline: play from the start of its 15 minutes (null is the newest bar)
+  // A bar on the timeline: play from the start of its 15 minutes (null is the newest bar). A bar
+  // of the previous run switches the scene to that run; the newest bar follows the live clock.
   function selectBar(barTime) {
+    const inPrevious =
+      barTime !== null && previous ? previous.timeline.findIndex((b) => b.time === barTime) : -1
     const target =
-      barTime === null ? intervals.length - 1 : timeline.findIndex((b) => b.time === barTime)
+      inPrevious >= 0
+        ? inPrevious
+        : barTime === null
+          ? data.intervals.length - 1
+          : data.timeline.findIndex((b) => b.time === barTime)
     if (target < 0) return
+    const seconds = target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
+    setOnPrevious(inPrevious >= 0)
     setFollowLatest(barTime === null)
-    setTime(target * run.intervalSeconds)
-    setJumpTo({ time: target * run.intervalSeconds })
+    setTime(seconds)
+    setJumpTo({ time: seconds })
   }
 
   const details = openApproach && (
@@ -257,8 +274,8 @@ function CurrentTraffic() {
                 }
               >
                 <TrafficScene3D
-                  key={liveInfo?.version ?? 'sample'}
-                  scenario={data.scenario}
+                  key={`${shown === data ? '' : 'previous|'}${liveInfo?.version ?? 'sample'}`}
+                  scenario={shown.scenario}
                   startAt={time}
                   clock={liveClock}
                   hiddenRanges={hiddenRanges}

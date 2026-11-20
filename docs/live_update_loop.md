@@ -150,7 +150,7 @@ Why these rules:
 - **The planned departures given to the KPIs end where the simulation ends.** A vehicle planned for later has not been simulated yet; it is not "never inserted".
 - **The KPI engine is given the chain as a completed run.** It only calculates KPIs of a completed run, and everything it is given has been simulated to its end.
 - **Every file is written under a temporary name and renamed**, and `run.json` last, so the page never reads a half-written file and `run.json` always describes files that are already there.
-- **The folder holds one run.** When a new chain publishes for the first time, the previous chain's files are removed, `run.json` first, so the page never mixes two runs.
+- **Each folder holds one run, and the page shows the last 24 hours.** When a new chain publishes for the first time, the run in `live/` moves to `live/previous/` (`run.json` leaves `live/` first and arrives in `previous/` last), replacing the run that was there. After every update, the previous run's intervals that are 24 hours older than the newest interval are dropped: its `run.json` first (its analysis period then starts later), then their vehicle files, and the folder once none is left. The page joins both runs on one timeline, so it always shows the last 24 hours, across the 03:00 handover and across a restart; the scene shows one run at a time and switches when a bar of the other run is chosen. If a new run's first publish fails half way, `previous/` is kept.
 
 An update takes from about 5 s at night to about 100 s at the evening peak (a weekday on RCRC demand with the Webster plan, on a 2-core cloud machine):
 
@@ -198,12 +198,12 @@ While it follows the live run, the page plays the traffic at the time it happene
 | Detectors silent, up to 8 intervals | Simulates on estimated traffic and marks the intervals | "No sensor data" for those intervals; no KPIs and no cars |
 | An interval cannot be built (silent for more than 2 hours, or too few earlier days of the same type to estimate from) | Pauses, and tries the newest interval at every pass | A warning with the reason; the last results stay |
 | Data again after a pause | Starts a new chain at the first interval that can be built; the silent hour before cannot be built, so that interval is its warm-up | "A new run has started" while it warms up; results again one interval later, from the new chain only |
-| 03:00 | Starts the new day's chain | The previous day until 03:15, marked as starting; then the new day from 03:00 |
+| 03:00 | Starts the new day's chain | The previous day until 03:15, marked as starting; then the new day from 03:00, with the previous day still on the timeline until it is 24 hours old |
 | The loop is stopped (Ctrl+C) | Writes `state: stopped` | "Live updates have stopped" |
 | The loop stops without saying so (the laptop sleeps) | Nothing | After 30 minutes without a report, "Live updates are not arriving" |
 | The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up on the 3 hours before | The missed intervals appear one by one, or the new chain's newest interval at once |
 
-A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The page then shows the day only from the restart.
+A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The old chain moves to `live/previous/`, so the page still shows it on the timeline, with a gap where the loop was paused.
 
 An update that fails (for example SUMO crashing) changes nothing in the chain's record. The loop reports the failure and tries the same update again at the next pass; a segment folder it left behind is removed first. After 3 failures in a row, or at once when the chain itself is inconsistent (its departures would change), the loop starts a new chain at the newest data instead of retrying forever. A traffic source that cannot be reached (stopped, restarting, no network) is not a failed update: nothing was simulated, so the loop keeps its chain, reports `waiting`, and catches up when the source answers again (up to 8 intervals, as after a stop).
 
@@ -222,7 +222,7 @@ RUN_LIVE_20260819T0245_S42/
   update/                     the joined outputs of the last update (FCD, trip information, signal states, manifest)
 ```
 
-`chain.json` is written whole, under a temporary name and then renamed, after every segment. After each update the loop deletes the FCD of segments older than the last 3, keeps the saved states of the last 4, and deletes a chain's folder 24 hours after its last update. Trip information and signal states are small and kept for the chain. A day of playback in `live/` is about 1 GB (about 10 MB per interval at peak).
+`chain.json` is written whole, under a temporary name and then renamed, after every segment. After each update the loop deletes the FCD of segments older than the last 3, keeps the saved states of the last 4, and deletes a chain's folder 24 hours after its last update. Trip information and signal states are small and kept for the chain. A day of playback in `live/` and `live/previous/` together is about 2 GB (the fast run below reached 1.9 GB for a weekday).
 
 ---
 
@@ -232,7 +232,7 @@ RUN_LIVE_20260819T0245_S42/
 | --- | --- |
 | A chain started during the day matches the day's chain only if its 3-hour warm-up began before a peak's queue started to build (section 2.5); a restart late in a longer over-capacity period, or just after an outage (when the hours before cannot be built), shows less delay | Keep the loop running from 03:00, so the day runs as one chain; an actuated signal plan (issue #70) would keep the queues from building up |
 | A chain is very close to an uninterrupted run (about a tenth of the difference between two seeds), but not identical (section 2.3) | A nightly rebuild of the day with one uninterrupted run (anchored replay), if live and historical results must match exactly |
-| After a pause, the page shows the day only from the restart | Keeping several chains of a day on the page (PBI 15's earlier-periods work) |
+| The page keeps only the run before the newest one: after two restarts in 24 hours, the oldest of the three runs leaves the timeline early | Earlier periods from the history (PBI 15) |
 | At a site whose outages recur at the same time of the week, those time slots have few earlier values, so an outage there may not be estimable even within 8 intervals, and the loop pauses | More history, or a fallback to a related day type |
 | The provisional interval's delay is biased low: the vehicles that finish first are the least delayed ([KPI engine](kpi_engine.md), section 16.5) | None needed: it becomes final at the next update |
 | Saved states belong to one SUMO version, network and computer type | Start a new chain after any of these changes (the loop does when the record cannot be read) |
@@ -242,7 +242,7 @@ RUN_LIVE_20260819T0245_S42/
 
 ## 9. Tests
 
-**A day in an hour.** `simulation/scripts/tests/run_live_fast.py` runs the loop through a stretch of the replay's report as fast as it can go: it gives the loop the intervals back to back instead of every 15 minutes, with the loop's clock set to the data time. A whole day, with its peaks, the 03:00 handover and the cleaning up, takes about as long as its updates, around an hour. After every update it prints how long the update took, the disk use of the working and page folders, and the memory used, and it writes them to `simulation/outputs/tests/live_fast/report.csv` (ignored by git). It checks what a day-long run would show about the loop, but not the parts that depend on real time (waiting for the source, the page's clock).
+**A day in an hour.** `simulation/scripts/tests/run_live_fast.py` runs the loop through a stretch of the replay's report as fast as it can go: it gives the loop the intervals back to back instead of every 15 minutes, with the loop's clock set to the data time. A whole day, with its peaks, the 03:00 handover and the cleaning up, takes about as long as its updates, around an hour. After every update it prints how long the update took, the disk use of the working and page folders, and the memory used, and it writes them to `simulation/outputs/tests/live_fast/report.csv` (ignored by git). It checks what a day-long run would show about the loop, but not the parts that depend on real time: waiting for the source, the page's clock, and removing a chain's working folder 24 hours after its last update (that rule reads the files' real times).
 
 ```bash
 python simulation/scripts/tests/run_live_fast.py --first 2026-08-18T02:45 --last 2026-08-19T03:30

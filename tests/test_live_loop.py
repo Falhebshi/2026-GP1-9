@@ -288,7 +288,8 @@ def test_an_outage_is_estimated_then_paused_and_the_loop_restarts(source, tmp_pa
     run = published(tmp_path)
     assert run["run_id"] == "RUN_LIVE_20260806T1430_S42"
     assert run["live"]["state"] == "running"
-    assert not (tmp_path / "live" / "vehicles_1230.json").exists()  # the old chain's files are gone
+    assert not (tmp_path / "live" / "vehicles_1230.json").exists()  # the old chain's files moved
+    assert (tmp_path / "live" / "previous" / "vehicles_1230.json").is_file()
 
 
 @needs_sumo
@@ -328,6 +329,55 @@ def some_chain():
         epoch=(NOON - STEP).isoformat(), seed=42, step_length_s=0.4, sumo_version="1.27.1",
         network_version="test", mapping_version="test", started_at=NOON.isoformat(),
     )
+
+
+def write_published(folder, run_id, run_start, analysis_start_s, analysis_end_s):
+    folder.mkdir(parents=True, exist_ok=True)
+    intervals = [
+        {"start_s": s, "end_s": s + 900, "file": f"vehicles_{k}.json"}
+        for k, s in enumerate(range(0, analysis_end_s, 900))
+    ]
+    for item in intervals:
+        (folder / item["file"]).write_text("{}", encoding="utf-8")
+    (folder / "kpis.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
+    run = {"run_id": run_id, "run_start": run_start.isoformat(), "analysis_start_s": analysis_start_s,
+           "analysis_end_s": analysis_end_s, "interval_s": 900, "intervals": intervals}
+    (folder / "run.json").write_text(json.dumps(run), encoding="utf-8")
+
+
+def test_a_new_run_moves_the_published_one_to_previous(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    live = tmp_path / "live"
+    write_published(live / "previous", "RUN_OLDER", NOON - timedelta(days=2), 900, 3600)
+    write_published(live, "RUN_LIVE_20260805T0245_S42", NOON - timedelta(days=1), 900, 3600)
+
+    loop.publisher._start_folder(some_chain())
+
+    assert not list(live.glob("*.json"))
+    previous = json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))
+    assert previous["run_id"] == "RUN_LIVE_20260805T0245_S42"  # the older one is gone
+    assert {p.name for p in (live / "previous").iterdir()} == {
+        "run.json", "kpis.json", "vehicles_0.json", "vehicles_1.json", "vehicles_2.json", "vehicles_3.json",
+    }
+
+    loop.publisher._start_folder(some_chain())  # the same run again: nothing moves
+    assert (live / "previous" / "run.json").is_file()
+
+
+def test_the_previous_run_keeps_only_the_last_24_hours(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    previous = tmp_path / "live" / "previous"
+    run_start = NOON - timedelta(days=1)
+    write_published(previous, "RUN_PREVIOUS", run_start, 900, 4500)  # analysis 12:15-13:15
+
+    loop.publisher.trim_previous(run_start + timedelta(days=1, seconds=1800))
+    run = json.loads((previous / "run.json").read_text(encoding="utf-8"))
+    assert run["analysis_start_s"] == 1800
+    assert [item["file"] for item in run["intervals"]] == ["vehicles_2.json", "vehicles_3.json", "vehicles_4.json"]
+    assert not (previous / "vehicles_1.json").exists() and (previous / "vehicles_2.json").exists()
+
+    loop.publisher.trim_previous(run_start + timedelta(days=1, seconds=4500))
+    assert not previous.exists()  # nothing left within 24 hours
 
 
 def test_a_failed_update_is_retried_and_after_three_the_chain_starts_again(source, tmp_path, monkeypatch):
