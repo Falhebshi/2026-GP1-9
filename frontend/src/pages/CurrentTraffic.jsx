@@ -277,8 +277,8 @@ function CurrentTraffic() {
                 }
               >
                 <TrafficScene3D
-                  key={`${shown === data ? '' : 'previous|'}${liveInfo?.version ?? 'sample'}`}
                   scenario={shown.scenario}
+                  runVersion={liveInfo?.version}
                   startAt={time}
                   clock={liveClock}
                   hiddenRanges={hiddenRanges}

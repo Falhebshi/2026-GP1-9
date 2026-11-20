@@ -19,7 +19,7 @@ import { prepareVegetation, vegetationLayers } from '../simulation_3d/vegetation
 import { vehicleIntervals, vehicleStates, vehicleLayers } from '../simulation_3d/vehicles'
 import { ENV, envLighting } from '../simulation_3d/palette'
 import { approachColor, selectionLayers } from '../simulation_3d/selection'
-import { getIntersectionScene, getVehicleInterval } from '../services/simulationService'
+import { getIntersectionScene, getRun, getVehicleInterval } from '../services/simulationService'
 import SceneNavControls from './SceneNavControls'
 import { ApproachChips } from './ApproachPanel'
 import SegmentedControl from './SegmentedControl'
@@ -56,6 +56,11 @@ import './TrafficScene3D.css'
 //   hiddenRanges     [[start_s, end_s], ...] in seconds from the run start: no cars are drawn in
 //                    them (the live run's intervals without detector data, whose traffic was
 //                    estimated); the signals keep running (optional)
+//   runVersion       changes whenever the run's files change (the live run's version). While it is
+//                    given, a new version or scenario loads only the run (cars and signals) and
+//                    swaps it in once the cars at the time shown are loaded: the roads, buildings,
+//                    trees and camera stay, with no loading screen. Without it, a new scenario
+//                    loads the whole scene again (optional)
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
 // Cars and signal indications come from the SUMO run (run.json, its 15-minute vehicle files and
@@ -152,6 +157,7 @@ function TrafficScene3D({
   jumpTo,
   startAt,
   clock,
+  runVersion,
   hiddenRanges,
   onReady,
   onError,
@@ -254,6 +260,15 @@ function TrafficScene3D({
   const lastSigRef = useRef(null)
   const tRef = useRef(time ?? 0)
   const startRef = useRef(0) // scene time of the start of the analysis period
+  const endRef = useRef(120) // scene time of the end of the analysis period
+  // what the scene shows now, to tell when runVersion or scenario asks for another run
+  const shownRunRef = useRef(null) // { scenario, runVersion, run }
+  const swapRef = useRef(0) // the newest run swap; an older one that finishes later is dropped
+  const startAtRef = useRef(startAt)
+  startAtRef.current = startAt
+  // the run asked for now; read through a ref, as swapRun also runs from the first load's callback
+  const wantRunRef = useRef(null)
+  wantRunRef.current = { scenario, runVersion }
   const autoplay = time === undefined
   const hoverRef = useRef(null)
   const selRef = useRef(null)
@@ -423,14 +438,17 @@ function TrafficScene3D({
     let cancelled = false,
       raf = 0,
       last = performance.now()
+    const loading = { scenario, runVersion }
     getIntersectionScene(intersectionId, scenario)
       .then((d) => {
         if (cancelled) return
+        shownRunRef.current = { ...loading, run: d.run }
         const sig = prepareSignals(d.signalHeads, d.signals)
         // the analysis period of the run; no run yet: the lights stay red, the scene loops 2 minutes
         const from = d.run?.analysis_start_s ?? 0
         const to = d.run?.analysis_end_s ?? 120
         startRef.current = from
+        endRef.current = to
         tRef.current = from + (time ?? clockRef.current?.() ?? startAt ?? 0)
         // the page shows this time straight away, not only from the next whole second
         if (autoplay) callbacksRef.current.onTimeChange?.(Math.floor(tRef.current - from))
@@ -443,6 +461,7 @@ function TrafficScene3D({
             detail: d.detail,
           }),
           sig,
+          signalHeads: d.signalHeads,
           bld: prepareBuildings(d.buildings, center),
           ctx: prepareContext(d.context),
           ss: d.streetscape.features,
@@ -470,17 +489,22 @@ function TrafficScene3D({
         callbacksRef.current.onReady?.({ duration: to - from })
         rebuildStatic()
         showSelection()
+        // the run changed while the scene was loading: take in the newest
+        swapRun()
         // No time from the page, so loop the run at real speed
         if (autoplay) {
           const tick = (now) => {
             const dt = (now - last) / 1000
             last = now
+            // the run can be swapped while it plays (runVersion), so its period is read each frame
+            const start = startRef.current,
+              end = endRef.current
             let nt = tRef.current + dt
-            if (clockRef.current) nt = Math.min(from + clockRef.current(), to)
-            else if (nt > to) nt = from
+            if (clockRef.current) nt = Math.min(start + clockRef.current(), end)
+            else if (nt > end) nt = start
             // tell the page once a second, when the whole second changes
-            if (Math.floor(nt - from) !== Math.floor(tRef.current - from)) {
-              callbacksRef.current.onTimeChange?.(Math.floor(nt - from))
+            if (Math.floor(nt - start) !== Math.floor(tRef.current - start)) {
+              callbacksRef.current.onTimeChange?.(Math.floor(nt - start))
             }
             tRef.current = nt
             redraw(false)
@@ -507,8 +531,71 @@ function TrafficScene3D({
       deckRef.current = null
       sceneRef.current = null
     }
-    // Only rebuild for a new intersection or scenario
-  }, [intersectionId, scenario]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Only rebuild for a new intersection, or a new scenario when there is no runVersion
+  }, [intersectionId, runVersion === undefined ? scenario : null]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A new run version or scenario with runVersion given: swap the run in place (see swapRun)
+  useEffect(() => {
+    swapRun()
+  }, [scenario, runVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load the run of the current scenario and version, and swap it in once the cars at the time to
+  // show are loaded, keeping everything else. Vehicle files of the same run are reused, except the
+  // newest two intervals, which the live update loop rewrites. Does nothing without runVersion or
+  // when the scene already shows this run.
+  function swapRun() {
+    const shown = shownRunRef.current
+    const want = wantRunRef.current
+    const { scenario } = want
+    if (want.runVersion === undefined || !sceneRef.current || !shown) return
+    if (shown.scenario === scenario && shown.runVersion === want.runVersion) return
+    const swap = ++swapRef.current
+    const current = () => swap === swapRef.current && sceneRef.current
+
+    getRun(intersectionId, scenario)
+      .then(async ({ run, signals }) => {
+        if (!current()) return
+        const from = run?.analysis_start_s ?? 0
+        const to = run?.analysis_end_s ?? 120
+        const sameRun = run && shown.run?.run_id === run.run_id && shown.scenario === scenario
+        const stable = new Set(
+          (run?.intervals ?? [])
+            .filter((i) => i.end_s <= to - 2 * (i.end_s - i.start_s))
+            .map((i) => i.file),
+        )
+        const reuse = sameRun && sceneRef.current.veh ? sceneRef.current.veh.kept(stable) : {}
+        const veh = run
+          ? vehicleIntervals(
+              run,
+              (file) => getVehicleInterval(intersectionId, scenario, file),
+              reuse,
+            )
+          : null
+        // where to be after the swap: the live clock, else the same moment of a new version, else
+        // where the page asks (startAt, e.g. a bar clicked in another run)
+        const offset = clockRef.current
+          ? clockRef.current()
+          : ((shown.scenario === scenario ? tRef.current - startRef.current : startAtRef.current) ??
+            0)
+        const t = Math.min(from + offset, to)
+        await veh?.ready(t)
+        if (!current()) return
+
+        const s = sceneRef.current
+        s.sig = prepareSignals(s.signalHeads, signals)
+        s.veh = veh
+        s.approachLanes = approachLanes(s.laneIndex, s.sig)
+        startRef.current = from
+        endRef.current = to
+        tRef.current = t
+        shownRunRef.current = { ...want, run }
+        lastSigRef.current = null
+        callbacksRef.current.onTimeChange?.(Math.floor(t - from))
+        showSelection()
+      })
+      // on failure it keeps showing the run it has; the next version tries again
+      .catch(() => {})
+  }
 
   // Follow the time from the page, e.g. usePlayback
   useEffect(() => {

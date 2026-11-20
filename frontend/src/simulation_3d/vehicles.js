@@ -255,28 +255,43 @@ export function vehicleLayers(states, t, { visible = true } = {}) {
 // the playback does not stop at the boundary.
 //   run        run.json
 //   loadFile   loads one vehicle file by its name, e.g. getVehicleInterval from the service
-export function vehicleIntervals(run, loadFile) {
+//   reuse      files already loaded for the same run, { file: vehicles }, from kept() of the
+//              earlier vehicleIntervals (optional)
+// ready(t) loads the interval that contains t and resolves once it is loaded. kept(files) gives
+// the loaded files among the names in files, for the next vehicleIntervals of the same run.
+export function vehicleIntervals(run, loadFile, reuse = {}) {
   const intervals = run.intervals
   const first = intervals.findIndex((interval) => interval.start_s >= run.analysis_start_s)
   const last = intervals.findLastIndex((interval) => interval.end_s <= run.analysis_end_s)
-  const loaded = {}
-  const requested = new Set()
+  const loaded = { ...reuse }
+  const requests = {}
 
   const request = (interval) => {
-    if (requested.has(interval.file)) return
-    requested.add(interval.file)
-    loadFile(interval.file)
+    if (interval.file in loaded) return Promise.resolve()
+    requests[interval.file] ??= loadFile(interval.file)
       .then((data) => (loaded[interval.file] = prepareVehicles(data)))
       .catch(() => (loaded[interval.file] = null)) // a missing file shows no cars for that interval
+    return requests[interval.file]
+  }
+  const indexAt = (t) => {
+    const found = intervals.findIndex((interval) => t < interval.end_s)
+    return found === -1 ? intervals.length - 1 : found
   }
 
   return {
     at(t) {
-      const found = intervals.findIndex((interval) => t < interval.end_s)
-      const i = found === -1 ? intervals.length - 1 : found
+      const i = indexAt(t)
       request(intervals[i])
       request(intervals[i >= last ? first : i + 1])
       return loaded[intervals[i].file] ?? null
+    },
+    ready(t) {
+      return request(intervals[indexAt(t)])
+    },
+    kept(files) {
+      return Object.fromEntries(
+        Object.entries(loaded).filter(([file, vehicles]) => vehicles && files.has(file)),
+      )
     },
   }
 }
