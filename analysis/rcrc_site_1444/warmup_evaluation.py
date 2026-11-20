@@ -57,6 +57,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.demand.imputation import LIVE_FALLBACK_GAP_INTERVALS  # noqa: E402
 from backend.demand.service import build_simulation_demand  # noqa: E402
 from backend.ingestion.client import RcrcBatch  # noqa: E402
 from backend.ingestion.service import ingest_rcrc_observations  # noqa: E402
@@ -73,17 +74,20 @@ from simulation.scripts.run_baseline import DEFAULT_MAPPING, DEFAULT_NETWORK  # 
 from traffic_source.rcrc_replay.config import PRIVATE_DATA_DIR, RCRC_REPLAY_DATABASE_PATH, RIYADH  # noqa: E402
 from traffic_source.rcrc_replay.storage import RcrcReplayStorage  # noqa: E402
 
-# A workday, a second workday, a Friday and a Saturday in October, restarted
+# Two workdays, a Friday and a Saturday, restarted
 # in their busy periods (calibration test hours, docs/calibration.md, plus the
 # evening peak). In October the 35 days of history all come after the
 # late-August demand increase; just after such a change, a time-slot average
 # lags behind the traffic (estimated warm-up demand on 1 Sep was over a third
-# too low), which would measure the history rather than the warm-up.
+# too low), which would measure the history rather than the warm-up. The
+# October Fridays and Saturdays other than 3 Oct have afternoon outages whose
+# time slots cannot be estimated, so the Friday is 25 Sep (National Day week).
+# A day or outage case whose demand cannot be built is skipped and listed.
 DEFAULT_CASES = [
     "2026-10-06T07:45", "2026-10-06T14:15", "2026-10-06T17:30",
     "2026-10-08T07:45", "2026-10-08T14:15", "2026-10-08T17:30",
-    "2026-10-09T17:30", "2026-10-09T21:30",
-    "2026-10-10T17:30", "2026-10-10T21:30",
+    "2026-09-25T17:30", "2026-09-25T21:30",
+    "2026-10-03T17:30", "2026-10-03T21:30",
 ]
 DEFAULT_WARMUPS = [15, 30, 60, 90, 120, 180, 240]
 OUTAGE_WARMUP = 180
@@ -131,7 +135,8 @@ def day_demand(source, mapping_path, epoch, end, *, silent=None):
     history = ingest_rcrc_observations(source, start=epoch - timedelta(days=HISTORY_DAYS), end=epoch).observations
     result = build_simulation_demand(
         observations, mapping_path=mapping_path, history=history, window_start=epoch,
-        window_end=end, available_until=end, fallback_gap_intervals=10_000 if silent else None,
+        window_end=end, available_until=end,
+        fallback_gap_intervals=10_000 if silent else LIVE_FALLBACK_GAP_INTERVALS,
     )
     if result.errors:
         raise RuntimeError(f"demand for {epoch:%Y-%m-%d %H:%M}: {result.errors[0]}")
@@ -182,19 +187,29 @@ def main(argv=None) -> int:
         epoch = datetime.combine(day, datetime.min.time(), RIYADH) + DAY_START
         days.setdefault(day, {"epoch": epoch, "end": epoch})
         days[day]["end"] = max(days[day]["end"], case + RUN_AFTER)
-    jobs = []
-    for day, info in days.items():
+    jobs, skipped = [], []
+    for day, info in list(days.items()):
         print(f"demand for {day} ...", flush=True)
-        demands = day_demand(source, DEFAULT_MAPPING, info["epoch"], info["end"])
+        try:
+            demands = day_demand(source, DEFAULT_MAPPING, info["epoch"], info["end"])
+        except RuntimeError as exc:
+            skipped.append(f"{day}: {exc}")
+            del days[day]
+            continue
         for seed in args.seeds:
             folder = args.out / f"{day}" / f"s{seed}"
             folder.mkdir(parents=True, exist_ok=True)
             info[seed] = route_file(demands, mapping, free_flow, info["epoch"], info["end"], seed, folder)
+    args.cases = [case for case in args.cases if case.date() in days]
     for case in args.cases:
         info = days[case.date()]
         silent = (case - timedelta(minutes=OUTAGE_WARMUP), case)
         print(f"outage demand for {case:%Y-%m-%d %H:%M} ...", flush=True)
-        demands = day_demand(source, DEFAULT_MAPPING, info["epoch"], info["end"], silent=silent)
+        try:
+            demands = day_demand(source, DEFAULT_MAPPING, info["epoch"], info["end"], silent=silent)
+        except RuntimeError as exc:
+            skipped.append(f"{case:%Y-%m-%d %H:%M} estimated warm-up: {exc}")
+            continue
         for seed in args.seeds:
             folder = args.out / f"{case:%Y-%m-%dT%H%M}" / f"outage_s{seed}"
             folder.mkdir(parents=True, exist_ok=True)
@@ -237,6 +252,8 @@ def main(argv=None) -> int:
         reference = {s: mean_time_loss(trips[(case.date(), "reference", None, s)], start_s, end_s) for s in args.seeds}
         variants = [("real", w) for w in args.warmups] + [("outage", OUTAGE_WARMUP)]
         for kind, warmup in variants:
+            if (case, kind, warmup, args.seeds[0]) not in trips:
+                continue
             diffs = []
             for seed in args.seeds:
                 value = mean_time_loss(trips[(case, kind, warmup, seed)], start_s, end_s)
@@ -259,12 +276,15 @@ def main(argv=None) -> int:
     print(f"{'case':22}" + "".join(f"{label:>18}" for label in labels))
     for case in dict.fromkeys(r["case"] for r in rows):
         values = {r["warmup"]: r["mean_diff"] for r in rows if r["case"] == case}
-        print(f"{case:22}" + "".join(f"{values[label]:>+18.1%}" for label in labels))
+        print(f"{case:22}" + "".join(f"{values[label]:>+18.1%}" if label in values else f"{'-':>18}" for label in labels))
 
     passing = [w for w in args.warmups
                if all(abs(r["mean_diff"]) <= args.tolerance for r in rows if r["warmup"] == f"{w} min")]
     estimated_ok = all(abs(r["mean_diff"]) <= args.tolerance for r in rows if r["warmup"].endswith("estimated"))
+    if skipped:
+        print("\nskipped:", *skipped, sep="\n  ")
     summary = {
+        "skipped": skipped,
         "cases": len(args.cases), "seeds": args.seeds, "tolerance": args.tolerance,
         "shortest_passing_warmup_min": min(passing) if passing else None,
         "estimated_warmup_passes": estimated_ok,
