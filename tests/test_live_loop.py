@@ -162,6 +162,7 @@ def make_loop(client, tmp_path) -> LiveLoop:
     return LiveLoop(client, LoopSettings(
         source="rcrc", work_root=tmp_path / "work", mapping_path=MAPPING, network_path=NETWORK,
         sumo_version="1.27.1", output_dir=tmp_path / "live",
+        restart_warmup_intervals=4,  # an hour, so the tests stay quick; the loop uses 3 hours
     ))
 
 
@@ -354,6 +355,15 @@ def test_the_loop_reports_how_far_the_source_clock_is_behind(source, tmp_path):
 
     loop.clock_offset_s = loop._clock_offset_s()
     assert loop._state("running", "Updated.")["clock_offset_s"] == 13 * 7 * 24 * 3600
+
+
+def test_a_restart_warms_up_on_3_hours_by_default():
+    from simulation.live.loop import RESTART_WARMUP_INTERVALS
+
+    assert RESTART_WARMUP_INTERVALS == 12
+    assert LoopSettings(
+        source="rcrc", work_root=Path("w"), mapping_path=MAPPING, network_path=NETWORK,
+    ).restart_warmup_intervals == 12
 
 
 def test_a_source_that_cannot_be_reached_keeps_the_chain(source, tmp_path, monkeypatch):

@@ -51,14 +51,14 @@ A2 also leaves a saved state of "now" at every update, which Release 2's forecas
 
 ## 2. One chain
 
-A **chain** is one run of the live twin. It starts with a warm-up (15 minutes at 03:00, up to an hour during the day) and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
+A **chain** is one run of the live twin. It starts with a warm-up (15 minutes at 03:00, up to 3 hours during the day) and grows by one interval at every update. Each interval is simulated by one **segment**: a bounded SUMO run that loads the state the previous segment saved (`simulation/live/segments.py`).
 
 | | |
 | --- | --- |
 | Second 0 | The start of the warm-up, as in every Jaadah run, so the KPI engine and the playback builder read a chain as they read a baseline run |
 | Run ID | `RUN_LIVE_<second 0>_S<seed>`, e.g. `RUN_LIVE_20260819T0245_S42` |
 | Daily chain | Starts at 03:00 (warm-up from 02:45), the quietest hour. A day runs from 03:00 to 03:00, so 01:00 belongs to the day before |
-| Other chains | A chain started at another time (the first start, after a pause, after a long stop) starts at the newest data instead of simulating the whole day so far. It warms up on the intervals before the newest one, as many as can be built up to an hour (`RESTART_WARMUP_INTERVALS`), and shows the newest interval at once. Just after an outage, when the intervals before cannot be built, the newest interval alone is the warm-up and results follow one interval later. A warm-up that crosses 03:00 belongs to the chain: a chain belongs to the day its results start in |
+| Other chains | A chain started at another time (the first start, after a pause, after a long stop) starts at the newest data instead of simulating the whole day so far. It warms up on the intervals before the newest one, as many as can be built up to 3 hours (`RESTART_WARMUP_INTERVALS`, section 2.5), and shows the newest interval at once. Just after an outage, when the intervals before cannot be built, the newest interval alone is the warm-up and results follow one interval later. A warm-up that crosses 03:00 belongs to the chain: a chain belongs to the day its results start in |
 
 ### 2.1 Where a segment stops: the 60-second lag
 
@@ -87,9 +87,38 @@ Checked on SUMO 1.27.1:
 Checked with RCRC demand (a 2-hour weekday morning, 9 segments), first with the old 120 s signal plan on 19 Nov 2026 and again with the Webster plan on 20 Nov:
 
 - **Identical through the first reload.** After that, single vehicles start to differ by tiny amounts, because after a reload SUMO times the 3-second yellows (not a whole number of 0.4 s steps) one step differently. The signal cycle moves by one step (0.4 s) once and stays there; it does not drift further.
-- **Every KPI result has the same status** (ok, unavailable, not applicable) as in the uninterrupted run. The values differ much less than they do between two seeds of the uninterrupted run: about a third as much with the old plan, and about a tenth as much with the Webster plan.
+- **Every KPI result has the same status** (ok, unavailable, not applicable) as in the uninterrupted run: 1,770 of 1,770. The values differ much less than they do between two seeds of the uninterrupted run:
 
-The exact figures are on the team's A2 page, outside the repository (PBI 8, Decision 4).
+| 90th percentile of the difference in KPI values | Old 120 s plan | Webster plan |
+| --- | --- | --- |
+| Chain against the uninterrupted run | 4.4 % | 0.6 % |
+| Two seeds of the uninterrupted run, for scale | 13.5 % | 6.1–6.5 % |
+
+- **The KPIs of each update** (45 minutes of FCD, section 4) are identical to those of the whole chain calculated at once: 1,470 of 1,470.
+
+### 2.4 Step length: a chain identical to one uninterrupted run
+
+The remaining difference comes from signal times that are not whole multiples of the 0.4 s step (the 3 s yellows, and on the Webster plan also the 27, 41 and 47 s greens): after a reload SUMO rounds them differently. Run with a 0.5 s step, which divides every time of the plan and is exact in binary, the same chain is practically identical to the uninterrupted run (Webster plan, same morning):
+
+| Step | Timesteps that differ | Vehicles with identical trips | KPI results identical |
+| --- | --- | --- | --- |
+| 0.4 s (current) | 11,012 of 16,081 | 3,665 of 10,046 | 1,526 of 1,770 |
+| **0.5 s** | **3 of 16,081** | **9,940 of 10,046** | **1,770 of 1,770** |
+| 0.2 s | 17,483 of 40,201 | 4,832 of 10,046 | not measured |
+
+0.2 s divides the plan on paper but is not exact in binary, so rounding returns. A 0.5 s step would also make runs a little faster. It is not adopted: the step length is part of the calibrated model (`docs/calibration.md`), so changing it needs the team's agreement and a new calibration run.
+
+### 2.5 Warm-up of a chain started during the day
+
+A chain that starts during the day (first start, after a pause or a long stop) starts on empty roads. Where an approach is over capacity at a peak (the West approach in the evening, under the fixed signal plan), its queue builds up over a few hours, so the warm-up must begin before that build-up. Mean delay of the vehicles departing 17:30–18:30 on a weekday (18 Aug), 4 seeds, against a run from 03:00:
+
+| Warm-up before 17:30 | Mean delay against the run from 03:00 (4 seeds) |
+| --- | --- |
+| 15 minutes | 43–46 % lower |
+| 60 minutes | 37–40 % lower |
+| 2.5 hours | −2 to +3 %, within the spread between seeds (9.5 %) |
+
+So such a chain warms up on up to 3 hours (`RESTART_WARMUP_INTERVALS = 12`) of the data before the newest interval. Warm-up intervals run SUMO only, so this takes a few minutes even at a peak.
 
 ---
 
@@ -123,7 +152,12 @@ Why these rules:
 - **Every file is written under a temporary name and renamed**, and `run.json` last, so the page never reads a half-written file and `run.json` always describes files that are already there.
 - **The folder holds one run.** When a new chain publishes for the first time, the previous chain's files are removed, `run.json` first, so the page never mixes two runs.
 
-An update takes from about 5 s at night to about 60 s with heavy midday traffic (a weekday on RCRC demand, in the cloud test environment). The time follows the traffic in the last 45 minutes, not the length of the day: about half is building the vehicle playback, a quarter the KPI measurements, a tenth the SUMO segment, and the parts that grow with the day (joining the trip records, the demand files) about 3 %. The 15 minutes between intervals leave a wide margin.
+An update takes from about 5 s at night to about 100 s at the evening peak (a weekday on RCRC demand with the Webster plan, on a 2-core cloud machine):
+
+| Hour (18 Aug) | 07 | 08 | 13 | 14 | 16 | 17 | 18 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Longest update | 38 s | 50 s | 41 s | 52 s | 78 s | 87 s | 100 s |
+ The time follows the traffic in the last 45 minutes, not the length of the day: about half is building the vehicle playback, a quarter the KPI measurements, a tenth the SUMO segment, and the parts that grow with the day (joining the trip records, the demand files) about 3 %. The 15 minutes between intervals leave a wide margin.
 
 ---
 
@@ -167,7 +201,7 @@ While it follows the live run, the page plays the traffic at the time it happene
 | 03:00 | Starts the new day's chain | The previous day until 03:15, marked as starting; then the new day from 03:00 |
 | The loop is stopped (Ctrl+C) | Writes `state: stopped` | "Live updates have stopped" |
 | The loop stops without saying so (the laptop sleeps) | Nothing | After 30 minutes without a report, "Live updates are not arriving" |
-| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up on the hour before | The missed intervals appear one by one, or the new chain's newest interval at once |
+| The loop starts again | Continues its chain if it is at most 8 intervals behind, catching up one interval at a time; otherwise starts a new chain at the newest data, warmed up on the 3 hours before | The missed intervals appear one by one, or the new chain's newest interval at once |
 
 A chain cannot continue across an interval without demand, because SUMO cannot skip simulated time. So after a pause the old chain ends and a new one starts. The page then shows the day only from the restart.
 
@@ -196,7 +230,7 @@ RUN_LIVE_20260819T0245_S42/
 
 | Limitation | What would remove it |
 | --- | --- |
-| A chain started during a peak (the first start, after a pause or a long stop) shows less delay than the day's chain would. Where an approach is over capacity under the fixed signal plan, its queue keeps growing for hours, so the result depends on how long the simulation has been running, and an hour of warm-up narrows the gap only a little | Start the loop before 03:00, so the day runs as one chain; an actuated signal plan (issue #70) would stop the queue from growing without limit |
+| A chain started during the day matches the day's chain only if its 3-hour warm-up began before a peak's queue started to build (section 2.5); a restart late in a longer over-capacity period, or just after an outage (when the hours before cannot be built), shows less delay | Keep the loop running from 03:00, so the day runs as one chain; an actuated signal plan (issue #70) would keep the queues from building up |
 | A chain is very close to an uninterrupted run (about a tenth of the difference between two seeds), but not identical (section 2.3) | A nightly rebuild of the day with one uninterrupted run (anchored replay), if live and historical results must match exactly |
 | After a pause, the page shows the day only from the restart | Keeping several chains of a day on the page (PBI 15's earlier-periods work) |
 | At a site whose outages recur at the same time of the week, those time slots have few earlier values, so an outage there may not be estimable even within 8 intervals, and the loop pauses | More history, or a fallback to a related day type |

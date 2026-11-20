@@ -29,8 +29,8 @@ What the loop does, and why:
   its warm-up, because the old chain cannot continue across intervals
   that have no demand.
 - New chain at the newest data: a chain started in the middle of a day
-  (first start, after a pause or a long stop) warms up on the hour
-  before the newest interval, as far as it can be built, and shows the
+  (first start, after a pause or a long stop) warms up on the 3 hours
+  before the newest interval, as far as they can be built, and shows the
   newest interval at once, rather than simulating the whole day so far.
   Just after an outage, the newest interval alone is the warm-up.
 - Cleaning up: the FCD of a segment is deleted once it is older than the
@@ -85,11 +85,13 @@ KEEP_STATES = 4
 KEEP_CHAIN = timedelta(hours=24)
 POLL_S = 10
 # A chain started during the day warms up on up to this many intervals
-# before the newest one (an hour). At a peak where an approach is over
-# capacity, its queue keeps growing for hours, so a chain started then
-# shows less delay than the day's chain would, however long its warm-up;
-# an hour narrows the gap a little (docs/live_update_loop.md, section 8).
-RESTART_WARMUP_INTERVALS = 4
+# before the newest one (3 hours). Where an approach is over capacity at
+# a peak, its queue builds up over a few hours, and a chain started in
+# the middle of it only shows the same delay as the day's chain when its
+# warm-up began before the build-up (docs/live_update_loop.md, 2.4).
+# Warm-up intervals run SUMO only (no KPIs, no playback), so a 3-hour
+# warm-up takes a few minutes even at a peak.
+RESTART_WARMUP_INTERVALS = 12
 
 
 @dataclass
@@ -106,6 +108,7 @@ class LoopSettings:
     sumo_version: str = "unknown"
     output_dir: Path | None = None
     history_days: int = HISTORY_DAYS
+    restart_warmup_intervals: int = RESTART_WARMUP_INTERVALS
 
 
 class LiveLoop:
@@ -277,7 +280,7 @@ class LiveLoop:
         A chain that starts during the day starts on empty roads while
         the real ones are busy. So it warms up on the intervals before
         the newest one, as many as can be built up to
-        RESTART_WARMUP_INTERVALS (an hour), and the newest interval is
+        RESTART_WARMUP_INTERVALS (3 hours), and the newest interval is
         shown at once. When none of them can be built
         (just after an outage), the newest interval is the warm-up, and
         the page shows results from the next one. The pass then simulates
@@ -294,7 +297,7 @@ class LiveLoop:
             return False
 
         earlier = 0
-        while earlier < RESTART_WARMUP_INTERVALS and self._build(
+        while earlier < self.settings.restart_warmup_intervals and self._build(
             latest - (earlier + 1) * INTERVAL, latest
         ).complete:
             earlier += 1
