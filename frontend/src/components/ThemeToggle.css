@@ -1,0 +1,21 @@
+/* A square icon button at the end of the nav bar. The keyboard focus
+   outline comes from :focus-visible in index.css, like every button. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center; /* the nav links fill the bar's height; this does not */
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.theme-toggle:hover {
+  color: var(--color-action);
+  background: var(--color-selected-bg);
+}
