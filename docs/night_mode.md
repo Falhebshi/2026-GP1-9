@@ -23,8 +23,21 @@ The moon / sun button at the end of the nav bar switches the whole app between l
 
 ## Kept the same in both modes
 
-Chart series, LOS A–F, congestion levels, the heatmap scale and the 3D scene keep their light-mode colors, so a color always means the same thing. Night mode only changes their backgrounds (grid lines, chart tracks, shaded windows) and adds a thin edge to LOS F, which is as dark as the page.
+Chart series, LOS A–F, congestion levels and the heatmap scale keep their light-mode colors, so a color always means the same thing. Night mode only changes their backgrounds (grid lines, chart tracks, shaded windows) and adds a thin edge to LOS F, which is as dark as the page.
+
+The 3D scene keeps its colors too, with one exception: an approach without an LOS grade is highlighted in `--color-selected` (`frontend/src/simulation_3d/selection.js`), so that highlight follows night mode like every other "selected" mark in the app.
+
+## Known limitations
+
+- **The map background stays light.** Network Overview uses OpenFreeMap's light `positron` style (`NetworkMap.jsx`), so in night mode the map is a bright area on a dark page. Switching to a dark style later needs care: `map.setStyle()` removes our own layers (segments, heat, intersections), so they must be added again after the switch. Tracked as an open issue.
+- **No toggle on Welcome and Login.** The button lives in the nav bar, which those pages don't have. A user whose computer is set to dark gets night mode there and can switch it off only after logging in.
+- **Open tabs don't follow each other.** Switching the mode in one tab updates other open tabs only when they reload.
 
 ## Checking contrast
 
-All text in night mode passes WCAG AA (4.5:1). When adding a color to `theme-dark.css`, check it against `--color-surface` (`#171a23`), for example with https://webaim.org/resources/contrastchecker/.
+All text in night mode passes WCAG AA (4.5:1). Marks that are not text (dots, lines, bar fills) need 3:1 (WCAG 1.4.11):
+
+- The alert-type dots measure about 5:1 on the page and 4.6–4.7:1 where the same colors appear on a card.
+- One exception, accepted on purpose: the main chart color (`--chart-1`, blue `#2864a8`) is 2.9:1 against a dark card, just under 3:1. It is kept so charts look the same in both modes; LOS E uses the same blue and has a white letter on it.
+
+When adding a color to `theme-dark.css`, check it against `--color-surface` (`#171a23`) and, for anything placed directly on the page, `--color-bg` (`#0f1117`), for example with https://webaim.org/resources/contrastchecker/.

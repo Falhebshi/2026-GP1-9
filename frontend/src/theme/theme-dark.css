@@ -11,11 +11,13 @@
      2. Fixes   the few places where a component pairs colors in a way that
                 only works on white
 
-   Kept as in light mode on purpose: chart series, LOS, congestion, the
-   heatmap scale and the 3D scene. They carry meaning (A = good, F = bad)
-   and must match the map and the legends.
+   Kept as in light mode on purpose: chart series, LOS, congestion and the
+   heatmap scale. They carry meaning (A = good, F = bad) and must match the
+   map and the legends. The 3D scene keeps its colors too, except the
+   highlight of an approach without a grade, which uses --color-selected.
 
    Every text color below passes WCAG AA (4.5:1) on the surfaces it sits on.
+   Non-text marks need 3:1; the one exception is noted under Charts.
    ========================================================================== */
 
 /* ---- 1. ROLES ------------------------------------------------------------ */
@@ -54,14 +56,17 @@
   --color-danger-text: #ff9090;
 
   /* Chart backgrounds only (the series colors stay as in light mode): faint
-     grid lines, the shaded window under a line, the empty part of a bar */
+     grid lines, the shaded window under a line, the empty part of a bar.
+     Kept on purpose: --chart-1 (blue) is 2.9:1 on a dark card, just under
+     the 3:1 asked for lines and bars (WCAG 1.4.11). */
   --chart-grid: #262b38;
   --chart-fill: #212540;
   --chart-track: #262b38;
 
   /* Alert types. The light tags are pastel blocks that glare on a dark card:
      here a dark tint of the same hue with bright text (6.8-7.4:1). The dots
-     are lifted just enough to show on the dark page (5:1). */
+     are lifted to show on the dark page: 5.0-5.1:1 there, 4.6-4.7:1 where the
+     same colors sit on a card (marks need 3:1). */
   --alert-current: #4a86cc;
   --alert-current-bg: #1c2f48;
   --alert-current-text: #9cc3f0;
