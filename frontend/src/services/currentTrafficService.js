@@ -43,7 +43,7 @@
 //       noSensorData,                    null, or { approachIds } when the detectors were silent and
 //                                        the traffic was estimated: its KPIs are left out (kpis is
 //                                        empty, approach and movement kpis are {}), and the page
-//                                        shows "No sensor data" instead (team decision, option 3)
+//                                        shows "No detector data" instead (team decision, option 3)
 //       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
 //                                        the interval before in the same run (null for the first)
 //       approaches: [{
@@ -53,7 +53,7 @@
 //       }],
 //     }],
 //     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay;
-//                                        no bar (no value) for an interval without sensor data
+//                                        no bar (no value) for an interval without detector data
 //     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
 //   }
 //
@@ -409,7 +409,7 @@ function groupByInterval(run, results, approaches) {
     const noSensorData = estimated.find((item) => at(item.start) === at(start)) ?? null
     const end = addSeconds(start, run.interval_s)
 
-    // No sensor data: the results come from estimated traffic, so none are shown
+    // No detector data: the results come from estimated traffic, so none are shown
     if (noSensorData) {
       return {
         start,
@@ -465,8 +465,10 @@ function groupByInterval(run, results, approaches) {
 const BAR_LEVELS = { A: 'low', B: 'low', C: 'low', D: 'moderate', E: 'high', F: 'high' }
 
 // One timeline bar for an interval: its height from the intersection's control delay (80 s/veh,
-// where LOS F starts, is a full bar) and its colour from the level of service. No delay, no bar.
-function timelineBar({ start, kpis }) {
+// where LOS F starts, is a full bar) and its colour from the level of service. No delay, no bar,
+// and the note says why: no detector data, or the delay could not be measured (an approach's
+// queue reaching past its measurement zone says so on the approach, not on the intersection).
+function timelineBar({ start, kpis, approaches, noSensorData }) {
   const result = (kpi) => kpis.find((k) => k.current.kpi === kpi)?.current
   const delay = result('control_delay')
   const grade = result('level_of_service')?.los_grade
@@ -475,5 +477,19 @@ function timelineBar({ start, kpis }) {
     time: start,
     value: delay?.status === 'ok' ? Math.min(1, delay.value / 80) : undefined,
     level: BAR_LEVELS[grade],
+    note: barNote(delay, approaches, noSensorData),
   }
+}
+
+// An approach's KPIs are keyed by KPI name (see `of` in runView)
+const approachDelay = (approach) => approach.kpis?.control_delay
+
+// Why a bar has no value, in words for the timeline
+function barNote(delay, approaches, noSensorData) {
+  if (noSensorData) return 'No detector data'
+  if (!delay || delay.status === 'ok') return undefined
+  const reasons = [delay, ...(approaches ?? []).map((a) => approachDelay(a))]
+  return reasons.some((r) => r?.reason?.includes('measurement zone'))
+    ? 'Delay not measured: queue beyond the measured area'
+    : 'Delay not measured'
 }

@@ -37,7 +37,7 @@ Rules applied, and why:
   everywhere; their detectors count as not reported for that interval,
   so they are estimated and the interval is marked as estimated.
 - Estimated intervals: an interval in which any count was estimated for
-  a detector that did not report. The page shows "No sensor data" for
+  a detector that did not report. The page shows "No detector data" for
   it (team decision, option 3), so it is recorded with the approaches
   and estimation methods involved.
 """

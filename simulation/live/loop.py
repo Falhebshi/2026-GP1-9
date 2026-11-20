@@ -21,7 +21,7 @@ What the loop does, and why:
   a new chain, with its warm-up from 02:45 (simulation/live/chain.py).
 - Sensor outages: a silent detector is estimated however long it is
   silent (backend/demand/imputation.py), and the interval is marked as
-  estimated, so the page shows "No sensor data" for it (team decision,
+  estimated, so the page shows "No detector data" for it (team decision,
   option 3). The chain goes on through the outage, so the queues after
   it are right. When an interval cannot be built at all (its time slot
   has too few earlier values to estimate from, or any other demand

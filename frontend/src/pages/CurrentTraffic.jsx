@@ -22,8 +22,8 @@ import './CurrentTraffic.css'
 // plays the run's analysis period at real speed and tells the page its time, so the KPIs, the
 // approaches and the timeline follow the 15 minutes being played. Clicking a bar jumps there.
 // A live run is checked for a new interval every minute; while the newest bar is selected, the
-// page follows each new interval. Intervals without sensor data (estimated traffic) show "No
-// sensor data" instead of KPIs and cars, and the newest interval is marked as provisional. The
+// page follows each new interval. Intervals without detector data (estimated traffic) show "No
+// detector data" instead of KPIs and cars, and the newest interval is marked as provisional. The
 // scene can be shown full screen; the selected approach then sits next to it.
 function CurrentTraffic() {
   const [data, setData] = useState(null) // the page data, once it arrives
@@ -47,7 +47,11 @@ function CurrentTraffic() {
 
     getCurrentTraffic()
       .then((result) => {
-        if (!cancelled) setData(result)
+        if (cancelled) return
+        setData(result)
+        // a live run opens on the live clock's moment, before the scene has loaded
+        if (result.live && result.run?.status !== 'failed')
+          setTime(liveSeconds(result.live, result.run))
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
@@ -107,23 +111,6 @@ function CurrentTraffic() {
       : null
   // Why the KPI box is empty, if it is
   const kpiProblem = runProblem ?? (hasKpis ? null : 'KPIs are not available for this run yet.')
-  // the 15 minutes being played, and the time shown: the clock for live data, the run's time
-  // for a simulated run
-  const index = runProblem
-    ? -1
-    : Math.min(intervals.length - 1, Math.floor(time / run.intervalSeconds))
-  const interval = intervals[index]
-  const kpis = interval?.kpis ?? []
-  const approaches = interval?.approaches ?? []
-  // the run's own time (data time): a live run's traffic is the replay's, not today's clock
-  const shownTime = new Date(
-    (run ? Date.parse(run.start) : openedAt) + (runProblem ? 0 : time * 1000),
-  )
-  const night = darkness(shownTime, intersection.center)
-  const openApproach = approaches.find((a) => a.approach_id === openApproachId)
-  const kpiInterval = interval
-    ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
-    : null
   const following = live && followLatest && !runProblem && shown === data
   // Live: where the scene is now, in seconds from the start of the analysis period. The scene
   // plays the traffic at the time it happened in data time, LIVE_DELAY behind it: by then that
@@ -131,12 +118,25 @@ function CurrentTraffic() {
   // and takes up to about a minute, and the page looks every minute). It is worked out from
   // the clock, so reloading the page or opening it elsewhere shows the same moment. If the
   // simulation has not got there (the loop is late or stopped), it waits at its end.
-  const liveClock = following
-    ? () => {
-        const dataNow = Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
-        const end = (liveInfo.simulatedUntilSeconds ?? 0) - run.analysisStartSeconds
-        return Math.max(0, Math.min((dataNow - Date.parse(run.start)) / 1000, end))
-      }
+  const liveClock = following ? () => liveSeconds(liveInfo, run) : null
+  // the 15 minutes being played, and the time shown: the clock for live data (set from the clock
+  // when the data arrives, so the page opens on the right moment before the scene has loaded),
+  // the run's time for a simulated run
+  const seconds = time
+  const index = runProblem
+    ? -1
+    : Math.min(intervals.length - 1, Math.floor(seconds / run.intervalSeconds))
+  const interval = intervals[index]
+  const kpis = interval?.kpis ?? []
+  const approaches = interval?.approaches ?? []
+  // the run's own time (data time): a live run's traffic is the replay's, not today's clock
+  const shownTime = new Date(
+    (run ? Date.parse(run.start) : openedAt) + (runProblem ? 0 : seconds * 1000),
+  )
+  const night = darkness(shownTime, intersection.center)
+  const openApproach = approaches.find((a) => a.approach_id === openApproachId)
+  const kpiInterval = interval
+    ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
     : null
   // Live: where the scene must not draw cars, in seconds from the run start
   const hiddenRanges = intervals.flatMap((item, i) =>
@@ -162,7 +162,10 @@ function CurrentTraffic() {
           ? data.intervals.length - 1
           : data.timeline.findIndex((b) => b.time === barTime)
     if (target < 0) return
-    const seconds = target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
+    const seconds =
+      barTime === null && live
+        ? liveSeconds(liveInfo, data.run)
+        : target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
     setOnPrevious(inPrevious >= 0)
     setFollowLatest(barTime === null)
     setTime(seconds)
@@ -235,7 +238,7 @@ function CurrentTraffic() {
           <Card title="Current KPIs" action={kpiInterval}>
             {kpiProblem && <EmptyState>{kpiProblem}</EmptyState>}
             {!kpiProblem && interval?.noSensorData && (
-              <EmptyState title="No sensor data">
+              <EmptyState title="No detector data">
                 The detectors sent no data for these 15 minutes, so the traffic was estimated from
                 earlier days. Results from estimated traffic are not shown.
               </EmptyState>
@@ -268,7 +271,7 @@ function CurrentTraffic() {
                 footer={
                   interval?.noSensorData ? (
                     <span className="current-traffic-no-data">
-                      No sensor data for {intervalLabel(interval)}: the cars are not shown.
+                      No detector data for {intervalLabel(interval)}: the cars are not shown.
                     </span>
                   ) : null
                 }
@@ -312,6 +315,15 @@ function CurrentTraffic() {
 const POLL_MS = 60 * 1000
 // How far the live scene plays behind the data's own time (see liveClock)
 const LIVE_DELAY_MS = 20 * 60 * 1000
+
+// Live: where the live clock is now, in seconds from the start of the run's analysis period. It
+// plays the traffic LIVE_DELAY_MS after it happened in data time, and waits at the end of what
+// has been simulated
+function liveSeconds(liveInfo, run) {
+  const dataNow = Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+  const end = (liveInfo.simulatedUntilSeconds ?? 0) - run.analysisStartSeconds
+  return Math.max(0, Math.min((dataNow - Date.parse(run.start)) / 1000, end))
+}
 const LIVE_TITLE =
   'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
   'takes for the detector data to arrive and be simulated. The time shown is the time of the traffic.'

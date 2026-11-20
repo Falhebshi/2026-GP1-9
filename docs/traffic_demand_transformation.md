@@ -448,7 +448,7 @@ Example: the hour before the gap counted 120 vehicles where 100 is typical, so t
 | Limit | Value | Reason |
 |---|---|---|
 | Longest gap | 5 intervals (75 minutes), counted back from the interval being estimated | Evaluated on the RCRC site 1444 data by `analysis/rcrc_site_1444/gap_limit_evaluation.py`: the longest gap for which the hour before still improves the estimate. Longer gaps stay missing |
-| Longest gap, live loop only | No limit: after the 5th interval, the plain time-slot average | `fallback_gap_intervals` (`LIVE_FALLBACK_GAP_INTERVALS`). The [live update loop](live_update_loop.md) keeps simulating through an outage of any length, shown as "No sensor data", so the queues after it are right (its section 2.5). Used by no other run |
+| Longest gap, live loop only | No limit: after the 5th interval, the plain time-slot average | `fallback_gap_intervals` (`LIVE_FALLBACK_GAP_INTERVALS`). The [live update loop](live_update_loop.md) keeps simulating through an outage of any length, shown as "No detector data", so the queues after it are right (its section 2.5). Used by no other run |
 | Shared-lane detectors | Not estimated, except in a site-wide outage | Their count is split by an assumption; estimating it first would stack two estimates. See [Site-Wide Outages](#site-wide-outages) |
 | Regression history | 480 common intervals | Five days (Chen et al., 2003) |
 | Average history | 3 values per time slot and day type | Chosen by the team |

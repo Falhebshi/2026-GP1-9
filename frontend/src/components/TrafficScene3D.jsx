@@ -54,7 +54,7 @@ import './TrafficScene3D.css'
 //   onApproachChange called with an approach_id (or null) when a chip or an approach's lanes are
 //                    clicked; the page shows the selected approach's details next to the scene
 //   hiddenRanges     [[start_s, end_s], ...] in seconds from the run start: no cars are drawn in
-//                    them (the live run's intervals without sensor data, whose traffic was
+//                    them (the live run's intervals without detector data, whose traffic was
 //                    estimated); the signals keep running (optional)
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
@@ -107,12 +107,32 @@ const VIEW_OPTIONS = [
   { value: '3d', label: '3D' },
   { value: 'top', label: 'Top' },
 ]
+// The approach hover card, styled like the intersection hover card on Network Overview
+// (NetworkMap.css): a light card with the name, the road and what a click does
 const TOOLTIP_STYLE = {
-  background: 'var(--color-text)',
-  color: 'var(--color-text-on-dark)',
-  fontSize: 'var(--text-xs)',
-  padding: 'var(--space-xs) var(--space-sm)',
+  background: 'var(--color-surface)',
+  color: 'var(--color-text)',
+  border: '1px solid var(--color-border)',
+  boxShadow: 'var(--shadow-float)',
+  fontFamily: 'var(--font)',
+  padding: 'var(--space-sm) var(--space-md)',
   borderRadius: 'var(--radius)',
+  maxWidth: '260px',
+}
+
+// Text for the hover card's HTML: names are shown as typed
+const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+
+function approachCard(arm, road) {
+  const line = (style, text) => `<div style="${style}">${escapeHtml(text)}</div>`
+  return (
+    line('font-size:var(--text-sm);font-weight:600', `${arm} approach`) +
+    (road ? line('font-size:var(--text-xs);color:var(--color-text-muted)', road) : '') +
+    line(
+      'margin-top:2px;font-size:var(--text-xs);color:var(--color-selected);font-weight:600',
+      'Click to see its KPIs',
+    )
+  )
 }
 
 const CLIP = new ClipExtension()
@@ -248,6 +268,8 @@ function TrafficScene3D({
   const vsTimerRef = useRef(0)
   const draggingRef = useRef(false)
   const envAnimRef = useRef(0)
+  const approachesRef = useRef(approaches)
+  approachesRef.current = approaches
   const callbacksRef = useRef({ onReady, onError, onTimeChange })
   callbacksRef.current = { onReady, onError, onTimeChange }
   const clockRef = useRef(clock)
@@ -389,11 +411,10 @@ function TrafficScene3D({
         const p = object?.properties
         if (!p) return null
         // only the approach lanes have a tooltip
-        const html =
-          p.kind === 'lane' &&
-          approachLane(object) &&
-          `<b>${approachLane(object).arm} approach</b><br/>Click to see its KPIs`
-        return html && { html, style: TOOLTIP_STYLE }
+        const lane = p.kind === 'lane' && approachLane(object)
+        if (!lane) return null
+        const road = approachesRef.current?.find((a) => a.arm === lane.arm)?.road
+        return { html: approachCard(lane.arm, road), style: TOOLTIP_STYLE }
       },
       layers: [],
     })

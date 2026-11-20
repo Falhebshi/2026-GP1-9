@@ -96,7 +96,7 @@
   overflow-y: auto;
 }
 
-/* Live run: the strip under the scene in an interval without sensor data */
+/* Live run: the strip under the scene in an interval without detector data */
 .current-traffic-no-data {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

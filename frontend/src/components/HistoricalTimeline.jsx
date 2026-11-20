@@ -14,6 +14,8 @@ import './HistoricalTimeline.css'
 //                      value   congestion from 0 (free flow) to 1 (worst).
 //                              Sets the HEIGHT. Leave it out for "no data".
 //                      level   'low', 'moderate' or 'high'. Sets the COLOR.
+//                      note    what to say instead of "No data" when there is no
+//                              value, e.g. why it is missing (optional)
 //   value            the time of the selected bar, or null for "the latest"
 //   onChange         function called with the new time (or null for latest)
 //                    when the user picks a bar, drags the slider or clicks
@@ -254,7 +256,8 @@ function levelOf(point) {
 }
 
 function levelLabel(point) {
-  return hasValue(point) ? (LEVEL_LABELS[point.level] ?? 'Not classified') : 'No data'
+  if (!hasValue(point)) return point.note ?? 'No data'
+  return LEVEL_LABELS[point.level] ?? 'Not classified'
 }
 
 // 0 to 1 becomes "0%" to "100%". A bar with no data becomes a short stub.
