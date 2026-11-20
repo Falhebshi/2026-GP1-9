@@ -183,15 +183,62 @@ def test_observation_source_falls_back_to_requests_when_rows_are_rejected(monkey
 # SHARED-LANE SENSITIVITY CHECK
 # ============================================================
 
+HASH = "0123456789abcdef" * 4
+OFFICIAL = "2.6_net-0123456789ab"
+
+
 def test_no_shift_means_no_adjustment_and_the_official_folder(tmp_path):
     assert run_calibration.share_adjustments(0.0) is None
-    assert run_calibration.demand_folder(tmp_path, "2.6", 0.0) == tmp_path / "2.6"
+    assert run_calibration.demand_folder(tmp_path, "2.6", HASH, 0.0) == tmp_path / OFFICIAL
 
 
 def test_shift_adjusts_both_shared_lane_left_movements(tmp_path):
     assert run_calibration.share_adjustments(-0.2) == {"MOV_W_N": -0.2, "MOV_E_S": -0.2}
-    assert run_calibration.demand_folder(tmp_path, "2.6", -0.2) == tmp_path / "2.6" / "left_share_shift_-0.2"
-    assert run_calibration.demand_folder(tmp_path, "2.6", 0.2) == tmp_path / "2.6" / "left_share_shift_+0.2"
+    assert run_calibration.demand_folder(tmp_path, "2.6", HASH, -0.2) == tmp_path / OFFICIAL / "left_share_shift_-0.2"
+    assert run_calibration.demand_folder(tmp_path, "2.6", HASH, 0.2) == tmp_path / OFFICIAL / "left_share_shift_+0.2"
+
+
+# ============================================================
+# STORED DEMAND AND LEFT-OUT DAYS
+# ============================================================
+
+def test_stored_demand_depends_on_the_network_file(tmp_path):
+    network = tmp_path / "a.net.xml"
+    network.write_text("<net/>", encoding="utf-8")
+    first = run_calibration.file_sha256(network)
+    network.write_text("<net version='2'/>", encoding="utf-8")
+    second = run_calibration.file_sha256(network)
+    assert first != second
+    assert (run_calibration.demand_folder(tmp_path, "2.6", first, 0.0)
+            != run_calibration.demand_folder(tmp_path, "2.6", second, 0.0))
+
+
+def test_national_day_week_is_left_out():
+    assert run_calibration.excluded_day_reason(date(2026, 9, 19)) is None
+    assert run_calibration.excluded_day_reason(date(2026, 9, 20)) == "National Day week"
+    assert run_calibration.excluded_day_reason(date(2026, 9, 26)) == "National Day week"
+    assert run_calibration.excluded_day_reason(date(2026, 9, 27)) is None
+
+
+def observation(detector_id, end, count=10):
+    return SimpleNamespace(detector_id=detector_id, interval_end=end, vehicle_count=count)
+
+
+def test_missing_share_counts_test_hour_intervals_without_a_count():
+    start = datetime(2026, 9, 1, 7, 15, tzinfo=RIYADH)
+    windows = [(start, start + timedelta(hours=1))]
+    ends = [start + step * timedelta(minutes=15) for step in range(1, 5)]
+    complete = [observation(d, end) for d in ("D1", "D2") for end in ends]
+    assert run_calibration.missing_share(complete, windows, ["D1", "D2"]) == 0.0
+
+    one_missing = complete[1:]                       # D1's first interval
+    assert run_calibration.missing_share(one_missing, windows, ["D1", "D2"]) == 1 / 8
+
+    zero_count = [observation("D1", ends[0], count=0)] + complete[1:]
+    assert run_calibration.missing_share(zero_count, windows, ["D1", "D2"]) == 0.0   # a reported 0 is observed
+
+    outside = [observation(d, end + timedelta(hours=2)) for d in ("D1", "D2") for end in ends]
+    assert run_calibration.missing_share(outside, windows, ["D1", "D2"]) == 1.0
 
 
 def test_left_movements_are_the_shared_lanes_movements():

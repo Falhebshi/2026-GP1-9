@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from .parameters import TUNABLE_VEHICLE_ATTRIBUTES
+from .parameters import POSITIVE_VEHICLE_ATTRIBUTES, TUNABLE_VEHICLE_ATTRIBUTES
 
 
 class VehicleSettingsError(ValueError):
@@ -23,8 +23,10 @@ def parse_vehicle_settings(items: list[str]) -> dict[str, float]:
     """
     Turn ["tau=1.2", "sigma=0.4"] into {"tau": 1.2, "sigma": 0.4}.
 
-    Only attributes in TUNABLE_VEHICLE_ATTRIBUTES are accepted; values
-    must be finite numbers, positive, and sigma at most 1.
+    Only attributes in TUNABLE_VEHICLE_ATTRIBUTES are accepted. Values
+    must be finite and not negative; the attributes in
+    POSITIVE_VEHICLE_ATTRIBUTES (tau, accel, decel, speedFactor) must be
+    above 0, because SUMO cannot run with them at 0; sigma is at most 1.
     """
 
     settings = {}
@@ -45,6 +47,8 @@ def parse_vehicle_settings(items: list[str]) -> dict[str, float]:
             raise VehicleSettingsError(f"{name} must be a number, got {value!r}") from None
         if not math.isfinite(number) or number < 0:
             raise VehicleSettingsError(f"{name} must be a finite number, 0 or more")
+        if name in POSITIVE_VEHICLE_ATTRIBUTES and number == 0:
+            raise VehicleSettingsError(f"{name} must be above 0")
         if name == "sigma" and number > 1:
             raise VehicleSettingsError("sigma must be between 0 and 1")
         settings[name] = number

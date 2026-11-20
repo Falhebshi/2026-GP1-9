@@ -46,6 +46,22 @@ TUNABLE_VEHICLE_ATTRIBUTES = (
     "lcKeepRight",
 )
 
+# Driver attributes SUMO cannot run with at 0 (the time headway, the
+# acceleration and deceleration, the speed factor). The other tunable
+# attributes may be 0.
+POSITIVE_VEHICLE_ATTRIBUTES = ("tau", "accel", "decel", "speedFactor")
+
+# Days left out of calibration and validation. The National Day week is
+# not typical traffic. (first day, last day, reason), both days included.
+EXCLUDED_DAYS = (
+    ("2026-09-20", "2026-09-26", "National Day week"),
+)
+
+# A day is left out when more than this share of its test-hour
+# intervals (2 hours x 4 intervals x 12 detectors) has no observed
+# count, because the demand for those intervals would be imputed.
+MAX_MISSING_DAY_SHARE = 0.10
+
 # A result based on fewer eligible detector-hours than this is reported
 # as indicative.
 INDICATIVE_BELOW = 100

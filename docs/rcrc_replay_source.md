@@ -87,6 +87,12 @@ python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
 Remove-Item Env:JAADAH_REPLAY_OFFSET_WEEKS   # back to the 13-week demonstration clock
 ```
 
+On macOS or Linux, the variable can be set for that one command:
+
+```bash
+JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
+```
+
 **The dates in the data are never changed.** The replay only decides how much of the report has been delivered. The clock depends on nothing but the real time, so stopping or restarting the service never shifts it.
 
 ---

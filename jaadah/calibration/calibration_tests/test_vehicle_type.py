@@ -32,11 +32,21 @@ def test_settings_are_parsed():
         (["tau=nan"], "finite"),
         (["sigma=1.5"], "between 0 and 1"),
         (["tau=1", "tau=2"], "twice"),
+        (["tau=0"], "above 0"),
+        (["accel=0"], "above 0"),
+        (["decel=0"], "above 0"),
+        (["speedFactor=0"], "above 0"),
     ],
 )
 def test_invalid_settings_are_refused(items, message):
     with pytest.raises(VehicleSettingsError, match=message):
         parse_vehicle_settings(items)
+
+
+def test_zero_is_allowed_where_sumo_accepts_it():
+    assert parse_vehicle_settings(["sigma=0", "minGap=0", "speedDev=0"]) == {
+        "sigma": 0.0, "minGap": 0.0, "speedDev": 0.0,
+    }
 
 
 def test_copy_changes_only_the_vehicle_type(tmp_path):

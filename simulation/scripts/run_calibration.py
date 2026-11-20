@@ -9,7 +9,9 @@ are simulated once per seed:
    run_baseline.py (ingestion, demand transformation, departure
    planning, demand writer, demand checks). Generated demand is kept in
    the private data folder and reused by later calibration runs with the
-   same hour, seed and mapping version.
+   same hour, seed, mapping version and network file (its SHA-256 is in
+   the folder name). After a change to the demand code, delete the
+   stored demand so it is built again.
 2. SUMO: one run with induction loops at the 12 detector positions and
    no FCD output. Driver settings given with --set are applied to a copy
    of the route file; the generated demand itself is never changed.
@@ -45,6 +47,7 @@ Example:
 import argparse
 import bisect
 import csv
+import hashlib
 import json
 import shutil
 import subprocess
@@ -70,8 +73,11 @@ from jaadah.calibration.detectors import calibration_detectors, write_e1_additio
 from jaadah.calibration.e1_output import read_e1_intervals
 from jaadah.calibration.geh import HourlyComparison, compare_hours, meets_target, pass_share
 from jaadah.calibration.parameters import (
+    EXCLUDED_DAYS,
     GEH_THRESHOLD,
     INDICATIVE_BELOW,
+    INTERVALS_PER_HOUR,
+    MAX_MISSING_DAY_SHARE,
     REQUIRED_PASS_SHARE,
     SHARED_LANE_LEFT_MOVEMENTS,
 )
@@ -193,6 +199,7 @@ def prepare_hour(
     demand_root: Path,
     mapping_path: Path,
     network_path: Path,
+    network_hash: str,
     history_days: int,
     free_flow_s: dict,
     left_share_shift: float = 0.0,
@@ -230,7 +237,7 @@ def prepare_hour(
     demands = None   # built only if some seed has no stored demand
     prepared, built = [], 0
     for seed in seeds:
-        demand_dir = demand_folder(demand_root, mapping.mapping_version, left_share_shift) / f"{start:%Y%m%dT%H%M}_S{seed}"
+        demand_dir = demand_folder(demand_root, mapping.mapping_version, network_hash, left_share_shift) / f"{start:%Y%m%dT%H%M}_S{seed}"
         route_file = demand_dir / f"{demand_dir.name}_routes.rou.xml"
 
         if not route_file.is_file():
@@ -285,13 +292,60 @@ def share_adjustments(left_share_shift: float) -> dict[str, float] | None:
     return {movement_id: left_share_shift for movement_id in SHARED_LANE_LEFT_MOVEMENTS}
 
 
-def demand_folder(demand_root: Path, mapping_version: str, left_share_shift: float) -> Path:
-    """Where an hour's demand is kept; shifted demand never mixes with the official one."""
+def demand_folder(demand_root: Path, mapping_version: str, network_hash: str, left_share_shift: float) -> Path:
+    """
+    Where an hour's demand is kept.
 
-    folder = demand_root / mapping_version
+    The folder is named after the mapping version and the start of the
+    network file's SHA-256, so demand built for another mapping or
+    network is never reused. Shifted demand never mixes with the
+    official one.
+    """
+
+    folder = demand_root / f"{mapping_version}_net-{network_hash[:12]}"
     if left_share_shift != 0:
         folder = folder / f"left_share_shift_{left_share_shift:+g}"
     return folder
+
+
+def file_sha256(path: Path) -> str:
+    """SHA-256 of a file, as hex."""
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for block in iter(lambda: file.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def excluded_day_reason(day: date) -> str | None:
+    """Why a day is left out by date (EXCLUDED_DAYS), or None."""
+
+    for first, last, reason in EXCLUDED_DAYS:
+        if date.fromisoformat(first) <= day <= date.fromisoformat(last):
+            return reason
+    return None
+
+
+def missing_share(observations, windows, detector_ids) -> float:
+    """
+    Share of a day's test-hour intervals with no observed count.
+
+    Each test hour has four 15-minute intervals per detector; an interval
+    counts as observed when the source delivered a count for it. A
+    reported 0 is observed, not missing.
+    """
+
+    observed = {(item.detector_id, item.interval_end) for item in observations}
+    expected = [
+        (detector_id, start + step * timedelta(minutes=15))
+        for start, _ in windows
+        for step in range(1, INTERVALS_PER_HOUR + 1)
+        for detector_id in detector_ids
+    ]
+    if not expected:
+        return 0.0
+    return sum(key not in observed for key in expected) / len(expected)
 
 
 def hour_movement_demand(demand_dir: Path, start: datetime, end: datetime) -> dict[str, int]:
@@ -519,9 +573,25 @@ def main(argv=None) -> int:
     lanes_by_id = {lane.lane_id: lane for lane in network.lanes}
     movements = {m: network.movements[m] for m in network.movement_attributes}
 
+    network_hash = file_sha256(args.net)
+    print(f"Stored demand: {demand_folder(args.out_root / 'demand', mapping.mapping_version, network_hash, args.left_share_shift)}")
+
+    # Days left out by date (EXCLUDED_DAYS); each is listed, never hidden.
+    days, skipped = [], []
+    for day in args.days:
+        reason = excluded_day_reason(day)
+        if reason:
+            skipped += [(start, seed, reason) for start, _ in hour_windows(day) for seed in args.seeds]
+        else:
+            days.append(day)
+
     # 1. Demand, one test hour at a time (the source is read in order); the
     # seed-independent part is done once per hour.
-    windows = [window for day in args.days for window in hour_windows(day)]
+    windows = [window for day in days for window in hour_windows(day)]
+    if not windows:
+        print("Nothing was run: every day in the range is left out "
+              f"({', '.join(sorted({reason for _, _, reason in skipped}))}).", file=sys.stderr)
+        return 2
     try:
         latest = client.fetch_latest_available_timestamp()
         if latest is None:
@@ -543,13 +613,24 @@ def main(argv=None) -> int:
         print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
         return 2
 
-    prepared, skipped = [], []
+    # Days with too many missing test-hour intervals are left out whole.
+    for day in days:
+        day_windows = hour_windows(day)
+        observations = [item for start, end in day_windows for item in source.between(start, end)[0]]
+        share = missing_share(observations, day_windows, detector_ids)
+        if share > MAX_MISSING_DAY_SHARE:
+            reason = (f"{share:.0%} of the day's test-hour intervals have no observed count "
+                      f"(limit {MAX_MISSING_DAY_SHARE:.0%})")
+            skipped += [(start, seed, reason) for start, _ in day_windows for seed in args.seeds]
+            windows = [window for window in windows if window not in day_windows]
+
+    prepared = []
     for number, (start, end) in enumerate(windows, start=1):
         try:
             runs, built = prepare_hour(
                 source, latest, mapping, start, end, args.seeds,
                 demand_root=args.out_root / "demand",
-                mapping_path=args.mapping, network_path=args.net,
+                mapping_path=args.mapping, network_path=args.net, network_hash=network_hash,
                 history_days=args.history_days, free_flow_s=free_flow_s,
                 left_share_shift=args.left_share_shift,
             )
@@ -565,7 +646,7 @@ def main(argv=None) -> int:
         except httpx2.HTTPError as exc:
             print(f"The replay source could not be read ({exc}). Is it running?", file=sys.stderr)
             return 2
-    print(f"{len(prepared)} runs to simulate ({len(args.days)} days, {len(args.seeds)} seed(s)); "
+    print(f"{len(prepared)} runs to simulate ({len({start.date() for start, _ in windows})} days, {len(args.seeds)} seed(s)); "
           f"{len(skipped)} skipped")
     for start, seed, reason in skipped:
         print(f"  skipped {start:%Y-%m-%d %H:%M} seed {seed}: {reason}")

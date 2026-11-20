@@ -11,7 +11,7 @@ Agreed on 19 Nov 2026 after two team reviews. The values the code uses are in `j
 | Measures | Volume and occupancy per detector per 15 minutes: RCRC site 1444 (12 stop-bar detectors) against SUMO induction loops at the mapped positions |
 | Compared unit | One detector-hour: the sum of four 15-minute counts |
 | Eligible | All four observed intervals reported and none imputed, and every seed has all four simulated intervals |
-| Days | Only days after the late-August demand increase; the National Day week (20–26 Sep 2026) is left out, and so is any day with more than 10% of its test-hour intervals imputed, counted over all 12 detectors |
+| Days | Only days after the late-August demand increase. The National Day week (20–26 Sep 2026) is left out, and so is any day with more than 10% of its test-hour intervals without an observed count (their demand would be imputed), counted over all 12 detectors. The runner applies both and lists the days it leaves out (`EXCLUDED_DAYS`, `MAX_MISSING_DAY_SHARE`); the late-August start is applied by choosing the date range |
 | Split | Whole weeks, calibration weeks first, validation weeks later, with the same mix of workdays, Fridays and Saturdays: 30 Aug – 12 Sep for calibration and 27 Sep – 3 Oct for validation (2 + 1 weeks), or 30 Aug – 19 Sep and 27 Sep – 10 Oct (3 + 2) if runs are fast |
 | Hours | The two busiest hours of each day type (workday, Friday, Saturday, all 12 detectors summed), at least 3 hours apart, found on the calibration weeks only and kept fixed for validation; listed in `TEST_HOUR_STARTS`. Quiet hours are left out because GEH is more lenient at low volumes. A test hour belongs to the calendar day it falls in: Friday 00:00–01:00 is Thursday-night traffic, Saturday 00:00–01:00 is Friday night |
 | Warm-up | Each test-hour run starts 15 minutes before the hour, with its demand loaded, and ends 15 minutes after it, as a baseline run does. Loop periods start at the run start, so they line up with the source's 15-minute intervals |
@@ -40,7 +40,7 @@ The target GEH < 5 for at least 85% of hourly flows follows the Wisconsin DOT ca
 
 Calibration (30 Aug – 12 Sep 2026) and validation (27 Sep – 3 Oct 2026) were both run with 4 seeds and SUMO's default driver settings. No parameter was tuned, for the reasons below. The figures stay outside the repository, with the other RCRC-derived numbers, in `../jaadah-private-data/processed/calibration/results/calibration_final.*` and `validation_final.*`.
 
-- **Validation meets the target; calibration falls just short of it.** On all eligible detector-hours, validation reaches the 85% target and calibration misses it by a single detector-hour. Both sets are within sampling uncertainty of the 85% line, and the model behaves the same way on the unseen validation week as on the calibration weeks.
+- **Validation meets the target; calibration falls just short of it.** On all eligible detector-hours, validation reaches the 85% target and calibration misses it by a single detector-hour. Both sets are within sampling uncertainty of the 85% line, and the model behaves the same way on the unseen validation week as on the calibration weeks. The sampling uncertainty is the standard error of a proportion, √(p (1 − p) / n), with p the pass rate and n the number of eligible detector-hours.
 - **Within capacity, both sets exceed the target.**
 - **The seeds agree closely.** The pass rates of the 4 seeds differ by about one percentage point, so 4 seeds are enough.
 - **North and South match almost completely; East matches well; West does not.**
@@ -71,10 +71,20 @@ python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12
 python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --set tau=1.2 --set sigma=0.4 --seeds 42 43 44 45 --jobs 2
 ```
 
+On macOS or Linux, start the replay source with:
+
+```bash
+JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
+```
+
+Driver settings given with `--set` must be finite and not negative; `tau`, `accel`, `decel` and `speedFactor` must be above 0, and `sigma` at most 1.
+
+Before building any demand, the runner leaves out the days in `EXCLUDED_DAYS` and every day with more than 10% of its test-hour intervals without an observed count. Each left-out day is listed with its reason in the output and in the summary JSON.
+
 For each test hour and seed the runner:
 
 1. reads the hour, with its warm-up and clearance, from the replay source and builds the SUMO demand with the same steps as `run_baseline.py` (ingestion, demand transformation, departure planning, demand writer, demand checks). An hour whose demand cannot be built is skipped and listed, never filled in;
-2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>/` and reuses it on later runs, so tuning only reruns SUMO. The observations for all test hours, with their 35-day history, are read from the replay source once and sliced per hour (the source returns rows ordered by interval end, so a slice equals a separate request), and the seed-independent steps (ingestion, history, demand transformation) are done once per hour; only departure planning and the demand files are per seed;
+2. keeps the generated demand in `../jaadah-private-data/processed/calibration/demand/<mapping_version>_net-<network hash>/` and reuses it on later runs, so tuning only reruns SUMO. The folder name holds the first 12 characters of the network file's SHA-256, so demand built for another mapping version or network is never reused; the runner prints the folder it uses. After a change to the demand code (ingestion, demand transformation, departure planning or the demand writer), delete the stored demand so it is built again. The observations for all test hours, with their 35-day history, are read from the replay source once and sliced per hour (the source returns rows ordered by interval end, so a slice equals a separate request), and the seed-independent steps (ingestion, history, demand transformation) are done once per hour; only departure planning and the demand files are per seed;
 3. runs SUMO with the induction loops and without FCD output, with the same settings as a baseline run (`--begin 0`, step 0.4 s, the seed, `--random false`). Settings given with `--set` go on a copy of the route file; the generated demand is never changed;
 4. compares each detector-hour with the observed counts, on the mean of the seeds, and once per seed;
 5. calculates each lane group's capacity for the hour with the KPI engine, from the hour's movement demand and the signal plan in the network, and compares it with the lane group's observed volume (the sum of its detectors' counts).
@@ -93,7 +103,7 @@ python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --lef
 ```
 
 - The shift applies to `MOV_W_N` and `MOV_E_S` (`SHARED_LANE_LEFT_MOVEMENTS`); the through movement of each lane receives the rest, so lane and approach totals do not change.
-- Shifted demand is kept in its own folder (`demand/<mapping_version>/left_share_shift_<shift>/`) and never mixes with the official demand. The runner marks the output as a sensitivity check.
+- Shifted demand is kept in its own folder (`demand/<mapping_version>_net-<network hash>/left_share_shift_<shift>/`) and never mixes with the official demand. The runner marks the output as a sensitivity check.
 - The values are fixed in advance and every version is reported. The run without a shift stays the official result: choosing the share that scores best would fit the demand to the score that checks it.
 
 ## Charts
@@ -127,5 +137,7 @@ The positions are the modelled lane end minus 1 m, copied from the synthetic pla
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py tests/test_run_calibration.py tests/test_calibration_charts.py
+.\.venv\Scripts\python.exe -m pytest -q jaadah/calibration tests/test_rcrc_replay_offset.py tests/test_rcrc_replay_source.py tests/test_run_calibration.py tests/test_calibration_charts.py
 ```
+
+`tests/test_rcrc_replay_source.py` is included because the replay source's configuration changed for the offset setting.
