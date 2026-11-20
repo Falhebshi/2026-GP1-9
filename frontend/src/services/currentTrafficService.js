@@ -18,6 +18,10 @@
 //         updatedAt, dataUntil,          when the loop last reported (real time) and the end of
 //                                        the newest interval it has simulated (data time), ISO
 //         stale,                         true when the loop has not reported for 30 minutes
+//         clockOffsetMs,                 how far the source's clock is behind the real clock
+//                                        (13 weeks for the replay source, 0 on real time)
+//         simulatedUntilSeconds,         where the simulation stopped, in seconds from the run
+//                                        start (the warm-up)
 //         version }                      changes whenever a new interval is published
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
 //     run: { id, status, failureReason, start, duration, intervalSeconds, analysisStartSeconds },
@@ -303,7 +307,7 @@ export async function getCurrentTraffic() {
 }
 
 // A live run stops counting as live when the loop has not reported for this long: it reports
-// every half minute, and publishes a new interval every 15 minutes
+// every 10 seconds, and publishes a new interval every 15 minutes
 const STALE_AFTER = 30 * 60 * 1000
 
 // What the page shows about the live loop, from run.json's "live" part
@@ -315,6 +319,8 @@ function liveState(run) {
     updatedAt: live.updated_at ?? null,
     dataUntil: live.data_until ?? null,
     stale: live.updated_at ? Date.now() - Date.parse(live.updated_at) > STALE_AFTER : false,
+    clockOffsetMs: (live.clock_offset_s ?? 0) * 1000,
+    simulatedUntilSeconds: live.simulated_until_s ?? null,
     version: `${run.run_id}|${live.data_until ?? ''}`,
   }
 }

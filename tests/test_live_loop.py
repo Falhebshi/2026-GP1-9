@@ -197,6 +197,7 @@ def test_the_loop_publishes_each_interval(source, tmp_path):
     assert run["live"]["data_until"] == (NOON + 4 * STEP).isoformat()
     assert run["live"]["simulated_until_s"] == 5 * 900 - 60
     assert run["live"]["estimated_intervals"] == []
+    assert run["live"]["clock_offset_s"] == 0  # this test source has no replay clock
 
     kpis = published(tmp_path, "kpis.json")
     assert kpis["run_id"] == run["run_id"]
@@ -318,6 +319,19 @@ def test_a_failed_update_is_retried_and_after_three_the_chain_starts_again(sourc
     assert loop.pass_once() is None and loop.record is chain
     assert loop.pass_once() is None and loop.record is chain
     assert loop.pass_once() is None and loop.record is None
+
+
+def test_the_loop_reports_how_far_the_source_clock_is_behind(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    loop.now = lambda: NOON + timedelta(weeks=13)
+
+    assert loop._clock_offset_s() == 0  # no replay clock: real time
+
+    loop.client.fetch_source_clock = lambda: NOON
+    assert loop._clock_offset_s() == 13 * 7 * 24 * 3600
+
+    loop.clock_offset_s = loop._clock_offset_s()
+    assert loop._state("running", "Updated.")["clock_offset_s"] == 13 * 7 * 24 * 3600
 
 
 def test_a_source_that_cannot_be_reached_keeps_the_chain(source, tmp_path, monkeypatch):

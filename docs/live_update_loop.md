@@ -140,10 +140,15 @@ The playback index of every run (`run.json` in the [3D scene guide](../simulatio
 | `live.updated_at` | When the loop last reported (real time); it reports every pass, about every 10 s |
 | `live.data_until` | End of the newest interval simulated (data time) |
 | `live.simulated_until_s` | Where the simulation stopped, in seconds from `run_start`: `data_until` minus the lag |
+| `live.clock_offset_s` | How far the source's clock is behind the real clock, in seconds: 13 weeks for the replay source (its `replay_time` in `/health`), 0 for a source on real time. The page uses it for the live clock (below) |
 | `live.lag_s`, `live.update_interval_s` | 60 and 900 |
 | `live.provisional_interval_start_s` | Start of the provisional (newest) interval, in seconds from `run_start` |
 | `live.estimated_intervals` | `[{start_s, end_s, approach_ids, methods}]`: intervals with estimated traffic |
 | `live.problems` | Only while paused: the demand problems, at most 10 |
+
+### The page's live clock
+
+While it follows the live run, the page plays the traffic at the time it happened in data time, **20 minutes behind it**: the moment shown is the source's "now" (the real time minus `clock_offset_s`) minus 20 minutes. By then that moment has always been simulated: an interval arrives only after it ends, the loop stops 60 s early, an update takes up to about a minute, and the page looks for new files every minute. The scene is moved to that moment at every frame, so reloading the page, a second tab or another laptop all show the same moment, and a tab left in the background is right again when it comes back. A new interval is published a few minutes before the clock reaches it, so the playback runs on without a jump. If the simulation has not reached the moment yet (the loop is late or stopped), the scene waits at the end of what has been simulated; a new chain is shown from its start until the clock catches up. The time on the page is the time of the traffic; the "Live" badge explains the delay in its tooltip. Clicking an earlier interval replays it; clicking the newest interval follows the clock again.
 
 `kpis.json` names the provisional interval too (`provisional_interval_start`, [KPI engine](kpi_engine.md), section 16.4). The vehicle file of the warm-up interval is listed in `intervals` but not written: the page shows only the analysis period, as for every run.
 

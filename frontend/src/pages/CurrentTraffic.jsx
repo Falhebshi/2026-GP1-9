@@ -33,8 +33,9 @@ function CurrentTraffic() {
   const { ref: sceneRef, fullScreen, toggle: toggleFullScreen } = useFullScreen()
   const [time, setTime] = useState(0) // seconds from the start of the run's analysis period
   const [jumpTo, setJumpTo] = useState(null)
-  // live: stay on the newest interval. A new interval builds the scene again, starting there
-  // (startAt), and the scene then reports its time, so the KPIs follow within a second
+  // live: follow the live clock (liveClock below). A new interval builds the scene again, and
+  // the scene reports its time, so the KPIs follow within a second. Clicking an earlier bar
+  // stops following; clicking the newest bar follows again
   const [followLatest, setFollowLatest] = useState(true)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
 
@@ -115,7 +116,20 @@ function CurrentTraffic() {
   const kpiInterval = interval
     ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
     : null
-  const isNewest = index === intervals.length - 1
+  const following = live && followLatest && !runProblem
+  // Live: where the scene is now, in seconds from the start of the analysis period. The scene
+  // plays the traffic at the time it happened in data time, LIVE_DELAY behind it: by then that
+  // moment is always simulated (an interval arrives after it ends, the loop stops 60 s early
+  // and takes up to about a minute, and the page looks every minute). It is worked out from
+  // the clock, so reloading the page or opening it elsewhere shows the same moment. If the
+  // simulation has not got there (the loop is late or stopped), it waits at its end.
+  const liveClock = following
+    ? () => {
+        const dataNow = Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+        const end = (liveInfo.simulatedUntilSeconds ?? 0) - run.analysisStartSeconds
+        return Math.max(0, Math.min((dataNow - Date.parse(run.start)) / 1000, end))
+      }
+    : null
   // Live: where the scene must not draw cars, in seconds from the run start
   const hiddenRanges = intervals.flatMap((item, i) =>
     item.noSensorData
@@ -147,7 +161,7 @@ function CurrentTraffic() {
   const timeBar = (
     <div className="current-traffic-time">
       <span className="current-traffic-time-value">{formatLabel(shownTime)}</span>
-      {timeBadge({ live, liveInfo, isNewest })}
+      {timeBadge({ live, liveInfo, following })}
       <Button size="sm" variant="secondary" onClick={toggleFullScreen}>
         {fullScreen ? 'Exit full screen' : 'Full screen'}
       </Button>
@@ -245,11 +259,8 @@ function CurrentTraffic() {
                 <TrafficScene3D
                   key={liveInfo?.version ?? 'sample'}
                   scenario={data.scenario}
-                  startAt={
-                    live && followLatest && intervals.length
-                      ? (intervals.length - 1) * run.intervalSeconds
-                      : time
-                  }
+                  startAt={time}
+                  clock={liveClock}
                   hiddenRanges={hiddenRanges}
                   intersectionId={intersection.id}
                   onTimeChange={setTime}
@@ -282,15 +293,26 @@ function CurrentTraffic() {
 
 // How often a live run is checked for a new interval
 const POLL_MS = 60 * 1000
+// How far the live scene plays behind the data's own time (see liveClock)
+const LIVE_DELAY_MS = 20 * 60 * 1000
+const LIVE_TITLE =
+  'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
+  'takes for the detector data to arrive and be simulated. The time shown is the time of the traffic.'
 
 // The badge next to the time: what is on screen
-function timeBadge({ live, liveInfo, isNewest }) {
+function timeBadge({ live, liveInfo, following }) {
   if (!live) return <Badge variant="neutral">Simulated</Badge>
   if (liveInfo.state === 'paused') return <Badge variant="warning">Paused</Badge>
   if (liveInfo.state === 'starting') return <Badge variant="neutral">Starting</Badge>
   if (liveInfo.state === 'stopped' || liveInfo.state === 'waiting' || liveInfo.stale)
     return <Badge variant="warning">Not updating</Badge>
-  return isNewest ? <Badge variant="success">Live</Badge> : <Badge variant="neutral">Earlier</Badge>
+  return following ? (
+    <span title={LIVE_TITLE}>
+      <Badge variant="success">Live</Badge>
+    </span>
+  ) : (
+    <Badge variant="neutral">Earlier</Badge>
+  )
 }
 
 // e.g. "21:30", or "unknown" without a time

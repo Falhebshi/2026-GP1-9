@@ -40,8 +40,11 @@ import './TrafficScene3D.css'
 //   jumpTo           { time } moves the looping scene to that time; pass a new object for every
 //                    jump (optional)
 //   startAt          where the looping scene starts, in seconds from the start of the analysis
-//                    period (optional, 0 without it); used when the scene is built again for a
-//                    live run's new interval
+//                    period (optional, 0 without it)
+//   clock            optional function giving the time to show, in seconds from the start of
+//                    the analysis period (a live run's clock). While it is given, the scene
+//                    shows that time at every frame instead of looping, so it stays right after
+//                    a reload or a hidden tab
 //   bounds           study area { west, south, east, north }, everything outside is cut off
 //   night            how dark it is, from 0 (day) to 1 (night); in between for dusk
 //   belowStatus      true when the viewport shows its time label in the top right corner, so the
@@ -128,6 +131,7 @@ function TrafficScene3D({
   onTimeChange,
   jumpTo,
   startAt,
+  clock,
   hiddenRanges,
   onReady,
   onError,
@@ -246,6 +250,8 @@ function TrafficScene3D({
   const envAnimRef = useRef(0)
   const callbacksRef = useRef({ onReady, onError, onTimeChange })
   callbacksRef.current = { onReady, onError, onTimeChange }
+  const clockRef = useRef(clock)
+  clockRef.current = clock
 
   const base = (mode) => ({
     longitude: center[0],
@@ -404,7 +410,9 @@ function TrafficScene3D({
         const from = d.run?.analysis_start_s ?? 0
         const to = d.run?.analysis_end_s ?? 120
         startRef.current = from
-        tRef.current = from + (time ?? startAt ?? 0)
+        tRef.current = from + (time ?? clockRef.current?.() ?? startAt ?? 0)
+        // the page shows this time straight away, not only from the next whole second
+        if (autoplay) callbacksRef.current.onTimeChange?.(Math.floor(tRef.current - from))
         sceneRef.current = {
           net: prepareNetwork({
             surface: d.surface,
@@ -447,7 +455,8 @@ function TrafficScene3D({
             const dt = (now - last) / 1000
             last = now
             let nt = tRef.current + dt
-            if (nt > to) nt = from
+            if (clockRef.current) nt = Math.min(from + clockRef.current(), to)
+            else if (nt > to) nt = from
             // tell the page once a second, when the whole second changes
             if (Math.floor(nt - from) !== Math.floor(tRef.current - from)) {
               callbacksRef.current.onTimeChange?.(Math.floor(nt - from))

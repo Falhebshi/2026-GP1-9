@@ -153,6 +153,18 @@ class RcrcReplayClient:
 
         return RcrcBatch(site_id=str(site_id).strip(), records=observations)
 
+    def fetch_source_clock(self) -> datetime | None:
+        """
+        Return the source's own "now" (replay_time in /health), or None
+        when it has none. The replay source runs 13 weeks behind the real
+        clock; a live RCRC feed has no replay time and runs on real time.
+        """
+
+        response = httpx2.get(f"{self.base_url}/health", timeout=self.timeout_s)
+        response.raise_for_status()
+        value = response.json().get("replay_time")
+        return datetime.fromisoformat(value) if value else None
+
     def fetch_latest_available_timestamp(self) -> datetime | None:
         """
         Return the end of the latest interval the source has delivered,

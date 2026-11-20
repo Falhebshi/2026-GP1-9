@@ -119,6 +119,7 @@ class LiveLoop:
         self.record: ChainRecord | None = self._load_active()
         self.paused: dict | None = None
         self.failures = 0
+        self.clock_offset_s = 0
 
     # ------------------------------------------------------------
     # chains
@@ -188,6 +189,7 @@ class LiveLoop:
         """
 
         latest = self.client.fetch_latest_available_timestamp()
+        self.clock_offset_s = self._clock_offset_s()
         if latest is None:
             return self._publish_state("waiting", "The traffic source has no data yet.")
 
@@ -233,6 +235,20 @@ class LiveLoop:
         # from turning one pass into an endless loop.
         log.error("a pass did not finish within %d steps; the next pass goes on", MAX_STEPS_PER_PASS)
         return self._state("running", "Catching up.")
+
+    def _clock_offset_s(self) -> int:
+        """
+        Seconds the source's clock is behind the real clock: 13 weeks for
+        the replay source, 0 for a source on real time (no replay clock).
+        The page uses it to play the newest traffic at the time it
+        happened in data time.
+        """
+
+        fetch = getattr(self.client, "fetch_source_clock", None)
+        source_now = fetch() if fetch else None
+        if source_now is None:
+            return 0
+        return round((self.now() - source_now).total_seconds())
 
     def _build(self, interval_end: datetime, latest: datetime):
         return build_interval_demand(
@@ -304,7 +320,10 @@ class LiveLoop:
     # ------------------------------------------------------------
 
     def _state(self, state: str, message: str, **extra) -> dict:
-        return {"state": state, "message": message, "updated_at": self.now().isoformat(), **extra}
+        return {
+            "state": state, "message": message, "updated_at": self.now().isoformat(),
+            "clock_offset_s": self.clock_offset_s, **extra,
+        }
 
     def _publish_state(self, state: str, message: str, **extra) -> dict:
         """
