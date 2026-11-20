@@ -323,7 +323,7 @@ function groupByInterval(run, results, approaches) {
       approaches: approaches.map((a) => ({
         approach_id: a.approach_id,
         arm: a.side[0].toUpperCase() + a.side.slice(1),
-        road: a.road,
+        road: roadName(a.road),
         kpis: of('approach', a.approach_id, start),
         movements: a.movements.map((m) => ({
           movement_id: m.movement_id,
