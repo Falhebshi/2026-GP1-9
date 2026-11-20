@@ -488,8 +488,18 @@ const approachDelay = (approach) => approach.kpis?.control_delay
 function barNote(delay, approaches, noSensorData) {
   if (noSensorData) return 'No detector data'
   if (!delay || delay.status === 'ok') return undefined
-  const reasons = [delay, ...(approaches ?? []).map((a) => approachDelay(a))]
-  return reasons.some((r) => r?.reason?.includes('measurement zone'))
-    ? 'Delay not measured: queue beyond the measured area'
-    : 'Delay not measured'
+  // the approaches whose queue reached past their measurement zone (the KPI engine's
+  // ZONE_END_REASON; tests/test_kpi_reasons.py fails if its wording loses these words)
+  const beyond = (approaches ?? [])
+    .filter((a) => approachDelay(a)?.reason?.includes(ZONE_END_WORDS))
+    .map((a) => a.arm)
+  if (beyond.length) {
+    return `Delay not measured: ${beyond.join(' and ')} queue beyond the measured area`
+  }
+  if (delay.reason?.includes(ZONE_END_WORDS)) {
+    return 'Delay not measured: queue beyond the measured area'
+  }
+  return 'Delay not measured'
 }
+
+const ZONE_END_WORDS = 'end of the measurement zone'
