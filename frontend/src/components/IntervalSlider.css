@@ -1,0 +1,147 @@
+/* One 15-minute interval as a time slider (IntervalSlider.jsx). Same knob, colours and type as
+   the 24-hour timeline (HistoricalTimeline.css), so the two read as one control. */
+
+.interval-slider-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.interval-slider-time {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.interval-slider-range {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* The slider and its minute scale. --reachable (set by the component) is how far the slider can
+   go: the rest of the track is drawn lighter, and the knob stops there. */
+.interval-slider-plot {
+  --knob: 16px;
+  position: relative;
+  padding: 0 calc(var(--knob) / 2);
+}
+
+.interval-slider-input {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: var(--knob);
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.interval-slider-input:focus-visible {
+  outline: none; /* the knob gets the outline instead */
+}
+
+.interval-slider-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-selected) 0 var(--reachable),
+    var(--color-border) var(--reachable) 100%
+  );
+}
+
+.interval-slider-input::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-selected) 0 var(--reachable),
+    var(--color-border) var(--reachable) 100%
+  );
+}
+
+.interval-slider-input::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  margin-top: calc((4px - var(--knob)) / 2);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.interval-slider-input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--knob);
+  height: var(--knob);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-selected);
+  box-shadow: 0 0 0 1px var(--color-selected);
+}
+
+.interval-slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.interval-slider-input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+/* Minute ticks under the track, with a time every 5 minutes */
+.interval-slider-axis {
+  position: relative;
+  height: 22px;
+  margin-top: var(--space-xs);
+}
+
+.interval-slider-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* the tick mark itself */
+.interval-slider-tick::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 4px;
+  background: var(--color-border);
+}
+
+.interval-slider-tick.major::before {
+  height: 6px;
+  background: var(--color-text-muted);
+}
+
+.interval-slider-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.interval-slider-readout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}

@@ -6,6 +6,7 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
+import IntervalSlider from '../components/IntervalSlider'
 import KpiSummary from '../components/KpiSummary'
 import LocationSummary from '../components/LocationSummary'
 import Notice from '../components/Notice'
@@ -40,6 +41,9 @@ function CurrentTraffic() {
   // live: the run ID of the earlier run whose interval is shown (live/previous/, or after
   // restarts one in live/earlier/), or null for the newest run
   const [shownId, setShownId] = useState(null)
+  // PBI 15: the playback is paused, and the timeline shows one interval as a time slider
+  const [paused, setPaused] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
   // what is shown now, for the minute check below (it runs outside a render)
   const viewRef = useRef(null)
@@ -248,8 +252,46 @@ function CurrentTraffic() {
     const seconds = follow ? follow.seconds : target * owner.run.intervalSeconds
     setShownId(follow ? targetId(data, follow) : owner === data ? null : owner.run.id)
     setFollowLatest(barTime === null)
+    // an earlier bar opens its interval as a time slider; following the live clock never pauses
+    if (barTime !== null) setZoomed(true)
+    if (barTime === null) setPaused(false)
     setTime(seconds)
     setJumpTo({ time: seconds })
+  }
+
+  // PBI 15: the moment shown, in seconds from the start of the interval on screen, and how far
+  // into it the slider may go: the live clock and the end of what has been simulated, or the
+  // whole interval in a simulated run
+  const intervalSeconds = run?.intervalSeconds ?? 900
+  const intervalOffset = index >= 0 ? index * intervalSeconds : 0
+  const reachable = (() => {
+    if (!live || !liveInfo || !run) return intervalSeconds
+    const clockSeconds = (liveMoment(liveInfo, nowMs) - Date.parse(run.start)) / 1000
+    const simulated =
+      shown === data
+        ? (liveInfo.simulatedUntilSeconds ?? 0) - run.analysisStartSeconds
+        : intervals.length * intervalSeconds
+    return Math.max(0, Math.min(clockSeconds, simulated) - intervalOffset)
+  })()
+
+  // Go to a second of the interval on screen; this stops following the live clock
+  function seek(secondsInInterval) {
+    const seconds = intervalOffset + secondsInInterval
+    setFollowLatest(false)
+    setTime(seconds)
+    setJumpTo({ time: seconds })
+  }
+
+  // Pause holds the moment shown (while live, this leaves the live clock: the view becomes
+  // historical); Play continues from it at normal speed
+  function togglePlay() {
+    if (paused) {
+      setPaused(false)
+      return
+    }
+    setFollowLatest(false)
+    setPaused(true)
+    setJumpTo({ time })
   }
 
   const details = openApproach && (
@@ -372,20 +414,50 @@ function CurrentTraffic() {
                   openApproachId={openApproachId}
                   onApproachChange={setOpenApproachId}
                   onError={setSimError}
+                  paused={paused}
+                  stopAtEnd
+                  onEnd={() => setPaused(true)}
                 />
               </SimulationViewport>
             </div>
           </div>
 
-          <HistoricalTimeline
-            title="Traffic Timeline"
-            bars={timeline}
-            value={interval?.start ?? null}
-            onChange={selectBar}
-            live={live}
-            following={following}
-            emptyMessage={runProblem}
-          />
+          {zoomed && interval ? (
+            <IntervalSlider
+              start={interval.start}
+              length={intervalSeconds}
+              seconds={time - intervalOffset}
+              reachable={reachable}
+              onSeek={seek}
+              paused={paused}
+              onTogglePlay={togglePlay}
+              onBack={() => setZoomed(false)}
+              following={following}
+              live={live}
+              onLatest={() => selectBar(null)}
+            />
+          ) : (
+            <HistoricalTimeline
+              title="Traffic Timeline"
+              bars={timeline}
+              value={interval?.start ?? null}
+              onChange={selectBar}
+              live={live}
+              following={following}
+              emptyMessage={runProblem}
+            >
+              {interval && (
+                <>
+                  <Button size="sm" variant="secondary" onClick={togglePlay}>
+                    {paused ? '▶ Play' : '❚❚ Pause'}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setZoomed(true)}>
+                    Open {intervalLabel(interval)} ›
+                  </Button>
+                </>
+              )}
+            </HistoricalTimeline>
+          )}
         </div>
       </div>
     </div>
