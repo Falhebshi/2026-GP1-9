@@ -21,7 +21,15 @@ import './NetworkMap.css'
 //   onArrive       called with the id once the map has finished flying to it
 //   padding        { top, right, bottom, left } in pixels: the space the page's floating cards
 //                  take, so the map fits the study area (and its dots) into the part you can see
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
+// OpenFreeMap basemaps: Positron in light mode, Dark in night mode
+const STYLES = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+}
+const styleOf = (theme) => STYLES[theme] ?? STYLES.light
+const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+// our own sources: their layers are carried over when the basemap changes
+const OUR_SOURCES = ['segments', 'heat', 'intersections']
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
 // Heatmap view: hexagon tiles of about 350 m over the city, in four colors by the speed of the
@@ -208,7 +216,7 @@ function NetworkMap({
   useEffect(() => {
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: STYLE_URL,
+      style: styleOf(currentTheme()),
       bounds,
       // leave room at the bottom for the timeline card that sits over the map
       fitBoundsOptions: { padding: { top: 20, right: 20, left: 20, bottom: 200 } },
@@ -383,8 +391,10 @@ function NetworkMap({
     }
   }, [bounds, maxBounds])
 
-  // night mode changes the dots' theme colors (fill and ring): repaint them when it is switched,
-  // since the map read them only once, when it loaded
+  // Night mode: switch the basemap to the matching OpenFreeMap style, keeping our sources and
+  // layers (with their data) where they were, below or above the basemap's place names. The view
+  // stays where it is. The dots' theme colors (fill and ring) are read again afterwards, since the
+  // map read them only once, when it loaded.
   useEffect(() => {
     if (!ready) return
     const map = mapRef.current
@@ -394,8 +404,28 @@ function NetworkMap({
       map.setPaintProperty('intersections', 'circle-stroke-color', themeColor('--color-surface'))
       map.setPaintProperty('intersections-pulse', 'circle-color', selected)
     }
-    window.addEventListener(THEME_EVENT, repaint)
-    return () => window.removeEventListener(THEME_EVENT, repaint)
+    const onTheme = (event) => {
+      map.setStyle(styleOf(event.detail), {
+        transformStyle: (previous, next) => {
+          if (!previous) return next
+          const firstLabelBefore = previous.layers.findIndex((l) => l.type === 'symbol')
+          const ours = previous.layers
+            .map((layer, i) => ({ layer, belowLabels: firstLabelBefore < 0 || i < firstLabelBefore }))
+            .filter(({ layer }) => OUR_SOURCES.includes(layer.source))
+          const layers = [...next.layers]
+          let at = layers.findIndex((l) => l.type === 'symbol')
+          if (at < 0) at = layers.length
+          layers.splice(at, 0, ...ours.filter((o) => o.belowLabels).map((o) => o.layer))
+          layers.push(...ours.filter((o) => !o.belowLabels).map((o) => o.layer))
+          const sources = { ...next.sources }
+          for (const id of OUR_SOURCES) if (previous.sources[id]) sources[id] = previous.sources[id]
+          return { ...next, sources, layers }
+        },
+      })
+      map.once('style.load', repaint)
+    }
+    window.addEventListener(THEME_EVENT, onTheme)
+    return () => window.removeEventListener(THEME_EVENT, onTheme)
   }, [ready])
 
   // segment data
