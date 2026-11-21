@@ -449,6 +449,12 @@ class RunCalculation:
             run_id, signal_approaches, self.intervals, self.queues.approaches,
         )
         uninserted = uninserted_approaches(run_id, self.movements, self.intervals, self.passages.uninserted)
+        # The provisional interval: a vehicle still waiting to enter when the
+        # simulation stopped (60 s before the interval's end) has not entered
+        # yet, it may enter at the next update; the final calculation of the
+        # interval checks it (section 16.5)
+        if self.provisional is not None:
+            uninserted = {key: reason for key, reason in uninserted.items() if key[1] != self.provisional}
         zone_end = zone_end_approaches(approach_queues)
         blocked = merge_blocks(uninserted, zone_end)
 

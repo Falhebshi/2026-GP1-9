@@ -809,7 +809,8 @@ The live update loop simulates 15 minutes at a time and needs only the newest in
 
 - its delay and queue duration come from the vehicles that have finished. They tend to be **low**: the vehicles that finish first are the least delayed, and those still waiting are the most delayed. The values become final at the next update;
 - when none has finished, they are `unavailable`: "no vehicle that arrived in this interval has finished its passage yet";
-- blocked approaches (section 13.7) stay unavailable, as in every interval;
+- a vehicle still waiting to enter the network when the simulation stopped does not block its approach (section 13.7): it has not entered *yet*, and may enter at the next update. When the interval is calculated again as final, a vehicle that still has not entered blocks it as in every interval. Found in a live run on 22 August: at 18:00 the North queue reached the network's edge, one car was still waiting to enter, and the whole intersection showed "Unavailable" until the next update, which gave every value;
+- blocked approaches (section 13.7) otherwise stay unavailable, as in every interval;
 - every earlier interval keeps the rule of section 7.4.
 
 **FCD of the end of a run.** The live loop measures only the last 45 minutes of its chain (`RunFiles.fcd_start_s`, [Live update loop](live_update_loop.md), section 4). A vehicle already inside its zone in that FCD's first timestep entered before it and belongs to an earlier interval, so it is left out instead of being an error; anywhere else, a vehicle first seen inside its zone is still an error. With 45 minutes for the two intervals reported, the results are the same as from the whole chain's FCD.

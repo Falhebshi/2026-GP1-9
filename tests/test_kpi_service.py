@@ -323,6 +323,45 @@ def test_provisional_window_end_uses_the_vehicles_that_have_finished():
     assert provisional.value == pytest.approx(40.0)   # 80 s in the zone - 40 s free flow
 
 
+def test_a_vehicle_waiting_to_enter_blocks_only_a_final_interval():
+    """
+    23:45-24:00: one North-left car has not entered the network when the
+    simulation stopped. As final, North is unavailable (it could not
+    enter); as provisional it may still enter, so North has a value.
+    """
+
+    from test_history import RUN_ID, at, measurements
+    from jaadah.models.outputs import UninsertedVehicle, VehicleDelayRecord
+
+    day = measurements()
+    finished = VehicleDelayRecord(
+        run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2345__001", movement_id="MOV_N_E",
+        zone_entry_time=at("23:46:00"), stop_line_time=at("23:47:00"), zone_exit_time=at("23:47:20"),
+        zone_distance_m=565.0, free_flow_travel_time_s=40.0, halted_time_s=30.0,
+    )
+    waiting = UninsertedVehicle(
+        run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2350__002", movement_id="MOV_N_E",
+        planned_stop_line_time=at("23:51:00"),
+    )
+    passages = day.passages._replace(
+        records=[*day.passages.records, finished], uninserted=[*day.passages.uninserted, waiting],
+    )
+    day = day._replace(passages=passages)
+    last = AnalysisInterval(at("23:45:00"), at("00:00:00") + timedelta(days=1))
+
+    def north_delay(results):
+        return next(r for r in results if r.kpi == KpiName.CONTROL_DELAY and r.movement_id == "MOV_N_E"
+                    and r.method.value == "simulation" and r.interval_start == last.start)
+
+    final = north_delay(calculate_kpis(day, time_window=last))
+    assert final.status == KpiStatus.UNAVAILABLE
+    assert "could not enter the network" in final.reason
+
+    provisional = north_delay(calculate_kpis(day, time_window=last, provisional=True))
+    assert provisional.status == KpiStatus.OK
+    assert provisional.value == pytest.approx(40.0)
+
+
 # ============================================================
 # WHAT THE CURRENT-TRAFFIC PAGE SHOWS
 # ============================================================
