@@ -267,9 +267,8 @@ function CurrentTraffic() {
     const seconds = follow ? follow.seconds : target * owner.run.intervalSeconds
     setShownId(follow ? targetId(data, follow) : owner === data ? null : owner.run.id)
     setFollowLatest(barTime === null)
-    // a bar opens its interval as a time slider (the newest one too: its slider ends at "Now");
-    // following the live clock never pauses
-    setZoomed(true)
+    // a bar only selects its interval: "Open … ›" opens it as a time slider, so the 24-hour
+    // timeline can still be clicked through. Following the live clock never pauses
     if (barTime === null) setPaused(false)
     setTime(seconds)
     setJumpTo({ time: seconds })
