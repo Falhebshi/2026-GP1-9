@@ -393,7 +393,7 @@ def test_a_new_run_moves_the_published_one_to_previous(source, tmp_path):
 
     assert not list(live.glob("*.json"))
     previous = json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))
-    assert previous["run_id"] == "RUN_LIVE_20260805T0245_S42"  # the older one is gone
+    assert previous["run_id"] == "RUN_LIVE_20260805T0245_S42"
     assert previous["status"] == "completed"
     assert {p.name for p in (live / "previous").iterdir()} == {
         "run.json", "kpis.json", "vehicles_0.json", "vehicles_1.json", "vehicles_2.json", "vehicles_3.json",
@@ -401,6 +401,69 @@ def test_a_new_run_moves_the_published_one_to_previous(source, tmp_path):
 
     loop.publisher._start_folder(some_chain())  # the same run again: nothing moves
     assert (live / "previous" / "run.json").is_file()
+
+
+def test_after_restarts_every_earlier_run_is_kept_in_earlier(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    live = tmp_path / "live"
+    write_published(live / "previous", "RUN_OLDER", NOON - timedelta(hours=10), 900, 3600)
+    write_published(live, "RUN_MIDDLE", NOON - timedelta(hours=5), 900, 3600)
+
+    loop.publisher._start_folder(some_chain())  # a restart: MIDDLE to previous/, OLDER to earlier/
+
+    assert json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))["run_id"] == "RUN_MIDDLE"
+    assert json.loads((live / "earlier" / "index.json").read_text(encoding="utf-8")) == {"runs": ["RUN_OLDER"]}
+    older = live / "earlier" / "RUN_OLDER"
+    assert {p.name for p in older.iterdir()} == {
+        "run.json", "kpis.json", "vehicles_0.json", "vehicles_1.json", "vehicles_2.json", "vehicles_3.json",
+    }
+
+    # another restart: the earlier runs are listed oldest first
+    write_published(live, "RUN_NEWER", NOON - timedelta(hours=2), 900, 3600)
+    loop.publisher._start_folder(some_chain())
+    assert json.loads((live / "earlier" / "index.json").read_text(encoding="utf-8")) == {
+        "runs": ["RUN_OLDER", "RUN_MIDDLE"],
+    }
+    assert json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))["run_id"] == "RUN_NEWER"
+
+
+def test_earlier_runs_are_trimmed_to_24_hours_and_dropped_from_the_index(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    live = tmp_path / "live"
+    run_start = NOON - timedelta(days=1)
+    write_published(live / "earlier" / "RUN_A", "RUN_A", run_start, 900, 2700)  # 12:15-12:45
+    write_published(live / "earlier" / "RUN_B", "RUN_B", run_start + timedelta(hours=1), 900, 3600)  # 13:15-14:00
+    (live / "earlier" / "index.json").write_text(json.dumps({"runs": ["RUN_A", "RUN_B"]}), encoding="utf-8")
+
+    loop.publisher.trim_previous(run_start + timedelta(days=1, hours=1, seconds=1800))  # keep from 13:30
+    assert not (live / "earlier" / "RUN_A").exists()
+    run_b = json.loads((live / "earlier" / "RUN_B" / "run.json").read_text(encoding="utf-8"))
+    assert run_b["analysis_start_s"] == 1800
+    assert json.loads((live / "earlier" / "index.json").read_text(encoding="utf-8")) == {"runs": ["RUN_B"]}
+
+    loop.publisher.trim_previous(run_start + timedelta(days=2))
+    assert not (live / "earlier").exists()  # nothing left: no empty index for the page to read
+
+
+def test_the_log_line_gives_each_delay_or_the_reason(source, tmp_path):
+    from simulation.live.publish import interval_summary
+
+    start = NOON
+    def result(level, approach, value, reason=None):
+        return {"kpi": "control_delay", "level": level, "approach_id": approach, "interval_start": start.isoformat(),
+                "value": value, "reason": reason}
+    (tmp_path / "kpis.json").write_text(json.dumps({"results": [
+        result("approach", "APP_S", None, "queue reached the end of the measurement zone"),
+        result("intersection", None, None, "part missing"),
+        result("approach", "APP_E", 41.6),
+        {**result("approach", "APP_E", 9.0), "interval_start": (start + STEP).isoformat()},
+        {**result("approach", "APP_N", 3.0), "kpi": "queue_length"},
+    ]}), encoding="utf-8")
+
+    assert interval_summary(tmp_path, start) == (
+        "intersection none (part missing); APP_E 42 s; APP_S none (queue reached the end of the measurement zone)"
+    )
+    assert interval_summary(tmp_path / "missing", start) == "no KPIs"
 
 
 def test_the_previous_run_keeps_only_the_last_24_hours(source, tmp_path):

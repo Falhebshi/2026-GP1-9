@@ -26,6 +26,9 @@
 //     previous: null, or for a live run the run before it, while it is less than 24 hours old
 //       (live/previous/): { scenario: 'live/previous', run, hasKpis, isTest, intervals,
 //       timeline } as below, with only the intervals before the newest run's first one
+//     earlier: [], or for a live run the runs before previous (after restarts), oldest first, in
+//       the same form, with scenario 'live/earlier/<run ID>'; each with only the intervals before
+//       the next run's first one
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
 //     run: { id, status, failureReason, start, duration, intervalSeconds, analysisStartSeconds },
 //                                        null when there is no run yet. status 'completed',
@@ -282,6 +285,7 @@ export async function getCurrentTraffic() {
       intervals: [],
       timeline: [],
       previous: null,
+      earlier: [],
     }
   }
 
@@ -289,27 +293,57 @@ export async function getCurrentTraffic() {
   const current = await runView(folder, scenario, run, approaches, demo, status)
 
   // Live only: the run before this one (the day before, or the chain before a restart), kept
-  // in live/previous/ until its intervals are 24 hours old, so the timeline shows the last
-  // 24 hours. Its intervals start where they end in the newest run, never overlapping it.
+  // in live/previous/, and the runs before that (after more restarts) in live/earlier/<run ID>/,
+  // listed in live/earlier/index.json; each until its intervals are 24 hours old, so the
+  // timeline shows the last 24 hours. Each run's intervals end where the next run's start,
+  // never overlapping it.
   let previous = null
-  const previousRun =
-    liveRun && demo !== 'empty' ? await getJson(`${folder}/live/previous/run.json`) : null
-  if (previousRun && previousRun.run_id !== run.run_id && previousRun.status !== 'failed') {
-    const view = await runView(folder, 'live/previous', previousRun, approaches, demo, 'completed')
-    const firstStart = current.intervals[0] ? Date.parse(current.intervals[0].start) : Infinity
-    const intervals = view.intervals.filter((item) => Date.parse(item.start) < firstStart)
-    if (intervals.length) {
-      previous = {
-        ...view,
-        scenario: 'live/previous',
-        intervals,
-        timeline: intervals.map(timelineBar),
-      }
+  let earlier = []
+  if (liveRun && demo !== 'empty') {
+    const index = await getJson(`${folder}/live/earlier/index.json`)
+    const scenarios = [...(index?.runs ?? []).map((id) => `live/earlier/${id}`), 'live/previous']
+    const older = []
+    for (const name of scenarios) {
+      const olderRun = await getJson(`${folder}/${name}/run.json`)
+      if (!olderRun || olderRun.run_id === run.run_id || olderRun.status === 'failed') continue
+      older.push(await runView(folder, name, olderRun, approaches, demo, 'completed'))
     }
+    // newest first, so each run is cut where the run after it starts
+    let nextStart = current.intervals[0] ? Date.parse(current.intervals[0].start) : Infinity
+    const kept = []
+    for (const view of older.reverse()) {
+      const intervals = view.intervals.filter((item) => Date.parse(item.start) < nextStart)
+      if (!intervals.length) continue
+      kept.unshift({ ...view, intervals, timeline: intervals.map(timelineBar) })
+      nextStart = Date.parse(intervals[0].start)
+    }
+    if (kept.length && kept[kept.length - 1].scenario === 'live/previous') previous = kept.pop()
+    earlier = kept
   }
 
-  return { ...page, ...current, previous }
+  return { ...page, ...current, previous, earlier }
 }
+
+// Live: the timeline bars of several runs, oldest first, with an empty bar for each interval
+// that no run covers (the loop was stopped, or the computer was asleep, and started again at
+// the newest data), so the gap shows instead of the bars on its two sides looking next to each
+// other. Hovering one says "Not simulated"; it cannot be selected.
+export function withGaps(bars, intervalSeconds) {
+  const step = intervalSeconds * 1000
+  const out = []
+  for (const bar of bars) {
+    const before = out[out.length - 1]
+    if (before) {
+      for (let t = Date.parse(before.time) + step; t < Date.parse(bar.time); t += step) {
+        out.push({ time: new Date(t).toISOString(), value: null, level: null, note: NOT_SIMULATED })
+      }
+    }
+    out.push(bar)
+  }
+  return out
+}
+
+export const NOT_SIMULATED = 'Not simulated'
 
 // One run as the page shows it: the run, its intervals with their KPIs and the timeline bars
 async function runView(folder, scenario, run, approaches, demo, status) {

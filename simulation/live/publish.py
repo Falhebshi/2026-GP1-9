@@ -34,8 +34,10 @@ Rules applied, and why:
   and a run.json always describes files that are already there (team
   decision A on live outputs).
 - The folder holds one run only. When a new chain publishes for the
-  first time, the previous chain's files are removed, run.json first,
-  so the page never mixes two runs.
+  first time, the previous chain's files move to previous/, run.json
+  first, so the page never mixes two runs; the run that was in
+  previous/ moves to earlier/<run ID>/, so restarts never lose the
+  last 24 hours.
 """
 
 import json
@@ -80,9 +82,13 @@ REPORTED_INTERVALS = 2
 UPDATE_DIR = "update"
 RUN_FILE = "run.json"
 SIGNALS_FILE = "signals.json"
-# The page shows the last 24 hours: the newest run in live/, and the run
-# before it in live/previous/ until its intervals are 24 hours old.
+# The page shows the last 24 hours: the newest run in live/, the run before
+# it in live/previous/, and the runs before that (after restarts) in
+# live/earlier/<run ID>/, listed in live/earlier/index.json, each until
+# its intervals are 24 hours old.
 PREVIOUS_DIR = "previous"
+EARLIER_DIR = "earlier"
+EARLIER_INDEX = "index.json"
 KEEP_PUBLISHED = timedelta(hours=24)
 
 
@@ -312,8 +318,9 @@ class LivePublisher:
     def _start_folder(self, record: ChainRecord) -> None:
         """
         Make the folder ready for this chain: created if missing. If it
-        holds another run, that run moves to previous/ (replacing the one
-        there), so the page can still show its last 24 hours; each folder
+        holds another run, that run moves to previous/, and the one in
+        previous/ moves to earlier/<its run ID>/, so the page can still
+        show the last 24 hours after any number of restarts; each folder
         holds one run. run.json leaves live/ first and arrives in
         previous/ last, so the page never reads a run whose files are
         not all there.
@@ -330,6 +337,7 @@ class LivePublisher:
         # half way) live/ holds no complete run: previous/ stays as it is.
         previous = self.output_dir / PREVIOUS_DIR
         if current is not None:
+            self._move_previous_to_earlier()
             remove_published(previous)
             previous.mkdir()
             run_path.unlink()
@@ -345,37 +353,120 @@ class LivePublisher:
             current["status"] = SimulationRunStatus.COMPLETED.value
             write_json_atomic(previous / RUN_FILE, current, compact=False)
 
-    def trim_previous(self, newest_end: datetime) -> None:
+    def _move_previous_to_earlier(self) -> None:
         """
-        Drop the previous run's intervals that are 24 hours older than the
-        newest interval: run.json first (its analysis period then starts
-        later), then their vehicle files; the whole folder once none is
-        left.
+        Move the run in previous/ to earlier/<run ID>/ in one rename, and
+        list it in earlier/index.json. A previous/ without run.json (half
+        removed) is left for remove_published.
         """
 
         previous = self.output_dir / PREVIOUS_DIR
         path = previous / RUN_FILE
         if not path.is_file():
             return
+        run_id = json.loads(path.read_text(encoding="utf-8"))["run_id"]
+        earlier = self.output_dir / EARLIER_DIR
+        earlier.mkdir(exist_ok=True)
+        target = earlier / run_id
+        remove_published(target)
+        os.replace(previous, target)
+        self._write_earlier_index()
 
-        run_json = json.loads(path.read_text(encoding="utf-8"))
-        run_start = datetime.fromisoformat(run_json["run_start"])
-        step = run_json["interval_s"]
-        cutoff_s = (newest_end - KEEP_PUBLISHED - run_start).total_seconds()
-        keep_from_s = math.ceil(cutoff_s / step) * step
+    def earlier_runs(self) -> list[Path]:
+        """The folders in earlier/ that hold a run, oldest first."""
 
-        if keep_from_s <= run_json["analysis_start_s"]:
+        earlier = self.output_dir / EARLIER_DIR
+        if not earlier.is_dir():
+            return []
+        runs = []
+        for folder in earlier.iterdir():
+            path = folder / RUN_FILE
+            if folder.is_dir() and path.is_file():
+                runs.append((json.loads(path.read_text(encoding="utf-8"))["run_start"], folder))
+        return [folder for _, folder in sorted(runs)]
+
+    def _write_earlier_index(self) -> None:
+        """earlier/index.json: the run IDs (folder names) in earlier/, oldest first."""
+
+        earlier = self.output_dir / EARLIER_DIR
+        runs = self.earlier_runs()
+        if not runs:
+            if earlier.exists():
+                shutil.rmtree(earlier)
             return
-        if keep_from_s >= run_json["analysis_end_s"]:
-            remove_published(previous)
-            return
+        write_json_atomic(earlier / EARLIER_INDEX, {"runs": [folder.name for folder in runs]}, compact=False)
 
-        gone = [item for item in run_json["intervals"] if item["end_s"] <= keep_from_s]
-        run_json["intervals"] = [item for item in run_json["intervals"] if item["end_s"] > keep_from_s]
-        run_json["analysis_start_s"] = keep_from_s
-        write_json_atomic(path, run_json, compact=False)
-        for item in gone:
-            (previous / item["file"]).unlink(missing_ok=True)
+    def trim_previous(self, newest_end: datetime) -> None:
+        """
+        Drop the intervals that are 24 hours older than the newest one,
+        from previous/ and every run in earlier/ (a whole folder once
+        none is left), then list what is left in earlier/index.json.
+        """
+
+        trim_published(self.output_dir / PREVIOUS_DIR, newest_end)
+        for folder in self.earlier_runs():
+            trim_published(folder, newest_end)
+        self._write_earlier_index()
+
+
+def trim_published(folder: Path, newest_end: datetime) -> None:
+    """
+    Drop a published run's intervals that are 24 hours older than the
+    newest interval: run.json first (its analysis period then starts
+    later), then their vehicle files; the whole folder once none is left.
+    """
+
+    path = folder / RUN_FILE
+    if not path.is_file():
+        return
+
+    run_json = json.loads(path.read_text(encoding="utf-8"))
+    run_start = datetime.fromisoformat(run_json["run_start"])
+    step = run_json["interval_s"]
+    cutoff_s = (newest_end - KEEP_PUBLISHED - run_start).total_seconds()
+    keep_from_s = math.ceil(cutoff_s / step) * step
+
+    if keep_from_s <= run_json["analysis_start_s"]:
+        return
+    if keep_from_s >= run_json["analysis_end_s"]:
+        remove_published(folder)
+        return
+
+    gone = [item for item in run_json["intervals"] if item["end_s"] <= keep_from_s]
+    run_json["intervals"] = [item for item in run_json["intervals"] if item["end_s"] > keep_from_s]
+    run_json["analysis_start_s"] = keep_from_s
+    write_json_atomic(path, run_json, compact=False)
+    for item in gone:
+        (folder / item["file"]).unlink(missing_ok=True)
+
+
+def interval_summary(folder: Path, interval_start: datetime) -> str:
+    """
+    One line for the loop's log: an interval's control delay at the
+    intersection and on each approach, or why it was not measured, from
+    the published kpis.json. So that what the page showed can be
+    checked later, after the files are gone.
+    """
+
+    path = folder / "kpis.json"
+    if not path.is_file():
+        return "no KPIs"
+    kpis = json.loads(path.read_text(encoding="utf-8"))
+    parts = []
+    for result in kpis["results"]:
+        if result["kpi"] != "control_delay" or datetime.fromisoformat(result["interval_start"]) != interval_start:
+            continue
+        if result["level"] == "intersection":
+            name = "intersection"
+        elif result["level"] == "approach":
+            name = result["approach_id"]
+        else:
+            continue
+        value = f"{result['value']:.0f} s" if result["value"] is not None else f"none ({result['reason']})"
+        parts.append((name != "intersection", name, f"{name} {value}"))
+    if not parts:
+        return "no delay results"
+    return "; ".join(text for *_, text in sorted(parts))
 
 
 def remove_published(folder: Path) -> None:

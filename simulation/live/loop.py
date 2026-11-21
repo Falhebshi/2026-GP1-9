@@ -72,7 +72,7 @@ from simulation.live.demand import (
     estimated_interval,
     load_demand,
 )
-from simulation.live.publish import FCD_INTERVALS, LivePublisher
+from simulation.live.publish import FCD_INTERVALS, LivePublisher, interval_summary
 from simulation.live.segments import FCD_FILE, RAW_DIR, STATE_FILE
 from simulation.live.update import run_update
 
@@ -352,6 +352,13 @@ class LiveLoop:
                 record, folder, folder / "demand", result.generated,
                 self._state("running", "Updated."),
             )
+            # the interval before the newest is final now: what the page shows for it from here on
+            final_start = interval_end - 2 * INTERVAL
+            if final_start >= record.analysis_start_time:
+                log.info(
+                    "%s: KPIs %s (final): %s", record.run_id, final_start.strftime("%H:%M"),
+                    interval_summary(self.publisher.output_dir, final_start),
+                )
         self._clean(record)
         log.info(
             "%s: interval ending %s done in %.0f s%s", record.run_id, interval_end.strftime("%H:%M"),

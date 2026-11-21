@@ -12,7 +12,7 @@ import Notice from '../components/Notice'
 import SimulationViewport from '../components/SimulationViewport'
 import TrafficScene3D from '../components/TrafficScene3D'
 import useFullScreen from '../hooks/useFullScreen'
-import { getCurrentTraffic } from '../services/currentTrafficService'
+import { getCurrentTraffic, withGaps } from '../services/currentTrafficService'
 import { darkness } from '../utils/daylight'
 import './CurrentTraffic.css'
 
@@ -37,13 +37,14 @@ function CurrentTraffic() {
   // the scene reports its time, so the KPIs follow within a second. Clicking an earlier bar
   // stops following; clicking the newest bar follows again
   const [followLatest, setFollowLatest] = useState(true)
-  // live: true while an interval of the run before the newest one (live/previous/) is shown
-  const [onPrevious, setOnPrevious] = useState(false)
+  // live: the run ID of the earlier run whose interval is shown (live/previous/, or after
+  // restarts one in live/earlier/), or null for the newest run
+  const [shownId, setShownId] = useState(null)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
   // what is shown now, for the minute check below (it runs outside a render)
   const viewRef = useRef(null)
   useEffect(() => {
-    viewRef.current = { data, onPrevious, time, followLatest }
+    viewRef.current = { data, shownId, time, followLatest }
   })
 
   // Load the data when the page opens
@@ -57,7 +58,7 @@ function CurrentTraffic() {
         // a live run opens on the live clock's moment, before the scene has loaded
         if (result.live && result.run?.status !== 'failed') {
           const target = liveTarget(result)
-          setOnPrevious(target.inPrevious)
+          setShownId(targetId(result, target))
           setTime(target.seconds)
         }
       })
@@ -97,20 +98,20 @@ function CurrentTraffic() {
           // starts after it, at 03:00), so pick the run in the same update
           if (view.followLatest && result.live && result.run?.status !== 'failed') {
             const target = liveTarget(result)
-            setOnPrevious(target.inPrevious)
-            if (target.inPrevious !== view.onPrevious) {
+            setShownId(targetId(result, target))
+            if (target.inPrevious !== (view.shownId !== null)) {
               setTime(target.seconds)
               setJumpTo({ time: target.seconds })
             }
             return
           }
-          // Watching an earlier moment: stay on it. At 03:00 the newest run becomes the
-          // previous one, so the moment is looked up again in the new runs. Gone (older than
-          // 24 hours): follow the live clock again.
+          // Watching an earlier moment: stay on it. At 03:00 (or a restart) the newest run
+          // becomes the previous one, so the moment is looked up again in the new runs. Gone
+          // (older than 24 hours): follow the live clock again.
           if (view.followLatest || !current?.run || !result.live) return
-          const shownRun = (view.onPrevious && current.previous) || current
+          const shownRun = runById(current, view.shownId) ?? current
           const moment = Date.parse(shownRun.run.start) + view.time * 1000
-          const place = [result, result.previous].find((runView) =>
+          const place = [result, ...olderRuns(result)].find((runView) =>
             runView?.intervals?.some(
               (item) =>
                 Date.parse(item.start) <= moment &&
@@ -120,7 +121,9 @@ function CurrentTraffic() {
           const seconds = place
             ? (moment - Date.parse(place.run.start)) / 1000
             : liveTarget(result).seconds
-          setOnPrevious(place ? place !== result : liveTarget(result).inPrevious)
+          setShownId(
+            place ? (place === result ? null : place.run.id) : targetId(result, liveTarget(result)),
+          )
           setFollowLatest(!place)
           setTime(seconds)
           setJumpTo({ time: seconds })
@@ -133,15 +136,15 @@ function CurrentTraffic() {
   // Following while the clock is still in the previous run (the minutes after a new chain is
   // published, before the clock reaches its start): move into the newest run at its start
   useEffect(() => {
-    if (!live || !followLatest || !onPrevious) return
+    if (!live || !followLatest || shownId === null) return
     const timer = setInterval(() => {
       const target = liveTarget(viewRef.current?.data ?? data)
       if (target.inPrevious) return
-      setOnPrevious(false)
+      setShownId(null)
       setTime(target.seconds)
     }, 1000)
     return () => clearInterval(timer)
-  }, [live, followLatest, onPrevious, data])
+  }, [live, followLatest, shownId, data])
 
   if (error) {
     return (
@@ -157,16 +160,21 @@ function CurrentTraffic() {
 
   const { intersection, isSample, alerts } = data
   const liveInfo = data.live
-  // Live: the timeline covers the last 24 hours, the run before the newest one (previous)
-  // and the newest run. The scene, the KPIs and the clock show the run the selected bar is in.
+  // Live: the timeline covers the last 24 hours: the runs before the newest one (previous, and
+  // after restarts the earlier ones) and the newest run, with an empty "Not simulated" bar for
+  // each interval none of them covers. The scene, the KPIs and the clock show the run the
+  // selected bar is in.
   const previous = data.previous ?? null
-  const shown = onPrevious && previous ? previous : data
+  const shown = runById(data, shownId) ?? data
   const { run, hasKpis, isTest, intervals } = shown
   // Live: the timeline stops at the interval the live clock is in. A new interval is published a
   // few minutes before the clock reaches it (the page plays 20 minutes behind), and its bar appears
   // then, so the timeline, the scene, the clock and the KPIs always agree on what "now" is. The
   // interval on screen is always kept, e.g. when the loop is late and the clock waits at the end
-  const allBars = [...(previous?.timeline ?? []), ...data.timeline]
+  const allBars = withGaps(
+    [...olderRuns(data).flatMap((view) => view.timeline), ...data.timeline],
+    data.run?.intervalSeconds ?? 900,
+  )
   const timeline = (() => {
     if (!live || !liveInfo) return allBars
     const onScreen = intervalsStart(shown, time)
@@ -188,7 +196,9 @@ function CurrentTraffic() {
   // and takes up to about a minute, and the page looks every minute). It is worked out from
   // the clock, so reloading the page or opening it elsewhere shows the same moment. If the
   // simulation has not got there (the loop is late or stopped), it waits at its end.
-  const liveClock = following ? () => clockIn(shown === data ? null : previous, data) : null
+  const liveClock = following
+    ? () => clockIn(previous && shown === previous ? previous : null, data)
+    : null
   // the 15 minutes being played, and the time shown: the clock for live data (set from the clock
   // when the data arrives, so the page opens on the right moment before the scene has loaded),
   // the run's time for a simulated run
@@ -221,22 +231,22 @@ function CurrentTraffic() {
   )
 
   // A bar on the timeline: play from the start of its 15 minutes (null is the newest bar). A bar
-  // of the previous run switches the scene to that run; the newest bar follows the live clock.
+  // of an earlier run switches the scene to that run; the newest bar follows the live clock. A
+  // "Not simulated" bar is in no run: nothing happens.
   function selectBar(barTime) {
-    const inPrevious =
-      barTime !== null && previous ? previous.timeline.findIndex((b) => b.time === barTime) : -1
+    const owner =
+      barTime === null
+        ? data
+        : [...olderRuns(data), data].find((view) => view.timeline.some((b) => b.time === barTime))
+    if (!owner) return
     const target =
-      inPrevious >= 0
-        ? inPrevious
-        : barTime === null
-          ? data.intervals.length - 1
-          : data.timeline.findIndex((b) => b.time === barTime)
+      barTime === null
+        ? data.intervals.length - 1
+        : owner.timeline.findIndex((b) => b.time === barTime)
     if (target < 0) return
     const follow = barTime === null && live ? liveTarget(data) : null
-    const seconds = follow
-      ? follow.seconds
-      : target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
-    setOnPrevious(follow ? follow.inPrevious : inPrevious >= 0)
+    const seconds = follow ? follow.seconds : target * owner.run.intervalSeconds
+    setShownId(follow ? targetId(data, follow) : owner === data ? null : owner.run.id)
     setFollowLatest(barTime === null)
     setTime(seconds)
     setJumpTo({ time: seconds })
@@ -411,6 +421,22 @@ function clockIn(previous, page) {
     : (page.live.simulatedUntilSeconds ?? 0) - page.run.analysisStartSeconds
   const seconds = (liveMoment(page.live) - Date.parse(view.run.start)) / 1000
   return Math.max(0, Math.min(seconds, end))
+}
+
+// Live: the runs before the newest one, oldest first: the earlier ones (after restarts), then
+// the previous one
+function olderRuns(page) {
+  return [...(page?.earlier ?? []), ...(page?.previous ? [page.previous] : [])]
+}
+
+// Live: the earlier run with this run ID, or null (null is the newest run)
+function runById(page, id) {
+  return id === null ? null : (olderRuns(page).find((view) => view.run.id === id) ?? null)
+}
+
+// Live: the shownId for a liveTarget result: the previous run's ID, or null for the newest run
+function targetId(page, target) {
+  return target.inPrevious ? page.previous.run.id : null
 }
 
 // Live: the run the live clock is in, and where. It is the newest run, except in the minutes
