@@ -379,6 +379,42 @@ function CurrentTraffic() {
     scrubRef.current = false
   }
 
+  // Dragging the slider: go to the moment (ms) in whichever run has it, across intervals and runs.
+  // In a "Not simulated" gap, the run on the side the drag is heading to (direction 1 or -1):
+  // the next run's start, or the last second of the run before. Past "Now", follow live
+  function dragTo(ms, direction) {
+    const runs = [...olderRuns(data), data]
+    const spans = runs.map((view) => {
+      const begin = Date.parse(view.run.start)
+      return { view, begin, end: begin + view.intervals.length * view.run.intervalSeconds * 1000 }
+    })
+    const newest = spans[spans.length - 1]
+    if (live && liveInfo) {
+      const simulated = (liveInfo.simulatedUntilSeconds ?? 0) - newest.view.run.analysisStartSeconds
+      const reachableMs = Math.min(liveMoment(liveInfo), newest.begin + simulated * 1000)
+      if (ms >= reachableMs - 1000) {
+        selectBar(null)
+        return
+      }
+    }
+    let place = spans.find((span) => span.begin <= ms && ms < span.end)
+    let moment = ms
+    if (!place) {
+      if (direction > 0) {
+        place = spans.find((span) => span.begin > ms) ?? spans[0]
+        moment = place.begin
+      } else {
+        place = [...spans].reverse().find((span) => span.end <= ms) ?? spans[0]
+        moment = Math.min(Math.max(ms, place.begin), place.end - 1000)
+      }
+    }
+    const seconds = Math.floor((moment - place.begin) / 1000)
+    setShownId(place.view === data ? null : place.view.run.id)
+    setFollowLatest(false)
+    setTime(seconds)
+    setJumpTo({ time: seconds })
+  }
+
   // ‹ and › next to the slider's time: the interval before or after on the timeline that has a run
   // ("Not simulated" gaps are skipped); the newest one follows the live clock
   const barsWithRun = timeline.filter((bar) =>
@@ -466,6 +502,7 @@ function CurrentTraffic() {
         onLatest={() => selectBar(null)}
         onScrubStart={scrubStart}
         onScrubEnd={scrubEnd}
+        onDragTo={dragTo}
         onPrevious={barIndex > 0 ? stepTo(barsWithRun[barIndex - 1]) : null}
         onNext={barIndex >= 0 ? stepTo(barsWithRun[barIndex + 1]) : null}
         className={floating ? 'card-floating' : ''}

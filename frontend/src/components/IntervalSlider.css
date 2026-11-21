@@ -36,11 +36,15 @@
    reachable. */
 .interval-slider-plot {
   --knob: 16px;
+  cursor: pointer;
+  touch-action: none;
   position: relative;
   padding: 0 calc(var(--knob) / 2);
 }
 
+/* the bar (.interval-slider-plot) handles the pointer itself; the input keeps the keys */
 .interval-slider-input {
+  pointer-events: none;
   appearance: none;
   display: block;
   width: 100%;

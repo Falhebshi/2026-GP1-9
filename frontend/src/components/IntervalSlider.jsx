@@ -2,7 +2,7 @@ import Badge from './Badge'
 import Button from './Button'
 import Card from './Card'
 import PlayPauseIcon from './PlayPauseIcon'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { RIYADH_TIME_ZONE } from '../utils/riyadhTime'
 import './IntervalSlider.css'
 
@@ -25,13 +25,16 @@ import './IntervalSlider.css'
 //   onLatest       called by "Back to live", to follow the live clock again
 //   onPrevious     called by ‹ next to the time: the interval before (null: none, it is off)
 //   onNext         called by › next to the time: the interval after (null: none, it is off)
-//   onScrubStart   called when the knob is grabbed, and onScrubEnd when it is let go: the page
+//   onScrubStart   called when the bar is pressed, and onScrubEnd when it is let go: the page
 //                  holds the playback still meanwhile, so the scene follows the knob both ways
+//   onDragTo       called while dragging with the moment (ms) and the direction (1 or -1): the
+//                  page finds the interval it is in, before or after this one, across runs
 //   className      extra classes for the card, e.g. "card-floating" over the scene in full screen
 //
 // The slider moves in whole seconds. Keys: arrows 1 s, Shift + arrows 10 s, Page Up / Page Down
 // 1 minute, Home / End the start and the furthest reachable second; the keys go on into the
-// interval before or after. Dragging with Shift held moves 10 times slower, for exact seconds.
+// interval before or after. A drag moves the moment by how far the pointer moves, so it carries
+// on into the interval before or after at the same pace.
 function IntervalSlider({
   start,
   seconds,
@@ -48,10 +51,17 @@ function IntervalSlider({
   onNext,
   onScrubStart,
   onScrubEnd,
+  onDragTo,
   className = '',
 }) {
-  // a drag with Shift held moves 10 times slower than the pointer, for exact seconds
-  const fineRef = useRef(null)
+  // A drag moves the moment by how far the pointer moves (the bar's width is the interval's
+  // length), not to where the pointer is. So it carries on smoothly into the interval after or
+  // before, at the same pace, instead of skipping several when the pointer reaches an end
+  const dragRef = useRef(null)
+  const startRef = useRef(Date.parse(start))
+  useEffect(() => {
+    startRef.current = Date.parse(start)
+  }, [start])
   const startMs = Date.parse(start)
   const limit = Math.max(0, Math.min(length, Math.floor(reachable)))
   const value = Math.max(0, Math.min(limit, Math.floor(seconds)))
@@ -141,6 +151,37 @@ function IntervalSlider({
       <div
         className={`interval-slider-plot ${unfinished ? 'unfinished' : ''}`}
         style={{ '--reachable': `${(limit / length) * 100}%` }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return
+          const box = event.currentTarget.getBoundingClientRect()
+          const width = box.width || 1
+          // a press on the bar first puts the knob there, as usual
+          const at = Math.max(0, Math.min(limit, ((event.clientX - box.left) / width) * length))
+          event.currentTarget.setPointerCapture(event.pointerId)
+          event.currentTarget.querySelector('input')?.focus()
+          dragRef.current = { x: event.clientX, ms: startRef.current + at * 1000, width }
+          onScrubStart?.()
+          seek(at)
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current
+          if (!drag) return
+          const moved = event.clientX - drag.x
+          const ms = drag.ms + (moved / drag.width) * length * 1000
+          if (onDragTo) onDragTo(ms, moved >= (drag.moved ?? 0) ? 1 : -1)
+          else seek((ms - startRef.current) / 1000)
+          drag.moved = moved
+        }}
+        onPointerUp={() => {
+          if (!dragRef.current) return
+          dragRef.current = null
+          onScrubEnd?.()
+        }}
+        onPointerCancel={() => {
+          if (!dragRef.current) return
+          dragRef.current = null
+          onScrubEnd?.()
+        }}
       >
         <input
           type="range"
@@ -151,28 +192,8 @@ function IntervalSlider({
           value={value}
           aria-label="Moment shown"
           aria-valuetext={clock(startMs + value * 1000, true)}
-          onChange={(event) => {
-            if (!fineRef.current) seek(Number(event.target.value))
-          }}
+          onChange={(event) => seek(Number(event.target.value))}
           onKeyDown={onKeyDown}
-          onPointerDown={(event) => {
-            fineRef.current = event.shiftKey ? { x: event.clientX, value } : null
-            onScrubStart?.()
-            const end = () => {
-              fineRef.current = null
-              onScrubEnd?.()
-              window.removeEventListener('pointerup', end)
-              window.removeEventListener('pointercancel', end)
-            }
-            window.addEventListener('pointerup', end)
-            window.addEventListener('pointercancel', end)
-          }}
-          onPointerMove={(event) => {
-            const fine = fineRef.current
-            if (!fine || !event.buttons) return
-            const width = event.currentTarget.getBoundingClientRect().width || 1
-            seek(fine.value + ((event.clientX - fine.x) / width) * length * 0.1)
-          }}
         />
         {/* minute ticks, with a time under every 5 minutes */}
         <div className="interval-slider-axis" aria-hidden="true">
