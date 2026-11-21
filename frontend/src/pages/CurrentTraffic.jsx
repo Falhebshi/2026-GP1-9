@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AlertList from '../components/AlertList'
 import { ApproachDetails } from '../components/ApproachPanel'
 import Badge from '../components/Badge'
@@ -17,29 +17,49 @@ import { darkness } from '../utils/daylight'
 import './CurrentTraffic.css'
 
 // Current Traffic page: the KPIs, alerts and the selected approach on the left, the 3D
-// intersection and its timeline on the right. The page shows a simulated run (the only real data
-// in Sprint 1): the scene plays its analysis period at real speed and starts again at the end,
-// and tells the page its time, so the KPIs, the approaches and the timeline follow the 15
-// minutes being played. Clicking a bar jumps there. The time bar says "Simulated"; once live
-// data exists (source 'live') it shows the clock and "Live" instead. The scene can be shown full
-// screen; the selected approach then sits next to it.
+// intersection and its timeline on the right. The page shows the live run when the live update
+// loop has published one, and otherwise the committed sample run, labelled as a sample. The scene
+// plays the run's analysis period at real speed and tells the page its time, so the KPIs, the
+// approaches and the timeline follow the 15 minutes being played. Clicking a bar jumps there.
+// A live run is checked for a new interval every minute; while the newest bar is selected, the
+// page follows each new interval. Intervals without detector data (estimated traffic) show "No
+// detector data" instead of KPIs and cars, and the newest interval is marked as provisional. The
+// scene can be shown full screen; the selected approach then sits next to it.
 function CurrentTraffic() {
   const [data, setData] = useState(null) // the page data, once it arrives
   const [error, setError] = useState(null) // the error message, if loading failed
   const [simError, setSimError] = useState(null)
   const [openApproachId, setOpenApproachId] = useState(null)
-  const [now, setNow] = useState(() => Date.now())
   const { ref: sceneRef, fullScreen, toggle: toggleFullScreen } = useFullScreen()
   const [time, setTime] = useState(0) // seconds from the start of the run's analysis period
   const [jumpTo, setJumpTo] = useState(null)
+  // live: follow the live clock (liveClock below). A new interval builds the scene again, and
+  // the scene reports its time, so the KPIs follow within a second. Clicking an earlier bar
+  // stops following; clicking the newest bar follows again
+  const [followLatest, setFollowLatest] = useState(true)
+  // live: true while an interval of the run before the newest one (live/previous/) is shown
+  const [onPrevious, setOnPrevious] = useState(false)
+  const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
+  // what is shown now, for the minute check below (it runs outside a render)
+  const viewRef = useRef(null)
+  useEffect(() => {
+    viewRef.current = { data, onPrevious, time, followLatest }
+  })
 
-  // Load the data once, when the page opens
+  // Load the data when the page opens
   useEffect(() => {
     let cancelled = false // true if the user leaves before the data arrives
 
     getCurrentTraffic()
       .then((result) => {
-        if (!cancelled) setData(result)
+        if (cancelled) return
+        setData(result)
+        // a live run opens on the live clock's moment, before the scene has loaded
+        if (result.live && result.run?.status !== 'failed') {
+          const target = liveTarget(result)
+          setOnPrevious(target.inPrevious)
+          setTime(target.seconds)
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
@@ -50,13 +70,71 @@ function CurrentTraffic() {
     }
   }, [])
 
-  // Live data only: the clock, updated every 15 seconds so the minute is never late
+  // Live run only: look for a new interval or a change of the loop's state every minute
   const live = data?.source === 'live'
   useEffect(() => {
     if (!live) return
-    const timer = setInterval(() => setNow(Date.now()), 15000)
+    const timer = setInterval(() => {
+      getCurrentTraffic()
+        .then((result) => {
+          const view = viewRef.current ?? {}
+          const current = view.data
+          const changed =
+            result.live?.version !== current?.live?.version ||
+            result.live?.state !== current?.live?.state ||
+            result.live?.stale !== current?.live?.stale ||
+            result.source !== current?.source
+          if (!changed) return
+          setData(result)
+          // Following: the clock's moment may now be in the previous run (a new chain that
+          // starts after it, at 03:00), so pick the run in the same update
+          if (view.followLatest && result.live && result.run?.status !== 'failed') {
+            const target = liveTarget(result)
+            setOnPrevious(target.inPrevious)
+            if (target.inPrevious !== view.onPrevious) {
+              setTime(target.seconds)
+              setJumpTo({ time: target.seconds })
+            }
+            return
+          }
+          // Watching an earlier moment: stay on it. At 03:00 the newest run becomes the
+          // previous one, so the moment is looked up again in the new runs. Gone (older than
+          // 24 hours): follow the live clock again.
+          if (view.followLatest || !current?.run || !result.live) return
+          const shownRun = (view.onPrevious && current.previous) || current
+          const moment = Date.parse(shownRun.run.start) + view.time * 1000
+          const place = [result, result.previous].find((runView) =>
+            runView?.intervals?.some(
+              (item) =>
+                Date.parse(item.start) <= moment &&
+                moment < Date.parse(item.start) + runView.run.intervalSeconds * 1000,
+            ),
+          )
+          const seconds = place
+            ? (moment - Date.parse(place.run.start)) / 1000
+            : liveTarget(result).seconds
+          setOnPrevious(place ? place !== result : liveTarget(result).inPrevious)
+          setFollowLatest(!place)
+          setTime(seconds)
+          setJumpTo({ time: seconds })
+        })
+        .catch(() => {}) // keep showing what is there; the next minute tries again
+    }, POLL_MS)
     return () => clearInterval(timer)
   }, [live])
+
+  // Following while the clock is still in the previous run (the minutes after a new chain is
+  // published, before the clock reaches its start): move into the newest run at its start
+  useEffect(() => {
+    if (!live || !followLatest || !onPrevious) return
+    const timer = setInterval(() => {
+      const target = liveTarget(viewRef.current?.data ?? data)
+      if (target.inPrevious) return
+      setOnPrevious(false)
+      setTime(target.seconds)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [live, followLatest, onPrevious, data])
 
   if (error) {
     return (
@@ -70,7 +148,14 @@ function CurrentTraffic() {
     return <EmptyState>Loading current traffic…</EmptyState>
   }
 
-  const { intersection, run, hasKpis, isTest, intervals, timeline, alerts } = data
+  const { intersection, isSample, alerts } = data
+  const liveInfo = data.live
+  // Live: the timeline covers the last 24 hours, the run before the newest one (previous)
+  // and the newest run. The scene, the KPIs and the clock show the run the selected bar is in.
+  const previous = data.previous ?? null
+  const shown = onPrevious && previous ? previous : data
+  const { run, hasKpis, isTest, intervals } = shown
+  const timeline = [...(previous?.timeline ?? []), ...data.timeline]
   // Why there is nothing to play, if so: no run yet, or the run failed
   const runProblem = !run
     ? 'No simulated run is available yet.'
@@ -79,28 +164,65 @@ function CurrentTraffic() {
       : null
   // Why the KPI box is empty, if it is
   const kpiProblem = runProblem ?? (hasKpis ? null : 'KPIs are not available for this run yet.')
-  // the 15 minutes being played, and the time shown: the clock for live data, the run's time
-  // for a simulated run
+  const following = live && followLatest && !runProblem
+  // Live: where the scene is now, in seconds from the start of the analysis period. The scene
+  // plays the traffic at the time it happened in data time, LIVE_DELAY behind it: by then that
+  // moment is always simulated (an interval arrives after it ends, the loop stops 60 s early
+  // and takes up to about a minute, and the page looks every minute). It is worked out from
+  // the clock, so reloading the page or opening it elsewhere shows the same moment. If the
+  // simulation has not got there (the loop is late or stopped), it waits at its end.
+  const liveClock = following ? () => clockIn(shown === data ? null : previous, data) : null
+  // the 15 minutes being played, and the time shown: the clock for live data (set from the clock
+  // when the data arrives, so the page opens on the right moment before the scene has loaded),
+  // the run's time for a simulated run
+  const seconds = time
   const index = runProblem
     ? -1
-    : Math.min(intervals.length - 1, Math.floor(time / run.intervalSeconds))
+    : Math.min(intervals.length - 1, Math.floor(seconds / run.intervalSeconds))
   const interval = intervals[index]
   const kpis = interval?.kpis ?? []
   const approaches = interval?.approaches ?? []
-  const shownTime = live
-    ? new Date(now)
-    : new Date(Date.parse(run?.start ?? now) + (runProblem ? 0 : time * 1000))
+  // the run's own time (data time): a live run's traffic is the replay's, not today's clock
+  const shownTime = new Date(
+    (run ? Date.parse(run.start) : openedAt) + (runProblem ? 0 : seconds * 1000),
+  )
   const night = darkness(shownTime, intersection.center)
   const openApproach = approaches.find((a) => a.approach_id === openApproachId)
-  const kpiInterval = interval ? intervalLabel(interval) : null
+  const kpiInterval = interval
+    ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
+    : null
+  // Live: where the scene must not draw cars, in seconds from the run start
+  const hiddenRanges = intervals.flatMap((item, i) =>
+    item.noSensorData
+      ? [
+          [
+            run.analysisStartSeconds + i * run.intervalSeconds,
+            run.analysisStartSeconds + (i + 1) * run.intervalSeconds,
+          ],
+        ]
+      : [],
+  )
 
-  // A bar on the timeline: play from the start of its 15 minutes (null is the newest bar)
+  // A bar on the timeline: play from the start of its 15 minutes (null is the newest bar). A bar
+  // of the previous run switches the scene to that run; the newest bar follows the live clock.
   function selectBar(barTime) {
+    const inPrevious =
+      barTime !== null && previous ? previous.timeline.findIndex((b) => b.time === barTime) : -1
     const target =
-      barTime === null ? intervals.length - 1 : timeline.findIndex((b) => b.time === barTime)
+      inPrevious >= 0
+        ? inPrevious
+        : barTime === null
+          ? data.intervals.length - 1
+          : data.timeline.findIndex((b) => b.time === barTime)
     if (target < 0) return
-    setTime(target * run.intervalSeconds)
-    setJumpTo({ time: target * run.intervalSeconds })
+    const follow = barTime === null && live ? liveTarget(data) : null
+    const seconds = follow
+      ? follow.seconds
+      : target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
+    setOnPrevious(follow ? follow.inPrevious : inPrevious >= 0)
+    setFollowLatest(barTime === null)
+    setTime(seconds)
+    setJumpTo({ time: seconds })
   }
 
   const details = openApproach && (
@@ -112,7 +234,7 @@ function CurrentTraffic() {
   const timeBar = (
     <div className="current-traffic-time">
       <span className="current-traffic-time-value">{formatLabel(shownTime)}</span>
-      {live ? <Badge variant="success">Live</Badge> : <Badge variant="neutral">Simulated</Badge>}
+      {timeBadge({ live, liveInfo, following })}
       <Button size="sm" variant="secondary" onClick={toggleFullScreen}>
         {fullScreen ? 'Exit full screen' : 'Full screen'}
       </Button>
@@ -128,6 +250,38 @@ function CurrentTraffic() {
           baseline simulation. The alerts are samples.
         </Notice>
       )}
+      {isSample && (
+        <Notice variant="info">
+          Sample run: no live run has been published, so the page shows the committed sample of a
+          simulated run. Start the live update loop (simulation/scripts/run_live.py) to see live
+          traffic.
+        </Notice>
+      )}
+      {live && liveInfo.state === 'paused' && <Notice variant="warning">{liveInfo.message}</Notice>}
+      {live && liveInfo.state === 'waiting' && (
+        <Notice variant="warning">
+          {liveInfo.message} The results up to {formatTime(liveInfo.dataUntil)} (data time) are
+          shown.
+        </Notice>
+      )}
+      {live && liveInfo.state === 'starting' && (
+        <Notice variant="info">
+          {liveInfo.message} Until then, the previous run up to {formatTime(liveInfo.dataUntil)} is
+          shown.
+        </Notice>
+      )}
+      {live && liveInfo.state === 'stopped' && (
+        <Notice variant="warning">
+          Live updates have stopped. The results up to {formatTime(liveInfo.dataUntil)} are shown.
+        </Notice>
+      )}
+      {live && liveInfo.state !== 'stopped' && liveInfo.stale && (
+        <Notice variant="warning">
+          Live updates are not arriving: the live update loop last reported at{' '}
+          {formatTime(liveInfo.updatedAt)}. The results up to {formatTime(liveInfo.dataUntil)} (data
+          time) are shown.
+        </Notice>
+      )}
       {!fullScreen && timeBar}
 
       <div className="current-traffic-layout">
@@ -136,7 +290,14 @@ function CurrentTraffic() {
 
           <Card title="Current KPIs" action={kpiInterval}>
             {kpiProblem && <EmptyState>{kpiProblem}</EmptyState>}
+            {!kpiProblem && interval?.noSensorData && (
+              <EmptyState title="No detector data">
+                The detectors sent no data for these 15 minutes, so the traffic was estimated from
+                earlier days. Results from estimated traffic are not shown.
+              </EmptyState>
+            )}
             {!kpiProblem &&
+              !interval?.noSensorData &&
               (kpis.length ? (
                 <KpiSummary kpis={kpis} compared="the 15 minutes before" />
               ) : (
@@ -160,8 +321,20 @@ function CurrentTraffic() {
                 className="current-traffic-viewport"
                 overlay={<LocationSummary intersection={intersection} />}
                 error={runProblem ?? simError}
+                footer={
+                  interval?.noSensorData ? (
+                    <span className="current-traffic-no-data">
+                      No detector data for {intervalLabel(interval)}: the cars are not shown.
+                    </span>
+                  ) : null
+                }
               >
                 <TrafficScene3D
+                  scenario={shown.scenario}
+                  runVersion={liveInfo?.version}
+                  startAt={time}
+                  clock={liveClock}
+                  hiddenRanges={hiddenRanges}
                   intersectionId={intersection.id}
                   onTimeChange={setTime}
                   jumpTo={jumpTo}
@@ -183,12 +356,72 @@ function CurrentTraffic() {
             value={interval?.start ?? null}
             onChange={selectBar}
             live={live}
+            following={following}
             emptyMessage={runProblem}
           />
         </div>
       </div>
     </div>
   )
+}
+
+// How often a live run is checked for a new interval
+const POLL_MS = 60 * 1000
+// How far the live scene plays behind the data's own time (see liveClock)
+const LIVE_DELAY_MS = 20 * 60 * 1000
+
+// Live: the moment the live clock shows, in data time (ms). It plays the traffic LIVE_DELAY_MS
+// after it happened
+function liveMoment(liveInfo) {
+  return Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+}
+
+// Live: where the live clock is in one run, in seconds from the start of its analysis period:
+// the newest run (previous null), waiting at the end of what has been simulated, or the
+// previous run (previous given), up to its last interval
+function clockIn(previous, page) {
+  const view = previous ?? page
+  const end = previous
+    ? previous.intervals.length * previous.run.intervalSeconds
+    : (page.live.simulatedUntilSeconds ?? 0) - page.run.analysisStartSeconds
+  const seconds = (liveMoment(page.live) - Date.parse(view.run.start)) / 1000
+  return Math.max(0, Math.min(seconds, end))
+}
+
+// Live: the run the live clock is in, and where. It is the newest run, except in the minutes
+// after a new chain is published, when the clock has not reached its start yet (it plays
+// 20 minutes behind): then it is the previous run, which goes on to that start
+function liveTarget(page) {
+  const previous = page.previous
+  const inPrevious = Boolean(
+    previous?.intervals?.length && liveMoment(page.live) < Date.parse(page.run.start),
+  )
+  return { inPrevious, seconds: clockIn(inPrevious ? previous : null, page) }
+}
+const LIVE_TITLE =
+  'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
+  'takes for the detector data to arrive and be simulated. The time shown is the time of the traffic.'
+
+// The badge next to the time: what is on screen
+function timeBadge({ live, liveInfo, following }) {
+  if (!live) return <Badge variant="neutral">Simulated</Badge>
+  if (liveInfo.state === 'paused') return <Badge variant="warning">Paused</Badge>
+  if (liveInfo.state === 'starting') return <Badge variant="neutral">Starting</Badge>
+  if (liveInfo.state === 'stopped' || liveInfo.state === 'waiting' || liveInfo.stale)
+    return <Badge variant="warning">Not updating</Badge>
+  return following ? (
+    <span title={LIVE_TITLE}>
+      <Badge variant="success">Live</Badge>
+    </span>
+  ) : (
+    <Badge variant="neutral">Earlier</Badge>
+  )
+}
+
+// e.g. "21:30", or "unknown" without a time
+function formatTime(iso) {
+  if (!iso) return 'unknown'
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 // e.g. "Sat 10 Oct, 21:30"

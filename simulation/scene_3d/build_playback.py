@@ -409,6 +409,38 @@ def write_failed_playback(
     return output_dir
 
 
+def build_interval_payloads(
+    fcd_path: Path,
+    vehicle_movements: dict[str, str],
+    run_id: str,
+    run_start: datetime,
+    intervals: list[dict],
+    underpass: "UnderpassHeight",
+) -> dict[str, dict]:
+    """
+    The vehicle playback files of the given intervals, keyed by file
+    name, from one FCD file. The FCD may cover only part of the run, as
+    long as it covers the intervals (the live update loop builds only
+    its newest intervals, from the last 45 minutes; Issue #48 change 2).
+    underpass is passed in so a caller that builds files repeatedly
+    reads the network and the tunnel model once.
+    """
+
+    payloads = pack_vehicle_intervals(
+        states=read_vehicle_states(
+            fcd_path=fcd_path,
+            run_id=run_id,
+            run_start=run_start,
+            vehicle_movements=vehicle_movements,
+        ),
+        intervals=intervals,
+        height_of=underpass,
+        covered_of=underpass.covered,
+    )
+    underpass.refine_hidden_spans(payloads)
+    return payloads
+
+
 def build_playback(
     run_dir: Path,
     run_id: str,
@@ -444,19 +476,14 @@ def build_playback(
         clearance_s=clearance_s,
         is_test=is_test,
     )
-    underpass = UnderpassHeight()
-    vehicle_payloads = pack_vehicle_intervals(
-        states=read_vehicle_states(
-            fcd_path=files["fcd"],
-            run_id=run_id,
-            run_start=run_start,
-            vehicle_movements=vehicle_movements,
-        ),
+    vehicle_payloads = build_interval_payloads(
+        fcd_path=files["fcd"],
+        vehicle_movements=vehicle_movements,
+        run_id=run_id,
+        run_start=run_start,
         intervals=run_index["intervals"],
-        height_of=underpass,
-        covered_of=underpass.covered,
+        underpass=UnderpassHeight(),
     )
-    underpass.refine_hidden_spans(vehicle_payloads)
     signal_changes = read_signal_changes(
         tls_path=files["tls_states"],
         tls_id=config.intersection_mapping.sumo_tls_id,

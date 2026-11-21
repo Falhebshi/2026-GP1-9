@@ -20,6 +20,18 @@ INTERVAL = timedelta(minutes=15)
 # than a typical day. Longer runs stay missing.
 MAX_GAP_INTERVALS = 5
 
+# Longest run of missing intervals the live update loop estimates once
+# MAX_GAP_INTERVALS is passed, with the plain time-slot average (the hour
+# before the gap no longer helps after MAX_GAP_INTERVALS): no limit. Only
+# the live loop uses it (fallback_gap_intervals); every other run keeps
+# longer gaps missing. The live page shows such intervals as "No sensor
+# data", so the estimate is never shown as traffic: it only keeps the
+# simulation going through the outage, so the queues after it are right.
+# A chain restarted after the outage instead would start on empty roads,
+# and at a workday evening peak shows far less delay than the day had
+# (docs/live_update_loop.md, 2.5).
+LIVE_FALLBACK_GAP_INTERVALS = math.inf
+
 # Intervals before a gap used to measure how busy the day was.
 RECENT_LEVEL_INTERVALS = 4
 
@@ -247,6 +259,7 @@ def impute_count(
     history_index: dict[tuple, dict[datetime, int]],
     first_known: datetime,
     last_known: datetime,
+    fallback_gap_intervals: int | None = None,
 ) -> ImputedCount | None:
     """
     Estimate the count of a detector that did not report in an interval.
@@ -267,6 +280,12 @@ def impute_count(
     missing for more than MAX_GAP_INTERVALS, has no earlier data, or
     neither method has enough history.
 
+    fallback_gap_intervals (the live update loop) estimates longer gaps
+    too, up to that many intervals: from the neighbours when they
+    reported, otherwise with the plain average (historical_average),
+    since the hour before the gap no longer helps past
+    MAX_GAP_INTERVALS.
+
     last_known is kept for the callers' signature; the gap is counted
     back from interval_start.
     """
@@ -284,7 +303,12 @@ def impute_count(
         first_known=first_known,
     )
 
-    if run_length is None or run_length > MAX_GAP_INTERVALS:
+    if run_length is None:
+        return None
+
+    long_gap = run_length > MAX_GAP_INTERVALS
+
+    if long_gap and (fallback_gap_intervals is None or run_length > fallback_gap_intervals):
         return None
 
     estimates = []
@@ -317,7 +341,7 @@ def impute_count(
     if average is None:
         return None
 
-    ratio = recent_level(
+    ratio = None if long_gap else recent_level(
         target_counts,
         gap_start=interval_start - (run_length - 1) * INTERVAL,
     )
