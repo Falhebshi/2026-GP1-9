@@ -22,6 +22,7 @@ import './IntervalSlider.css'
 //   following      true while the page follows the live clock (the badge says Live)
 //   live           false for a simulated run: no Live / Historical badge and no Latest button
 //   onLatest       called by "Back to live", to follow the live clock again
+//   className      extra classes for the card, e.g. "card-floating" over the scene in full screen
 //
 // The slider moves in whole seconds. Keys: arrows 1 s, Shift + arrows 10 s, Page Up / Page Down
 // 1 minute, Home / End the start and the furthest reachable second.
@@ -37,6 +38,7 @@ function IntervalSlider({
   following = false,
   live = true,
   onLatest,
+  className = '',
 }) {
   const startMs = Date.parse(start)
   const limit = Math.max(0, Math.min(length, Math.floor(reachable)))
@@ -73,6 +75,7 @@ function IntervalSlider({
   return (
     <Card
       title="Traffic Timeline"
+      className={className}
       action={
         <Button size="sm" variant="secondary" onClick={onBack}>
           ← Back to 24 hours

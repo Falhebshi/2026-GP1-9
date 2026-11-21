@@ -45,6 +45,10 @@ function CurrentTraffic() {
   // PBI 15: the playback is paused, and the timeline shows one interval as a time slider
   const [paused, setPaused] = useState(false)
   const [zoomed, setZoomed] = useState(false)
+  // full screen: the timeline floats over the scene when opened, as on Network Traffic Overview;
+  // closed, so the scene gets the room
+  const [floatingOpen, setFloatingOpen] = useState(false)
+  const floatingRef = useRef(null)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
   // what is shown now, for the minute check below (it runs outside a render)
   const viewRef = useRef(null)
@@ -153,6 +157,33 @@ function CurrentTraffic() {
     }, 500)
     return () => clearInterval(timer)
   }, [live, followLatest])
+
+  // Full screen: the floating timeline sits at the bottom of the scene, and the approaches strip
+  // (drawn by the scene) moves up above it, with the timeline button above the strip. The heights
+  // they need are measured and given to the CSS as --ft-card-h and --ft-chips-h
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (!fullScreen) {
+      scene.style.removeProperty('--ft-card-h')
+      scene.style.removeProperty('--ft-chips-h')
+      return
+    }
+    const update = () => {
+      const card = floatingRef.current?.querySelector('.card')
+      const chips = scene.querySelector('.approach-chips')
+      scene.style.setProperty('--ft-card-h', card ? `${card.offsetHeight + 8}px` : '0px')
+      scene.style.setProperty('--ft-chips-h', `${chips?.offsetHeight ?? 0}px`)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    if (floatingRef.current) observer.observe(floatingRef.current)
+    const timer = setInterval(update, 1000) // the strip appears once the scene has loaded
+    return () => {
+      observer.disconnect()
+      clearInterval(timer)
+    }
+  }, [fullScreen, floatingOpen, sceneRef])
 
   // Following while the clock is still in the previous run (the minutes after a new chain is
   // published, before the clock reaches its start): move into the newest run at its start
@@ -342,8 +373,9 @@ function CurrentTraffic() {
   )
 
   // The timeline under the scene: the 24 hours, or one interval as a time slider (PBI 15). In
-  // full screen it is inside the scene, under it, so the engineer can still move through time
-  const timelineBlock =
+  // full screen it can be opened over the scene (floating), so the engineer can still move
+  // through time
+  const timelineBlock = (floating = false) =>
     zoomed && interval ? (
       <IntervalSlider
         start={interval.start}
@@ -357,6 +389,7 @@ function CurrentTraffic() {
         following={following}
         live={live}
         onLatest={() => selectBar(null)}
+        className={floating ? 'card-floating' : ''}
       />
     ) : (
       <HistoricalTimeline
@@ -367,6 +400,7 @@ function CurrentTraffic() {
         live={live}
         following={following}
         emptyMessage={runProblem}
+        className={floating ? 'card-floating' : ''}
       >
         {interval && (
           <>
@@ -493,10 +527,37 @@ function CurrentTraffic() {
               </SimulationViewport>
             </div>
 
-            {fullScreen && <div className="current-traffic-fullscreen-timeline">{timelineBlock}</div>}
+            {fullScreen && (
+              <div
+                ref={floatingRef}
+                className={`current-traffic-floating-timeline${details ? ' beside-side' : ''}`}
+              >
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="current-traffic-floating-toggle"
+                  aria-expanded={floatingOpen}
+                  onClick={() => setFloatingOpen((open) => !open)}
+                >
+                  <svg
+                    className={`current-traffic-chevron${floatingOpen ? ' open' : ''}`}
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                  {floatingOpen ? 'Hide timeline' : 'Traffic timeline'}
+                </Button>
+                {/* the room the approaches strip takes, between the button and the timeline */}
+                <div className="current-traffic-floating-gap" aria-hidden="true" />
+                {floatingOpen && timelineBlock(true)}
+              </div>
+            )}
           </div>
 
-          {!fullScreen && timelineBlock}
+          {!fullScreen && timelineBlock()}
         </div>
       </div>
     </div>
