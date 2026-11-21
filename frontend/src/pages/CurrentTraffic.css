@@ -90,6 +90,12 @@
   flex: 1;
 }
 
+/* full screen: the timeline or the interval's slider, under the scene */
+.current-traffic-fullscreen-timeline {
+  flex-shrink: 0;
+  margin-top: var(--space-md);
+}
+
 .current-traffic-fullscreen-side {
   width: 360px;
   flex-shrink: 0;

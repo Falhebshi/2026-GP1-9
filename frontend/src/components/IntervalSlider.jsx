@@ -1,6 +1,7 @@
 import Badge from './Badge'
 import Button from './Button'
 import Card from './Card'
+import PlayPauseIcon from './PlayPauseIcon'
 import { RIYADH_TIME_ZONE } from '../utils/riyadhTime'
 import './IntervalSlider.css'
 
@@ -85,11 +86,12 @@ function IntervalSlider({
           onClick={onTogglePlay}
           aria-label={paused ? 'Play' : 'Pause'}
         >
-          {paused ? '▶ Play' : '❚❚ Pause'}
+          <PlayPauseIcon paused={paused} />
+          {paused ? 'Play' : 'Pause'}
         </Button>
         <span className="interval-slider-time">{clock(startMs + value * 1000, true)}</span>
         <span className="interval-slider-range">
-          {clock(startMs, false)}–{unfinished ? 'now' : clock(startMs + length * 1000, false)}
+          {clock(startMs, false)}–{clock(startMs + length * 1000, false)}
         </span>
       </div>
 

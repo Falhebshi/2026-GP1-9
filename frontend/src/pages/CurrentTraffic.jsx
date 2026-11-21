@@ -10,6 +10,7 @@ import IntervalSlider from '../components/IntervalSlider'
 import KpiSummary from '../components/KpiSummary'
 import LocationSummary from '../components/LocationSummary'
 import Notice from '../components/Notice'
+import PlayPauseIcon from '../components/PlayPauseIcon'
 import SimulationViewport from '../components/SimulationViewport'
 import TrafficScene3D from '../components/TrafficScene3D'
 import useFullScreen from '../hooks/useFullScreen'
@@ -77,11 +78,12 @@ function CurrentTraffic() {
 
   // Live run only: look for a new interval or a change of the loop's state every minute
   const live = data?.source === 'live'
-  // Live: the real time, read every few seconds, for which timeline bars the live clock has reached
+  // Live: the real time, read every second, for which timeline bars the live clock has reached
+  // and how far the slider can go (the live moment moves on every second)
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
     if (!live) return
-    const timer = setInterval(() => setNowMs(Date.now()), 5000)
+    const timer = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [live])
   useEffect(() => {
@@ -339,6 +341,47 @@ function CurrentTraffic() {
     </div>
   )
 
+  // The timeline under the scene: the 24 hours, or one interval as a time slider (PBI 15). In
+  // full screen it is inside the scene, under it, so the engineer can still move through time
+  const timelineBlock =
+    zoomed && interval ? (
+      <IntervalSlider
+        start={interval.start}
+        length={intervalSeconds}
+        seconds={time - intervalOffset}
+        reachable={reachable}
+        onSeek={seek}
+        paused={paused}
+        onTogglePlay={togglePlay}
+        onBack={() => setZoomed(false)}
+        following={following}
+        live={live}
+        onLatest={() => selectBar(null)}
+      />
+    ) : (
+      <HistoricalTimeline
+        title="Traffic Timeline"
+        bars={timeline}
+        value={interval?.start ?? null}
+        onChange={selectBar}
+        live={live}
+        following={following}
+        emptyMessage={runProblem}
+      >
+        {interval && (
+          <>
+            <Button size="sm" variant="secondary" onClick={togglePlay}>
+              <PlayPauseIcon paused={paused} />
+              {paused ? 'Play' : 'Pause'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setZoomed(true)}>
+              Zoom into {intervalLabel(interval)} ›
+            </Button>
+          </>
+        )}
+      </HistoricalTimeline>
+    )
+
   return (
     <div className="current-traffic">
       {/* Test files are marked "is_test"; a real run has no mark, so this goes away by itself */}
@@ -449,44 +492,11 @@ function CurrentTraffic() {
                 />
               </SimulationViewport>
             </div>
+
+            {fullScreen && <div className="current-traffic-fullscreen-timeline">{timelineBlock}</div>}
           </div>
 
-          {zoomed && interval ? (
-            <IntervalSlider
-              start={interval.start}
-              length={intervalSeconds}
-              seconds={time - intervalOffset}
-              reachable={reachable}
-              onSeek={seek}
-              paused={paused}
-              onTogglePlay={togglePlay}
-              onBack={() => setZoomed(false)}
-              following={following}
-              live={live}
-              onLatest={() => selectBar(null)}
-            />
-          ) : (
-            <HistoricalTimeline
-              title="Traffic Timeline"
-              bars={timeline}
-              value={interval?.start ?? null}
-              onChange={selectBar}
-              live={live}
-              following={following}
-              emptyMessage={runProblem}
-            >
-              {interval && (
-                <>
-                  <Button size="sm" variant="secondary" onClick={togglePlay}>
-                    {paused ? '▶ Play' : '❚❚ Pause'}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setZoomed(true)}>
-                    Zoom into {intervalLabel(interval)} ›
-                  </Button>
-                </>
-              )}
-            </HistoricalTimeline>
-          )}
+          {!fullScreen && timelineBlock}
         </div>
       </div>
     </div>
