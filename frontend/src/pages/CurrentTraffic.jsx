@@ -72,6 +72,13 @@ function CurrentTraffic() {
 
   // Live run only: look for a new interval or a change of the loop's state every minute
   const live = data?.source === 'live'
+  // Live: the real time, read every few seconds, for which timeline bars the live clock has reached
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (!live) return
+    const timer = setInterval(() => setNowMs(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [live])
   useEffect(() => {
     if (!live) return
     const timer = setInterval(() => {
@@ -155,7 +162,17 @@ function CurrentTraffic() {
   const previous = data.previous ?? null
   const shown = onPrevious && previous ? previous : data
   const { run, hasKpis, isTest, intervals } = shown
-  const timeline = [...(previous?.timeline ?? []), ...data.timeline]
+  // Live: the timeline stops at the interval the live clock is in. A new interval is published a
+  // few minutes before the clock reaches it (the page plays 20 minutes behind), and its bar appears
+  // then, so the timeline, the scene, the clock and the KPIs always agree on what "now" is. The
+  // interval on screen is always kept, e.g. when the loop is late and the clock waits at the end
+  const allBars = [...(previous?.timeline ?? []), ...data.timeline]
+  const timeline = (() => {
+    if (!live || !liveInfo) return allBars
+    const onScreen = intervalsStart(shown, time)
+    const reached = Math.max(liveMoment(liveInfo, nowMs), onScreen ?? -Infinity)
+    return allBars.filter((bar) => Date.parse(bar.time) <= reached)
+  })()
   // Why there is nothing to play, if so: no run yet, or the run failed
   const runProblem = !run
     ? 'No simulated run is available yet.'
@@ -372,8 +389,16 @@ const LIVE_DELAY_MS = 20 * 60 * 1000
 
 // Live: the moment the live clock shows, in data time (ms). It plays the traffic LIVE_DELAY_MS
 // after it happened
-function liveMoment(liveInfo) {
-  return Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+function liveMoment(liveInfo, now = Date.now()) {
+  return now - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+}
+
+// The start (ms) of the interval a run view plays at the given seconds, or null without one
+function intervalsStart(view, seconds) {
+  const intervals = view?.intervals ?? []
+  if (!intervals.length || !view.run?.intervalSeconds) return null
+  const index = Math.min(intervals.length - 1, Math.floor(seconds / view.run.intervalSeconds))
+  return Date.parse(intervals[Math.max(0, index)].start)
 }
 
 // Live: where the live clock is in one run, in seconds from the start of its analysis period:
