@@ -2,6 +2,7 @@ import Badge from './Badge'
 import Button from './Button'
 import Card from './Card'
 import PlayPauseIcon from './PlayPauseIcon'
+import { useRef } from 'react'
 import { RIYADH_TIME_ZONE } from '../utils/riyadhTime'
 import './IntervalSlider.css'
 
@@ -22,13 +23,15 @@ import './IntervalSlider.css'
 //   following      true while the page follows the live clock (the badge says Live)
 //   live           false for a simulated run: no Live / Historical badge and no Latest button
 //   onLatest       called by "Back to live", to follow the live clock again
-//   onPrevious     called by "‹ Previous": the interval before (null: none, the button is off)
-//   onNext         called by "Next ›": the interval after (null: none, the button is off)
+//   onPrevious     called by ‹ next to the time: the interval before (null: none, it is off)
+//   onNext         called by › next to the time: the interval after (null: none, it is off)
+//   onScrubStart   called when the knob is grabbed, and onScrubEnd when it is let go: the page
+//                  holds the playback still meanwhile, so the scene follows the knob both ways
 //   className      extra classes for the card, e.g. "card-floating" over the scene in full screen
 //
 // The slider moves in whole seconds. Keys: arrows 1 s, Shift + arrows 10 s, Page Up / Page Down
 // 1 minute, Home / End the start and the furthest reachable second; the keys go on into the
-// interval before or after.
+// interval before or after. Dragging with Shift held moves 10 times slower, for exact seconds.
 function IntervalSlider({
   start,
   seconds,
@@ -43,8 +46,12 @@ function IntervalSlider({
   onLatest,
   onPrevious,
   onNext,
+  onScrubStart,
+  onScrubEnd,
   className = '',
 }) {
+  // a drag with Shift held moves 10 times slower than the pointer, for exact seconds
+  const fineRef = useRef(null)
   const startMs = Date.parse(start)
   const limit = Math.max(0, Math.min(length, Math.floor(reachable)))
   const value = Math.max(0, Math.min(limit, Math.floor(seconds)))
@@ -103,17 +110,31 @@ function IntervalSlider({
           <PlayPauseIcon paused={paused} />
           {paused ? 'Play' : 'Pause'}
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="interval-slider-step"
+          onClick={onPrevious}
+          disabled={!onPrevious}
+          aria-label="Previous interval"
+          title="Previous interval"
+        >
+          ‹
+        </Button>
         <span className="interval-slider-time">{clock(startMs + value * 1000, true)}</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="interval-slider-step"
+          onClick={onNext}
+          disabled={!onNext}
+          aria-label="Next interval"
+          title="Next interval"
+        >
+          ›
+        </Button>
         <span className="interval-slider-range">
           {clock(startMs, false)}–{clock(startMs + length * 1000, false)}
-        </span>
-        <span className="interval-slider-steps">
-          <Button size="sm" variant="secondary" onClick={onPrevious} disabled={!onPrevious}>
-            ‹ Previous
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onNext} disabled={!onNext}>
-            Next ›
-          </Button>
         </span>
       </div>
 
@@ -130,8 +151,28 @@ function IntervalSlider({
           value={value}
           aria-label="Moment shown"
           aria-valuetext={clock(startMs + value * 1000, true)}
-          onChange={(event) => seek(Number(event.target.value))}
+          onChange={(event) => {
+            if (!fineRef.current) seek(Number(event.target.value))
+          }}
           onKeyDown={onKeyDown}
+          onPointerDown={(event) => {
+            fineRef.current = event.shiftKey ? { x: event.clientX, value } : null
+            onScrubStart?.()
+            const end = () => {
+              fineRef.current = null
+              onScrubEnd?.()
+              window.removeEventListener('pointerup', end)
+              window.removeEventListener('pointercancel', end)
+            }
+            window.addEventListener('pointerup', end)
+            window.addEventListener('pointercancel', end)
+          }}
+          onPointerMove={(event) => {
+            const fine = fineRef.current
+            if (!fine || !event.buttons) return
+            const width = event.currentTarget.getBoundingClientRect().width || 1
+            seek(fine.value + ((event.clientX - fine.x) / width) * length * 0.1)
+          }}
         />
         {/* minute ticks, with a time under every 5 minutes */}
         <div className="interval-slider-axis" aria-hidden="true">

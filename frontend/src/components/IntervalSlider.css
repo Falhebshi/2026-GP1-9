@@ -16,11 +16,13 @@
   color: var(--color-text);
 }
 
-/* "‹ Previous" and "Next ›", at the end of the row */
-.interval-slider-steps {
-  display: inline-flex;
-  gap: var(--space-xs);
-  margin-left: auto;
+/* ‹ and › on either side of the time: the interval before and after */
+.interval-slider-step {
+  min-width: 28px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--text-lg);
+  line-height: 1;
 }
 
 .interval-slider-range {

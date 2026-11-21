@@ -49,6 +49,8 @@ function CurrentTraffic() {
   // closed, so the scene gets the room
   const [floatingOpen, setFloatingOpen] = useState(false)
   const floatingRef = useRef(null)
+  // while the slider's knob is dragged: whether the playback was playing before (scrubStart)
+  const scrubRef = useRef(false)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
   // what is shown now, for the minute check below (it runs outside a render)
   const viewRef = useRef(null)
@@ -366,7 +368,18 @@ function CurrentTraffic() {
     return true
   }
 
-  // "‹ Previous" and "Next ›": the interval before or after on the timeline that has a run
+  // While the knob is dragged, the playback holds still, so the scene shows the moment under the
+  // knob, going backward as well as forward; it plays on when let go if it was playing
+  function scrubStart() {
+    scrubRef.current = !paused
+    if (!paused) setPaused(true)
+  }
+  function scrubEnd() {
+    if (scrubRef.current) setPaused(false)
+    scrubRef.current = false
+  }
+
+  // ‹ and › next to the slider's time: the interval before or after on the timeline that has a run
   // ("Not simulated" gaps are skipped); the newest one follows the live clock
   const barsWithRun = timeline.filter((bar) =>
     [...olderRuns(data), data].some((view) => view.timeline.some((b) => b.time === bar.time)),
@@ -451,6 +464,8 @@ function CurrentTraffic() {
         following={following}
         live={live}
         onLatest={() => selectBar(null)}
+        onScrubStart={scrubStart}
+        onScrubEnd={scrubEnd}
         onPrevious={barIndex > 0 ? stepTo(barsWithRun[barIndex - 1]) : null}
         onNext={barIndex >= 0 ? stepTo(barsWithRun[barIndex + 1]) : null}
         className={floating ? 'card-floating' : ''}
