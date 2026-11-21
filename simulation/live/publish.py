@@ -341,6 +341,8 @@ class LivePublisher:
             elif path.suffix in (".json", ".tmp"):
                 path.unlink()
         if current is not None:
+            # the moved run gets no more intervals: it is finished, whatever the loop was doing
+            current["status"] = SimulationRunStatus.COMPLETED.value
             write_json_atomic(previous / RUN_FILE, current, compact=False)
 
     def trim_previous(self, newest_end: datetime) -> None:

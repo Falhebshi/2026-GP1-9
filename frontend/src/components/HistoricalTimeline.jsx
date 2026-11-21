@@ -24,6 +24,9 @@ import './HistoricalTimeline.css'
 //   title            heading of the card
 //   error            text shown instead of the bars when the data failed to load
 //   emptyMessage     what to say when there are no bars (optional)
+//   following        true while the page follows the live time although the selected bar is
+//                    not the newest (a live scene plays a little behind the newest bar): the
+//                    badge still says Live and the Latest button stays hidden (optional)
 //   live             false for a simulated run: the bars are not "the last 24 hours", so the
 //                    Live / Historical badge and the Latest button are left out (true unless
 //                    you say otherwise)
@@ -50,6 +53,7 @@ function HistoricalTimeline({
   title = 'Historical Timeline',
   error,
   live = true,
+  following = false,
   emptyMessage = 'No traffic data is available for the last 24 hours.',
   className = '',
   children,
@@ -64,7 +68,7 @@ function HistoricalTimeline({
 
   const selectedIndex = findSelectedIndex(points, value)
   const selected = points[selectedIndex]
-  const isLatest = selectedIndex === lastIndex
+  const isLatest = selectedIndex === lastIndex || following
   const hovered = hoverIndex === null ? null : points[hoverIndex]
 
   function select(index) {

@@ -264,6 +264,9 @@ function TrafficScene3D({
   // what the scene shows now, to tell when runVersion or scenario asks for another run
   const shownRunRef = useRef(null) // { scenario, runVersion, run }
   const swapRef = useRef(0) // the newest run swap; an older one that finishes later is dropped
+  // true while another run (scenario) is loading: the scene holds still, so it does not loop the
+  // old run back to its start and report that time to the page
+  const holdRef = useRef(false)
   const startAtRef = useRef(startAt)
   startAtRef.current = startAt
   // the run asked for now; read through a ref, as swapRun also runs from the first load's callback
@@ -499,6 +502,10 @@ function TrafficScene3D({
             // the run can be swapped while it plays (runVersion), so its period is read each frame
             const start = startRef.current,
               end = endRef.current
+            if (holdRef.current) {
+              raf = requestAnimationFrame(tick)
+              return
+            }
             let nt = tRef.current + dt
             if (clockRef.current) nt = Math.min(start + clockRef.current(), end)
             else if (nt > end) nt = start
@@ -551,6 +558,9 @@ function TrafficScene3D({
     if (shown.scenario === scenario && shown.runVersion === want.runVersion) return
     const swap = ++swapRef.current
     const current = () => swap === swapRef.current && sceneRef.current
+    // the moment the page asks for, taken now, before the old run plays on
+    const asked = startAtRef.current ?? 0
+    holdRef.current = shown.scenario !== scenario
 
     getRun(intersectionId, scenario)
       .then(async ({ run, signals }) => {
@@ -571,12 +581,14 @@ function TrafficScene3D({
               reuse,
             )
           : null
-        // where to be after the swap: the live clock, else the same moment of a new version, else
-        // where the page asks (startAt, e.g. a bar clicked in another run)
+        // where to be after the swap: the live clock; else, in a new version of the same run, the
+        // same moment; else where the page asks (startAt: a bar of another run, or the moment
+        // the page looked up again after the run changed at 03:00)
         const offset = clockRef.current
           ? clockRef.current()
-          : ((shown.scenario === scenario ? tRef.current - startRef.current : startAtRef.current) ??
-            0)
+          : sameRun
+            ? tRef.current - startRef.current
+            : asked
         const t = Math.min(from + offset, to)
         await veh?.ready(t)
         if (!current()) return
@@ -589,12 +601,15 @@ function TrafficScene3D({
         endRef.current = to
         tRef.current = t
         shownRunRef.current = { ...want, run }
+        holdRef.current = false
         lastSigRef.current = null
         callbacksRef.current.onTimeChange?.(Math.floor(t - from))
         showSelection()
       })
       // on failure it keeps showing the run it has; the next version tries again
-      .catch(() => {})
+      .catch(() => {
+        if (current()) holdRef.current = false
+      })
   }
 
   // Follow the time from the page, e.g. usePlayback

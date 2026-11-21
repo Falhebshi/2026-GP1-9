@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AlertList from '../components/AlertList'
 import { ApproachDetails } from '../components/ApproachPanel'
 import Badge from '../components/Badge'
@@ -40,6 +40,11 @@ function CurrentTraffic() {
   // live: true while an interval of the run before the newest one (live/previous/) is shown
   const [onPrevious, setOnPrevious] = useState(false)
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
+  // what is shown now, for the minute check below (it runs outside a render)
+  const viewRef = useRef(null)
+  useEffect(() => {
+    viewRef.current = { data, onPrevious, time, followLatest }
+  })
 
   // Load the data when the page opens
   useEffect(() => {
@@ -69,14 +74,35 @@ function CurrentTraffic() {
     const timer = setInterval(() => {
       getCurrentTraffic()
         .then((result) => {
-          setData((current) =>
+          const view = viewRef.current ?? {}
+          const current = view.data
+          const changed =
             result.live?.version !== current?.live?.version ||
             result.live?.state !== current?.live?.state ||
             result.live?.stale !== current?.live?.stale ||
             result.source !== current?.source
-              ? result
-              : current,
+          if (!changed) return
+          setData(result)
+          // Watching an earlier moment: stay on it. At 03:00 the newest run becomes the
+          // previous one, so the moment is looked up again in the new runs. Gone (older than
+          // 24 hours): follow the live clock again.
+          if (view.followLatest || !current?.run || !result.live) return
+          const shownRun = (view.onPrevious && current.previous) || current
+          const moment = Date.parse(shownRun.run.start) + view.time * 1000
+          const place = [result, result.previous].find((runView) =>
+            runView?.intervals?.some(
+              (item) =>
+                Date.parse(item.start) <= moment &&
+                moment < Date.parse(item.start) + runView.run.intervalSeconds * 1000,
+            ),
           )
+          const seconds = place
+            ? (moment - Date.parse(place.run.start)) / 1000
+            : liveSeconds(result.live, result.run)
+          setOnPrevious(Boolean(place) && place !== result)
+          setFollowLatest(!place)
+          setTime(seconds)
+          setJumpTo({ time: seconds })
         })
         .catch(() => {}) // keep showing what is there; the next minute tries again
     }, POLL_MS)
@@ -303,6 +329,7 @@ function CurrentTraffic() {
             value={interval?.start ?? null}
             onChange={selectBar}
             live={live}
+            following={following}
             emptyMessage={runProblem}
           />
         </div>

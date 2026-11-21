@@ -378,7 +378,7 @@ def write_published(folder, run_id, run_start, analysis_start_s, analysis_end_s)
     for item in intervals:
         (folder / item["file"]).write_text("{}", encoding="utf-8")
     (folder / "kpis.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
-    run = {"run_id": run_id, "run_start": run_start.isoformat(), "analysis_start_s": analysis_start_s,
+    run = {"run_id": run_id, "status": "running", "run_start": run_start.isoformat(), "analysis_start_s": analysis_start_s,
            "analysis_end_s": analysis_end_s, "interval_s": 900, "intervals": intervals}
     (folder / "run.json").write_text(json.dumps(run), encoding="utf-8")
 
@@ -394,6 +394,7 @@ def test_a_new_run_moves_the_published_one_to_previous(source, tmp_path):
     assert not list(live.glob("*.json"))
     previous = json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))
     assert previous["run_id"] == "RUN_LIVE_20260805T0245_S42"  # the older one is gone
+    assert previous["status"] == "completed"
     assert {p.name for p in (live / "previous").iterdir()} == {
         "run.json", "kpis.json", "vehicles_0.json", "vehicles_1.json", "vehicles_2.json", "vehicles_3.json",
     }
