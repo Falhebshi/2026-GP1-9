@@ -12,3 +12,4 @@ httpx2==2.13.1
 shapely==2.1.2
 pyproj==3.7.1
 argon2-cffi==25.1.0
+matplotlib==3.11.2

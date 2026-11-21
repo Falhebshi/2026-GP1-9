@@ -818,7 +818,7 @@ function ComponentPreview() {
           <Breadcrumbs items={[{ label: 'Alerts', to: '/alerts' }, { label: 'Queue spillback' }]} />
           <PageHeader
             title="Queue spillback on the north approach"
-            subtitle="Prince Turki Al-Awwal Rd × Imam Saud Rd"
+            subtitle="Prince Turki Al-Awwal Road × Imam Saud Road"
             actions={<Button variant="secondary">View interventions (4)</Button>}
           />
         </div>

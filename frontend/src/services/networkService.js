@@ -15,6 +15,7 @@
 
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 import { drawnSpeeds, segmentEnds } from './segmentNeighbours'
+import { roadName } from '../utils/roadName'
 
 // Road segment congestion comes from the network map server (jaadah/network_congestion/server.py),
 // through the Vite proxy at /api/network (vite.config.js). It works the speeds out from the RCRC
@@ -148,7 +149,7 @@ export async function getSegments(time = null) {
         geometry: feature.geometry,
         properties: {
           id: p.id,
-          name: p.name_en ?? p.name_ar,
+          name: roadName(p.name_en) ?? p.name_ar,
           road_class: p.road_class,
           lanes: p.lanes,
           source: p.source,
@@ -187,19 +188,19 @@ const CITY_BOUNDS = [
 const OTHER_INTERSECTIONS = [
   {
     id: 'imamsaud_takhassusi',
-    name: 'Imam Saud Rd × Takhassusi Rd',
+    name: 'Imam Saud Road × Takhassusi Road',
     area: 'Al Nakheel',
     center: [46.64549, 24.74039],
   },
   {
     id: 'kingabdullah_kingfahd',
-    name: 'King Abdullah Rd × King Fahd Rd',
+    name: 'King Abdullah Road × King Fahd Road',
     area: 'Ar Rahmaniyyah',
     center: [46.66386, 24.7276],
   },
   {
     id: 'turki_urubah',
-    name: 'Prince Turki Al-Awwal Rd × Al Urubah Rd',
+    name: 'Prince Turki Al-Awwal Road × Al Urubah Road',
     area: 'Umm Al Hamam Al Gharbi',
     center: [46.65406, 24.70431],
   },

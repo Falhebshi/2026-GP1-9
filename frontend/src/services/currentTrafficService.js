@@ -33,13 +33,14 @@
 // section 6). Pages show them with src/utils/kpi.js. This file never calculates a KPI.
 
 import { notApplicableResult, sampleResult } from './sampleKpiResults'
+import { roadName } from '../utils/roadName'
 
 // The study intersection. Its name, area and centre come from its record in
 // public/data/intersections.json, a copy of data/processed/intersections.json.
 const INTERSECTION_ID = 'INT_001'
 
 // Half the width of the square that is shown around the centre, in metres. 350 m is just inside
-// the shortest main road in the network (Turki Rd going north-west ends at about 359 m), so every
+// the shortest main road in the network (Turki Road going north-west ends at about 359 m), so every
 // main road reaches the edge and they are all cut at the same line.
 const HALF_SIZE_M = 350
 const M_PER_DEG_LAT = 110540
@@ -168,20 +169,20 @@ export function sampleApproaches(interval) {
 
   // East and West: lane 2 is shared by left and through, so both movements show its queue
   return [
-    approach('APP_E', 'East', 'Imam Saud Rd', [52, 'D', 0.94, 1710, M, 142, 38, 0.81, 1540], [
+    approach('APP_E', 'East', 'Imam Saud Road', [52, 'D', 0.94, 1710, M, 142, 38, 0.81, 1540], [
       ['MOV_E_W', 'Through', [44, 'D', 0.88, 1180, 1820, 142, 31, 0.81, 1040], 'LANE_E_2'],
       ['MOV_E_S', 'Left', [71, 'E', 0.94, 530, 1760, 142, 52, 0.81, 500], 'LANE_E_2'],
     ]),
-    approach('APP_W', 'West', 'Imam Saud Rd', [41, 'D', 0.83, 1420, M, 109, 29, 0.66, 1290], [
+    approach('APP_W', 'West', 'Imam Saud Road', [41, 'D', 0.83, 1420, M, 109, 29, 0.66, 1290], [
       ['MOV_W_E', 'Through', [36, 'D', 0.79, 960, 1800, 109, 26, 0.66, 760], 'LANE_W_2'],
       ['MOV_W_N', 'Left', [53, 'D', 0.83, 460, 1750, 109, 35, 0.66, 380], 'LANE_W_2'],
       ['MOV_W_S_SLIP', 'Right (slip lane)', [7, SLIP, SLIP, SLIP, SLIP, 15, 4, 0.25, 150]],
     ]),
-    approach('APP_S', 'South', 'Prince Turki Rd, service road', [33, 'C', 0.71, 1020, M, 74, 22, 0.52, 720], [
+    approach('APP_S', 'South', 'Prince Turki Road, service road', [33, 'C', 0.71, 1020, M, 74, 22, 0.52, 720], [
       ['MOV_S_W', 'Left', [33, 'C', 0.71, 1020, 1790, 74, 22, 0.52, 640]],
       ['MOV_S_E_BYPASS', 'Right (slip lane)', [6, SLIP, SLIP, SLIP, SLIP, 12, 3, 0.2, 80]],
     ]),
-    approach('APP_N', 'North', 'Prince Turki Rd, service road', [58, 'F', 1.04, 760, M, 168, 61, 1.12, 790], [
+    approach('APP_N', 'North', 'Prince Turki Road, service road', [58, 'F', 1.04, 760, M, 168, 61, 1.12, 790], [
       ['MOV_N_E', 'Left', [64, 'F', 1.04, 760, 1740, 168, 61, 1.12, 700]],
       ['MOV_N_W_SLIP', 'Right (slip lane)', [8, SLIP, SLIP, SLIP, SLIP, 18, 5, 0.3, 90]],
     ]),
@@ -202,7 +203,7 @@ export async function getIntersection() {
     id: record.intersection_id,
     center,
     bounds: squareAround(center),
-    name: record.name_en,
+    name: roadName(record.name_en),
     area: record.area_label,
     approaches: 4,
     signalType: 'Fixed-time, 120 s cycle', // same signal program as in SUMO
@@ -322,7 +323,7 @@ function groupByInterval(run, results, approaches) {
       approaches: approaches.map((a) => ({
         approach_id: a.approach_id,
         arm: a.side[0].toUpperCase() + a.side.slice(1),
-        road: a.road,
+        road: roadName(a.road),
         kpis: of('approach', a.approach_id, start),
         movements: a.movements.map((m) => ({
           movement_id: m.movement_id,

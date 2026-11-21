@@ -84,6 +84,8 @@
 //                   throughput }, each a KpiResult.
 // ---------------------------------------------------------------------------
 
+import { roadName } from '../utils/roadName'
+
 const INTERSECTION_ID = 'INT_001'
 const DATA_FOLDER = '/data'
 const WHOLE_DAY = 'whole-day'
@@ -214,7 +216,7 @@ async function loadIntersection(file) {
   const found = list.find((i) => i.intersection_id === INTERSECTION_ID)
 
   return {
-    name: found?.name_en,
+    name: roadName(found?.name_en),
     area: found?.area_label,
     approaches: file.approaches.length,
     signalType: SIGNAL_TYPE,
