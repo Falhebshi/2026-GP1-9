@@ -290,8 +290,15 @@ function CurrentTraffic() {
     return Math.max(0, Math.min(clockSeconds, simulated) - intervalOffset)
   })()
 
-  // Go to a second of the interval on screen; this stops following the live clock
+  // Go to a second of the interval on screen; this stops following the live clock, except at
+  // "Now" (the end of an interval still happening): that is the live moment, so it follows
+  // again, as Latest does
   function seek(secondsInInterval) {
+    const atNow = live && reachable < intervalSeconds && secondsInInterval >= Math.floor(reachable) - 1
+    if (atNow) {
+      selectBar(null)
+      return
+    }
     const seconds = intervalOffset + secondsInInterval
     setFollowLatest(false)
     setTime(seconds)
