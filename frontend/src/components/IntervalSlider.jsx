@@ -12,7 +12,8 @@ import './IntervalSlider.css'
 //   length         the interval's length in seconds (900 unless you say otherwise)
 //   reachable      how far into the interval can be shown, in seconds: the slider stops there
 //                  (the live clock, or the end of what has been simulated). The whole interval
-//                  unless you say otherwise
+//                  unless you say otherwise. Short of the end (an interval still happening),
+//                  the track stops there, marked "Now"; the rest of the scale is faded
 //   onSeek         called with the new seconds when the slider is moved
 //   paused         true while the playback is paused
 //   onTogglePlay   called when Pause / Play is pressed
@@ -40,6 +41,10 @@ function IntervalSlider({
   const limit = Math.max(0, Math.min(length, Math.floor(reachable)))
   const value = Math.max(0, Math.min(limit, Math.floor(seconds)))
   const minutes = Math.round(length / 60)
+  // the interval is still happening (live): the slider ends at "now", and the rest of the
+  // 15 minutes is only a faded scale, with no track, so it does not look reachable. A time
+  // label that close to "Now" is left out, so the two never overlap
+  const unfinished = limit < length
 
   function seek(next) {
     onSeek(Math.max(0, Math.min(limit, Math.round(next))))
@@ -84,11 +89,14 @@ function IntervalSlider({
         </Button>
         <span className="interval-slider-time">{clock(startMs + value * 1000, true)}</span>
         <span className="interval-slider-range">
-          {clock(startMs, false)}–{clock(startMs + length * 1000, false)}
+          {clock(startMs, false)}–{unfinished ? 'now' : clock(startMs + length * 1000, false)}
         </span>
       </div>
 
-      <div className="interval-slider-plot" style={{ '--reachable': `${(limit / length) * 100}%` }}>
+      <div
+        className={`interval-slider-plot ${unfinished ? 'unfinished' : ''}`}
+        style={{ '--reachable': `${(limit / length) * 100}%` }}
+      >
         <input
           type="range"
           className="interval-slider-input"
@@ -106,12 +114,21 @@ function IntervalSlider({
           {Array.from({ length: minutes + 1 }, (_, minute) => (
             <span
               key={minute}
-              className={`interval-slider-tick ${minute % 5 === 0 ? 'major' : ''}`}
+              className={`interval-slider-tick ${minute % 5 === 0 ? 'major' : ''} ${
+                minute * 60 > limit ? 'future' : ''
+              }`}
               style={{ left: `${(minute / minutes) * 100}%` }}
             >
-              {minute % 5 === 0 && clock(startMs + minute * 60000, false)}
+              {minute % 5 === 0 &&
+                !(unfinished && Math.abs(minute * 60 - limit) < 75) &&
+                clock(startMs + minute * 60000, false)}
             </span>
           ))}
+          {unfinished && (
+            <span className="interval-slider-now" style={{ left: 'var(--reachable)' }}>
+              Now
+            </span>
+          )}
         </div>
       </div>
 

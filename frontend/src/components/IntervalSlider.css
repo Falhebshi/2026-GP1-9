@@ -22,7 +22,9 @@
 }
 
 /* The slider and its minute scale. --reachable (set by the component) is how far the slider can
-   go: the rest of the track is drawn lighter, and the knob stops there. */
+   go: the knob stops there. In an interval still happening (.unfinished), the track ends there,
+   the rest of the scale is faded and "Now" marks the end, so later moments do not look
+   reachable. */
 .interval-slider-plot {
   --knob: 16px;
   position: relative;
@@ -126,6 +128,39 @@
 .interval-slider-tick.major::before {
   height: 6px;
   background: var(--color-text-muted);
+}
+
+.interval-slider-plot.unfinished .interval-slider-input::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--color-selected) 0 var(--reachable),
+    transparent var(--reachable) 100%
+  );
+}
+
+.interval-slider-plot.unfinished .interval-slider-input::-moz-range-track {
+  background: linear-gradient(
+    to right,
+    var(--color-selected) 0 var(--reachable),
+    transparent var(--reachable) 100%
+  );
+}
+
+.interval-slider-tick.future {
+  opacity: 0.35;
+}
+
+/* "Now": the end of what has happened, under the end of the track */
+.interval-slider-now {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-selected);
+  background: var(--color-surface);
+  white-space: nowrap;
 }
 
 .interval-slider-footer {

@@ -137,6 +137,21 @@ function CurrentTraffic() {
     return () => clearInterval(timer)
   }, [live])
 
+  // Following: the time shown comes from the live clock itself, twice a second. The scene also
+  // reports it, but not while it loads the cars of a new moment (after Latest, or a new run), so
+  // without this the time would stand still for a few seconds and then jump
+  useEffect(() => {
+    if (!live || !followLatest) return
+    const timer = setInterval(() => {
+      const view = viewRef.current
+      const page = view?.data
+      if (!page?.live || !page.run || page.run.status === 'failed') return
+      const previous = view.shownId !== null ? page.previous : null
+      setTime(Math.floor(clockIn(previous, page)))
+    }, 500)
+    return () => clearInterval(timer)
+  }, [live, followLatest])
+
   // Following while the clock is still in the previous run (the minutes after a new chain is
   // published, before the clock reaches its start): move into the newest run at its start
   useEffect(() => {
