@@ -21,26 +21,35 @@ import './NetworkMap.css'
 //   onArrive       called with the id once the map has finished flying to it
 //   padding        { top, right, bottom, left } in pixels: the space the page's floating cards
 //                  take, so the map fits the study area (and its dots) into the part you can see
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
+// OpenFreeMap basemaps: Positron in light mode, Dark in night mode
+const STYLES = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+}
+const styleOf = (theme) => STYLES[theme] ?? STYLES.light
+const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+// our own sources: their layers are carried over when the basemap changes
+const OUR_SOURCES = ['segments', 'heat', 'intersections']
+// Where our road layers go: just above the basemap's roads, below the road and place names.
+// Not simply before the first label: the Dark style draws its water names before its roads, so
+// the roads would cover our segments.
+function labelsStart(layers) {
+  const isRoad = (l) => l['source-layer'] === 'transportation' && l.type !== 'symbol'
+  let last = layers.findLastIndex(isRoad)
+  if (last < 0) last = layers.findLastIndex((l) => l.type !== 'symbol')
+  const at = layers.findIndex((l, i) => i > last && l.type === 'symbol')
+  return at < 0 ? layers.length : at
+}
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
-// Heatmap view: hexagon tiles of about 350 m over the city, in four colors by the speed of the
-// roads around them (HCM urban street level of service: A-B green, C yellow, D orange, E-F red).
+// Heatmap view: hexagon tiles of about 350 m over the city, in the same three levels as the road
+// segments, by the speed of the roads around them (HCM urban street level of service: A-B low,
+// C-D moderate, E-F high).
 // Every road adds its speed to a grid of about 150 m, the grid is blurred (Gaussian, about
 // 300 m), and each tile takes the speed at its center; tiles with little road nearby are left
 // out. It is for reading the city at a glance, not a measurement.
 const HEAT_GRID = { cellLat: 0.00135, cellLon: 0.0015, sigma: 2 }
 const HEX_RADIUS_M = 350
-
-// [r, g, b] of a CSS color
-function rgbOf(color) {
-  const context = document.createElement('canvas').getContext('2d')
-  context.fillStyle = color
-  const hex = context.fillStyle // the browser turns any color into #rrggbb
-  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-}
-
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
 
 // the area the map can show, which the hexagons cover: maxBounds, or a margin around bounds
 function extentOf(bounds, maxBounds) {
@@ -113,7 +122,7 @@ function speedField(segments, extent, style) {
   return { width, height, roads, speeds, full, west, north, cellLat, cellLon }
 }
 
-// The hexagon tiles: four classes by speed (LOS A-B, C, D, E-F), only where there is road nearby
+// The hexagon tiles: the three levels by speed (LOS A-B, C-D, E-F), only where there is road nearby
 function hexagons(segments, extent) {
   const limits = segments?.limits
   if (!limits) return EMPTY
@@ -122,7 +131,6 @@ function hexagons(segments, extent) {
   const [[, south], [east]] = extent
   const rLon = HEX_RADIUS_M / 101000
   const rLat = HEX_RADIUS_M / 111000
-  const middle = (limits.lowAboveSpeed + limits.moderateAboveSpeed) / 2
   const features = []
 
   // pointy-top hexagons: rows 1.5 R apart, columns sqrt(3) R apart, every other row shifted
@@ -138,11 +146,9 @@ function hexagons(segments, extent) {
       const band =
         speed > limits.lowAboveSpeed
           ? 'low'
-          : speed > middle
-            ? 'fair'
-            : speed > limits.moderateAboveSpeed
-              ? 'moderate'
-              : 'high'
+          : speed > limits.moderateAboveSpeed
+            ? 'moderate'
+            : 'high'
       const ring = []
       for (let k = 0; k <= 6; k++) {
         const angle = (Math.PI / 180) * (60 * k - 30)
@@ -208,7 +214,7 @@ function NetworkMap({
   useEffect(() => {
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: STYLE_URL,
+      style: styleOf(currentTheme()),
       bounds,
       // leave room at the bottom for the timeline card that sits over the map
       fitBoundsOptions: { padding: { top: 20, right: 20, left: 20, bottom: 200 } },
@@ -241,14 +247,13 @@ function NetworkMap({
       const low = themeColor('--congestion-low')
       const moderate = themeColor('--congestion-moderate')
       const high = themeColor('--congestion-high')
-      const none = themeColor('--congestion-none')
       const selected = themeColor('--color-selected')
 
       // draw our layers under the basemap's place names, so district names stay readable
-      const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
+      const styleLayers = map.getStyle().layers
+      const firstLabel = styleLayers[labelsStart(styleLayers)]?.id
 
       map.addSource('segments', { type: 'geojson', data: EMPTY })
-      const yellow = `rgb(${mix(rgbOf(moderate), [255, 221, 87], 0.6).join(',')})`
       map.addSource('heat', { type: 'geojson', data: EMPTY })
       map.addSource('intersections', { type: 'geojson', data: EMPTY })
 
@@ -257,19 +262,11 @@ function NetworkMap({
           id: 'segments',
           type: 'line',
           source: 'segments',
+          // roads without data are not drawn, so they stay as the basemap shows them
+          filter: ['in', ['get', 'level'], ['literal', ['low', 'moderate', 'high']]],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': [
-              'match',
-              ['get', 'level'],
-              'low',
-              low,
-              'moderate',
-              moderate,
-              'high',
-              high,
-              none,
-            ],
+            'line-color': ['match', ['get', 'level'], 'low', low, 'moderate', moderate, high],
             'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 4, 17, 8],
             'line-opacity': 0.9,
           },
@@ -288,8 +285,6 @@ function NetworkMap({
               ['get', 'band'],
               'low',
               low,
-              'fair',
-              yellow,
               'moderate',
               moderate,
               high,
@@ -383,8 +378,10 @@ function NetworkMap({
     }
   }, [bounds, maxBounds])
 
-  // night mode changes the dots' theme colors (fill and ring): repaint them when it is switched,
-  // since the map read them only once, when it loaded
+  // Night mode: switch the basemap to the matching OpenFreeMap style, keeping our sources and
+  // layers (with their data) where they were, below or above the basemap's place names. The view
+  // stays where it is. The dots' theme colors (fill and ring) are read again afterwards, since the
+  // map read them only once, when it loaded.
   useEffect(() => {
     if (!ready) return
     const map = mapRef.current
@@ -394,8 +391,28 @@ function NetworkMap({
       map.setPaintProperty('intersections', 'circle-stroke-color', themeColor('--color-surface'))
       map.setPaintProperty('intersections-pulse', 'circle-color', selected)
     }
-    window.addEventListener(THEME_EVENT, repaint)
-    return () => window.removeEventListener(THEME_EVENT, repaint)
+    const onTheme = (event) => {
+      map.setStyle(styleOf(event.detail), {
+        transformStyle: (previous, next) => {
+          if (!previous) return next
+          const before = previous.layers.filter((l) => !OUR_SOURCES.includes(l.source))
+          const firstLabelBefore = before[labelsStart(before)]?.id
+          const labelAt = previous.layers.findIndex((l) => l.id === firstLabelBefore)
+          const ours = previous.layers
+            .map((layer, i) => ({ layer, belowLabels: labelAt < 0 || i < labelAt }))
+            .filter(({ layer }) => OUR_SOURCES.includes(layer.source))
+          const layers = [...next.layers]
+          layers.splice(labelsStart(layers), 0, ...ours.filter((o) => o.belowLabels).map((o) => o.layer))
+          layers.push(...ours.filter((o) => !o.belowLabels).map((o) => o.layer))
+          const sources = { ...next.sources }
+          for (const id of OUR_SOURCES) if (previous.sources[id]) sources[id] = previous.sources[id]
+          return { ...next, sources, layers }
+        },
+      })
+      map.once('style.load', repaint)
+    }
+    window.addEventListener(THEME_EVENT, onTheme)
+    return () => window.removeEventListener(THEME_EVENT, onTheme)
   }, [ready])
 
   // segment data
