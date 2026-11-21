@@ -1,3 +1,4 @@
+import sqlite3
 import subprocess
 import sys
 
@@ -10,8 +11,8 @@ from backend.accounts.server import create_app
 from backend.accounts.storage import REPO_ROOT, ROLE_ADMIN, AccountStorage
 
 # An artificial administrator, not a real account
-NAME = "Aliyah Alharbi"
-EMAIL = "aliyah@ksu.edu.sa"
+NAME = "Noura Almutairi"
+EMAIL = "noura@ksu.edu.sa"
 PASSWORD = "lantern desert noon falcon"
 
 
@@ -59,7 +60,7 @@ def test_the_new_admin_can_log_in(database):
 
 
 def test_the_email_is_stored_lowercase(database):
-    run(database, [PASSWORD, PASSWORD], email=" Aliyah@KSU.edu.sa ")
+    run(database, [PASSWORD, PASSWORD], email=" Noura@KSU.edu.sa ")
 
     assert AccountStorage(database).find_login(EMAIL) is not None
 
@@ -69,7 +70,7 @@ def test_the_email_is_stored_lowercase(database):
     [
         (["short one", "short one"], "Use at least 15 characters. A short phrase works well."),
         (["1q2w3e4r5t6y7u8i9o0p"] * 2, "This password is too common. Choose another one."),
-        (["Aliyah.Alharbi2026"] * 2, "Do not build the password from the person's name, email or Jaadah."),
+        (["Noura.Almutairi2026"] * 2, "Do not build the password from the person's name, email or Jaadah."),
         ([PASSWORD, PASSWORD + "s"], "The two passwords do not match. Nothing was created."),
     ],
 )
@@ -85,7 +86,7 @@ def test_a_refused_password_creates_nothing(database, answers, message):
     ("name", "email", "message"),
     [
         ("   ", EMAIL, "Enter a name."),
-        (NAME, "aliyah.ksu.edu.sa", "Enter an email address like name@organization.gov.sa."),
+        (NAME, "noura.ksu.edu.sa", "Enter an email address like name@organization.gov.sa."),
     ],
 )
 def test_a_missing_name_or_bad_email_is_refused_before_the_password(
@@ -122,3 +123,104 @@ def test_the_command_runs_as_a_module():
 
     assert result.returncode == 0
     assert "--name" in result.stdout and "--email" in result.stdout
+
+
+# ============================================================
+# ADMINISTRATOR AND ENGINEER IN ONE COMMAND (--engineer-email)
+# ============================================================
+
+ENGINEER_EMAIL = "noura.engineer@ksu.edu.sa"
+
+
+def run_both(database, answers, engineer_email=ENGINEER_EMAIL, email=EMAIL):
+    typed = iter(answers)
+    messages = []
+    code = main(
+        ["--name", NAME, "--email", email, "--engineer-email", engineer_email,
+         "--database", str(database)],
+        ask=lambda prompt: next(typed),
+        say=messages.append,
+    )
+    return code, messages
+
+
+def test_engineer_email_also_creates_an_engineer_with_the_same_password(database):
+    code, messages = run_both(database, [PASSWORD, PASSWORD])
+
+    assert code == 0
+    assert messages == [
+        f"Administrator created: {NAME} ({EMAIL}). Log in with this email.",
+        f"Traffic engineer created: {NAME} ({ENGINEER_EMAIL}). Log in with this email.",
+    ]
+    storage = AccountStorage(database)
+    admin = storage.find_login(EMAIL)
+    engineer = storage.find_login(ENGINEER_EMAIL)
+    assert (admin.account.role, engineer.account.role) == (ROLE_ADMIN, "engineer")
+    assert engineer.account.name == NAME
+    assert verify_password(engineer.password_hash, PASSWORD)
+    # Each hash has its own salt
+    assert admin.password_hash != engineer.password_hash
+
+
+def test_both_accounts_can_log_in(database):
+    run_both(database, [PASSWORD, PASSWORD])
+
+    with TestClient(create_app(AccountStorage(database))) as client:
+        roles = [
+            client.post("/auth/login", json={"email": address, "password": PASSWORD})
+            .json()["user"]["role"]
+            for address in (EMAIL, ENGINEER_EMAIL)
+        ]
+
+    assert roles == ["admin", "engineer"]
+
+
+def test_the_two_emails_must_differ(database):
+    code, messages = run_both(database, [PASSWORD, PASSWORD], engineer_email=" NOURA@ksu.edu.sa ")
+
+    assert code == 1
+    assert messages == ["Use a different email for the engineer account."]
+
+
+def test_a_bad_engineer_email_is_refused_before_the_password(database):
+    asked = []
+    code = main(
+        ["--name", NAME, "--email", EMAIL, "--engineer-email", "not-an-email",
+         "--database", str(database)],
+        ask=lambda prompt: asked.append(prompt) or PASSWORD,
+        say=asked.append,
+    )
+
+    assert code == 1
+    assert asked == ["Enter an email address like name@organization.gov.sa."]
+
+
+@pytest.mark.parametrize("taken", [EMAIL, ENGINEER_EMAIL])
+def test_if_either_email_is_taken_nothing_is_created(database, taken):
+    storage = AccountStorage(database)
+    storage.initialize()
+    storage.create_account("Someone Else", taken, "$argon2id$x", ROLE_ADMIN)
+
+    code, messages = run_both(database, [PASSWORD, PASSWORD])
+
+    assert code == 1
+    assert messages == [f"An account with {taken} already exists. Nothing was created."]
+    other = ENGINEER_EMAIL if taken == EMAIL else EMAIL
+    assert storage.find_login(other) is None
+
+
+def test_the_password_cannot_be_made_of_the_engineer_email_either(database):
+    # "noura.engineer" gives the words noura and engineer
+    code, messages = run_both(database, ["engineer engineer 2026"] * 2)
+
+    assert code == 1
+    assert messages == ["Do not build the password from the person's name, email or Jaadah."]
+
+
+def test_without_engineer_email_only_the_administrator_is_created(database):
+    run(database, [PASSWORD, PASSWORD])
+
+    with sqlite3.connect(database) as connection:
+        roles = connection.execute("SELECT role FROM accounts").fetchall()
+
+    assert roles == [("admin",)]

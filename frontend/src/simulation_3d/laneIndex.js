@@ -8,9 +8,9 @@ const COMPASS = ['N', 'E', 'S', 'W']
 const MOVE = { s: 'Through', l: 'Left', r: 'Right', t: 'U-turn', L: 'Left', R: 'Right' }
 
 // Tell the two main roads apart by direction. Prince Turki runs NW to SE (about 131°), Imam Saud SW to NE (about 40 to 66°).
-function roadName(axis) {
-  if (axis >= 95 && axis <= 170) return 'Prince Turki bin Abdulaziz Al-Awwal Rd'
-  if (axis >= 20 && axis <= 85) return 'Imam Saud bin Abdulaziz Rd'
+function mainRoadName(axis) {
+  if (axis >= 95 && axis <= 170) return 'Prince Turki bin Abdulaziz Al-Awwal Road'
+  if (axis >= 20 && axis <= 85) return 'Imam Saud bin Abdulaziz Road'
   return 'Side street'
 }
 
@@ -44,7 +44,7 @@ export function prepareLaneIndex({ surface, detail, arrows, center }) {
       heading = null
     if (path.length > 1) {
       const [a, b] = [path.at(0), path.at(-1)]
-      road = roadName(((Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI + 360) % 180)
+      road = mainRoadName(((Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI + 360) % 180)
       const mid = path.at(path.length >> 1)
       const bearing = ((Math.atan2(mid[0], mid[1]) * 180) / Math.PI + 360) % 360
       arm = ARM[COMPASS[(Math.floor(bearing / 90) + 1) % 4]] // same arm names as in the signal plan

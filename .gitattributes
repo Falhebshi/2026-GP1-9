@@ -1,0 +1,9 @@
+# Line endings: Git stores every text file with LF, whatever each
+# laptop's settings or editor use, so a commit never shows a whole file
+# as changed just because of line endings. Binary files (images, .docx,
+# databases) are detected and left alone.
+* text=auto eol=lf
+
+# Windows scripts need CRLF to run
+*.bat text eol=crlf
+*.cmd text eol=crlf

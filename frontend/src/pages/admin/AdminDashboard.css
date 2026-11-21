@@ -1,0 +1,265 @@
+/* The Admin Dashboard: the engineer list on the left, the panel on the right */
+.admin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-lg);
+  align-items: start;
+  margin-top: var(--space-lg);
+}
+
+/* On a narrow screen the panel goes under the list */
+@media (max-width: 900px) {
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.admin-message {
+  margin-top: var(--space-md);
+}
+
+/* ---------- The list ---------- */
+
+.engineer-list-count {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.engineer-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.engineer-rows li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+/* One engineer: a button so it works with the keyboard (Tab, Enter) */
+.engineer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  /* A see-through bar on the left that turns indigo when selected */
+  border-left: 3px solid transparent;
+  background: none;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.engineer-row:hover {
+  background: var(--color-bg);
+}
+
+.engineer-row-selected,
+.engineer-row-selected:hover {
+  background: var(--color-selected-bg);
+  border-left-color: var(--color-selected);
+}
+
+.engineer-row-text {
+  display: grid;
+  min-width: 0;
+}
+
+.engineer-row-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.engineer-row-email {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- The panel ---------- */
+
+.admin-panel-note {
+  margin: var(--space-md) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.admin-panel-note:first-child {
+  margin-top: 0;
+}
+
+/* ---------- The Create account form ---------- */
+
+.admin-form {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.admin-field {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.admin-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.admin-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.admin-input {
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Focus: as on the Login page, a blue border and soft ring */
+.admin-input:focus {
+  outline: 2px solid transparent;
+  border-color: var(--color-action);
+  box-shadow: 0 0 0 var(--space-xs) color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.admin-input-invalid,
+.admin-input-invalid:focus {
+  border-color: var(--color-danger);
+}
+
+.admin-input:disabled {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+/* The password input with its Show and Copy buttons on the right */
+.admin-password {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.admin-password .admin-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Small word buttons: Show, Hide, Copy */
+.admin-inline-button,
+.admin-link-button {
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-link-button {
+  padding: 0;
+  color: var(--color-action);
+  font-size: var(--text-sm);
+}
+
+.admin-inline-button:hover:not(:disabled),
+.admin-link-button:hover:not(:disabled) {
+  color: var(--color-action-hover);
+}
+
+.admin-inline-button:disabled,
+.admin-link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-field-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.admin-field-error {
+  margin: 0;
+  color: var(--color-danger-text);
+  font-size: var(--text-xs);
+}
+
+.admin-form-error {
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  font-size: var(--text-sm);
+}
+
+.admin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+/* The password on the Confirm step */
+.admin-confirm-password {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.admin-password-text {
+  font-family: ui-monospace, monospace;
+  font-weight: 400;
+  word-break: break-all;
+}
+
+/* The hint under the details on the Confirm step */
+.info-list + .admin-field-hint {
+  margin-top: var(--space-sm);
+}
+
+/* ---------- Account actions (ADM-03 onwards) ---------- */
+
+/* The action buttons under the details sit on the left */
+.admin-actions-start {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+/* The question asked before an action, e.g. "Deactivate …?" */
+.admin-confirm-text {
+  margin: var(--space-md) 0 0;
+  font-size: var(--text-sm);
+}
+
+.admin-panel-error {
+  margin: var(--space-md) 0 0;
+}
+
+/* A form inside the details panel, e.g. Change password (ADM-05) */
+.admin-panel-section {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.admin-section-title {
+  margin: 0;
+  font-weight: 600;
+}
