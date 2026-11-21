@@ -14,6 +14,7 @@
 //                          filling its first interval; null when the server is not running
 
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
+import { drawnSpeeds, segmentEnds } from './segmentNeighbours'
 
 // Road segment congestion comes from the network map server (jaadah/network_congestion/server.py),
 // through the Vite proxy at /api/network (vite.config.js). It works the speeds out from the RCRC
@@ -36,7 +37,9 @@ import { getIntersection, sampleTimelineBars } from './currentTrafficService'
 //
 // getSegments(time) resolves to a GeoJSON FeatureCollection, one LineString per segment, with
 //   id, name, road_class, lanes, source  from /segments
-//   speed       percent of free-flow speed
+//   speed       percent of free-flow speed, as drawn: short pieces and ramps are kept between
+//               the speeds of the roads at their two ends (segmentNeighbours.js)
+//   model_speed the server's own speed for the segment
 //   level       'low', 'moderate' or 'high' (sets the line color), or null with no data
 // and `limits`, the level limits in percent of free flow, for the Heatmap view, and `hasSpeeds`,
 // false when the server has no stored 15 minutes for the requested time (every level is then null)
@@ -44,6 +47,7 @@ const API = '/api/network'
 const QUARTER_HOUR = 15 * 60 * 1000
 
 let segmentsPromise = null
+let endsOf = null // the roads at each segment's two ends, worked out once per segment list
 
 function fetchApi(path) {
   return fetch(`${API}/${path}`).then((response) => {
@@ -123,6 +127,9 @@ export async function getSegments(time = null) {
     throw err
   })
   const [segments, speeds] = await Promise.all([segmentsPromise, loadSpeeds(time)])
+  if (endsOf?.segments !== segments) endsOf = { segments, ends: segmentEnds(segments.features) }
+  const own = segments.features.map((f) => speeds?.[f.properties.id] ?? null)
+  const drawn = drawnSpeeds(own, endsOf.ends)
 
   return {
     type: 'FeatureCollection',
@@ -132,10 +139,10 @@ export async function getSegments(time = null) {
       lowAboveSpeed: index.low_above_speed_ratio * 100,
       moderateAboveSpeed: index.moderate_above_speed_ratio * 100,
     },
-    features: segments.features.map((feature) => {
+    features: segments.features.map((feature, i) => {
       const p = feature.properties
-      const speed = speeds?.[p.id]
-      const known = speed !== undefined && speed !== null
+      const speed = drawn[i]
+      const known = speed !== null
       return {
         type: 'Feature',
         geometry: feature.geometry,
@@ -146,6 +153,7 @@ export async function getSegments(time = null) {
           lanes: p.lanes,
           source: p.source,
           speed: known ? speed : null,
+          model_speed: own[i],
           level: known ? levelOf(speed, index) : null,
         },
       }
