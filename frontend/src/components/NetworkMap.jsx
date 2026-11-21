@@ -30,6 +30,16 @@ const styleOf = (theme) => STYLES[theme] ?? STYLES.light
 const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 // our own sources: their layers are carried over when the basemap changes
 const OUR_SOURCES = ['segments', 'heat', 'intersections']
+// Where our road layers go: just above the basemap's roads, below the road and place names.
+// Not simply before the first label: the Dark style draws its water names before its roads, so
+// the roads would cover our segments.
+function labelsStart(layers) {
+  const isRoad = (l) => l['source-layer'] === 'transportation' && l.type !== 'symbol'
+  let last = layers.findLastIndex(isRoad)
+  if (last < 0) last = layers.findLastIndex((l) => l.type !== 'symbol')
+  const at = layers.findIndex((l, i) => i > last && l.type === 'symbol')
+  return at < 0 ? layers.length : at
+}
 const EMPTY = { type: 'FeatureCollection', features: [] }
 
 // Heatmap view: hexagon tiles of about 350 m over the city, in the same three levels as the road
@@ -240,7 +250,8 @@ function NetworkMap({
       const selected = themeColor('--color-selected')
 
       // draw our layers under the basemap's place names, so district names stay readable
-      const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol')?.id
+      const styleLayers = map.getStyle().layers
+      const firstLabel = styleLayers[labelsStart(styleLayers)]?.id
 
       map.addSource('segments', { type: 'geojson', data: EMPTY })
       map.addSource('heat', { type: 'geojson', data: EMPTY })
@@ -384,14 +395,14 @@ function NetworkMap({
       map.setStyle(styleOf(event.detail), {
         transformStyle: (previous, next) => {
           if (!previous) return next
-          const firstLabelBefore = previous.layers.findIndex((l) => l.type === 'symbol')
+          const before = previous.layers.filter((l) => !OUR_SOURCES.includes(l.source))
+          const firstLabelBefore = before[labelsStart(before)]?.id
+          const labelAt = previous.layers.findIndex((l) => l.id === firstLabelBefore)
           const ours = previous.layers
-            .map((layer, i) => ({ layer, belowLabels: firstLabelBefore < 0 || i < firstLabelBefore }))
+            .map((layer, i) => ({ layer, belowLabels: labelAt < 0 || i < labelAt }))
             .filter(({ layer }) => OUR_SOURCES.includes(layer.source))
           const layers = [...next.layers]
-          let at = layers.findIndex((l) => l.type === 'symbol')
-          if (at < 0) at = layers.length
-          layers.splice(at, 0, ...ours.filter((o) => o.belowLabels).map((o) => o.layer))
+          layers.splice(labelsStart(layers), 0, ...ours.filter((o) => o.belowLabels).map((o) => o.layer))
           layers.push(...ours.filter((o) => !o.belowLabels).map((o) => o.layer))
           const sources = { ...next.sources }
           for (const id of OUR_SOURCES) if (previous.sources[id]) sources[id] = previous.sources[id]
