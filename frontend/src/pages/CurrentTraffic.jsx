@@ -55,8 +55,11 @@ function CurrentTraffic() {
         if (cancelled) return
         setData(result)
         // a live run opens on the live clock's moment, before the scene has loaded
-        if (result.live && result.run?.status !== 'failed')
-          setTime(liveSeconds(result.live, result.run))
+        if (result.live && result.run?.status !== 'failed') {
+          const target = liveTarget(result)
+          setOnPrevious(target.inPrevious)
+          setTime(target.seconds)
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
@@ -83,6 +86,17 @@ function CurrentTraffic() {
             result.source !== current?.source
           if (!changed) return
           setData(result)
+          // Following: the clock's moment may now be in the previous run (a new chain that
+          // starts after it, at 03:00), so pick the run in the same update
+          if (view.followLatest && result.live && result.run?.status !== 'failed') {
+            const target = liveTarget(result)
+            setOnPrevious(target.inPrevious)
+            if (target.inPrevious !== view.onPrevious) {
+              setTime(target.seconds)
+              setJumpTo({ time: target.seconds })
+            }
+            return
+          }
           // Watching an earlier moment: stay on it. At 03:00 the newest run becomes the
           // previous one, so the moment is looked up again in the new runs. Gone (older than
           // 24 hours): follow the live clock again.
@@ -98,8 +112,8 @@ function CurrentTraffic() {
           )
           const seconds = place
             ? (moment - Date.parse(place.run.start)) / 1000
-            : liveSeconds(result.live, result.run)
-          setOnPrevious(Boolean(place) && place !== result)
+            : liveTarget(result).seconds
+          setOnPrevious(place ? place !== result : liveTarget(result).inPrevious)
           setFollowLatest(!place)
           setTime(seconds)
           setJumpTo({ time: seconds })
@@ -108,6 +122,19 @@ function CurrentTraffic() {
     }, POLL_MS)
     return () => clearInterval(timer)
   }, [live])
+
+  // Following while the clock is still in the previous run (the minutes after a new chain is
+  // published, before the clock reaches its start): move into the newest run at its start
+  useEffect(() => {
+    if (!live || !followLatest || !onPrevious) return
+    const timer = setInterval(() => {
+      const target = liveTarget(viewRef.current?.data ?? data)
+      if (target.inPrevious) return
+      setOnPrevious(false)
+      setTime(target.seconds)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [live, followLatest, onPrevious, data])
 
   if (error) {
     return (
@@ -137,14 +164,14 @@ function CurrentTraffic() {
       : null
   // Why the KPI box is empty, if it is
   const kpiProblem = runProblem ?? (hasKpis ? null : 'KPIs are not available for this run yet.')
-  const following = live && followLatest && !runProblem && shown === data
+  const following = live && followLatest && !runProblem
   // Live: where the scene is now, in seconds from the start of the analysis period. The scene
   // plays the traffic at the time it happened in data time, LIVE_DELAY behind it: by then that
   // moment is always simulated (an interval arrives after it ends, the loop stops 60 s early
   // and takes up to about a minute, and the page looks every minute). It is worked out from
   // the clock, so reloading the page or opening it elsewhere shows the same moment. If the
   // simulation has not got there (the loop is late or stopped), it waits at its end.
-  const liveClock = following ? () => liveSeconds(liveInfo, run) : null
+  const liveClock = following ? () => clockIn(shown === data ? null : previous, data) : null
   // the 15 minutes being played, and the time shown: the clock for live data (set from the clock
   // when the data arrives, so the page opens on the right moment before the scene has loaded),
   // the run's time for a simulated run
@@ -188,11 +215,11 @@ function CurrentTraffic() {
           ? data.intervals.length - 1
           : data.timeline.findIndex((b) => b.time === barTime)
     if (target < 0) return
-    const seconds =
-      barTime === null && live
-        ? liveSeconds(liveInfo, data.run)
-        : target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
-    setOnPrevious(inPrevious >= 0)
+    const follow = barTime === null && live ? liveTarget(data) : null
+    const seconds = follow
+      ? follow.seconds
+      : target * (inPrevious >= 0 ? previous : data).run.intervalSeconds
+    setOnPrevious(follow ? follow.inPrevious : inPrevious >= 0)
     setFollowLatest(barTime === null)
     setTime(seconds)
     setJumpTo({ time: seconds })
@@ -343,13 +370,33 @@ const POLL_MS = 60 * 1000
 // How far the live scene plays behind the data's own time (see liveClock)
 const LIVE_DELAY_MS = 20 * 60 * 1000
 
-// Live: where the live clock is now, in seconds from the start of the run's analysis period. It
-// plays the traffic LIVE_DELAY_MS after it happened in data time, and waits at the end of what
-// has been simulated
-function liveSeconds(liveInfo, run) {
-  const dataNow = Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
-  const end = (liveInfo.simulatedUntilSeconds ?? 0) - run.analysisStartSeconds
-  return Math.max(0, Math.min((dataNow - Date.parse(run.start)) / 1000, end))
+// Live: the moment the live clock shows, in data time (ms). It plays the traffic LIVE_DELAY_MS
+// after it happened
+function liveMoment(liveInfo) {
+  return Date.now() - liveInfo.clockOffsetMs - LIVE_DELAY_MS
+}
+
+// Live: where the live clock is in one run, in seconds from the start of its analysis period:
+// the newest run (previous null), waiting at the end of what has been simulated, or the
+// previous run (previous given), up to its last interval
+function clockIn(previous, page) {
+  const view = previous ?? page
+  const end = previous
+    ? previous.intervals.length * previous.run.intervalSeconds
+    : (page.live.simulatedUntilSeconds ?? 0) - page.run.analysisStartSeconds
+  const seconds = (liveMoment(page.live) - Date.parse(view.run.start)) / 1000
+  return Math.max(0, Math.min(seconds, end))
+}
+
+// Live: the run the live clock is in, and where. It is the newest run, except in the minutes
+// after a new chain is published, when the clock has not reached its start yet (it plays
+// 20 minutes behind): then it is the previous run, which goes on to that start
+function liveTarget(page) {
+  const previous = page.previous
+  const inPrevious = Boolean(
+    previous?.intervals?.length && liveMoment(page.live) < Date.parse(page.run.start),
+  )
+  return { inPrevious, seconds: clockIn(inPrevious ? previous : null, page) }
 }
 const LIVE_TITLE =
   'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
