@@ -344,6 +344,37 @@ function CurrentTraffic() {
     setJumpTo({ time: seconds })
   }
 
+  // Playing an earlier run past its last interval shown (where the next run starts, or the run's
+  // end) goes on in the next run: at the same moment if the runs meet, or at the next run's start
+  // after a "Not simulated" gap. Returns false when there is no next run to go on in (the newest
+  // run stops at the end of what has been simulated, as before)
+  function goOnInNextRun(seconds) {
+    const runs = [...olderRuns(data), data]
+    const position = runs.indexOf(shown)
+    if (!live || following || position < 0 || position === runs.length - 1) return false
+    const next = runs[position + 1]
+    const moment = Date.parse(shown.run.start) + seconds * 1000
+    const offset = Math.max(0, (moment - Date.parse(next.run.start)) / 1000)
+    setShownId(next === data ? null : next.run.id)
+    setPaused(false)
+    setTime(offset)
+    setJumpTo({ time: offset })
+    return true
+  }
+
+  // The time the scene is at, once a second
+  function sceneTime(seconds) {
+    const shownEnd = intervals.length * (run?.intervalSeconds ?? 900)
+    if (!paused && seconds >= shownEnd && goOnInNextRun(seconds)) return
+    setTime(seconds)
+  }
+
+  // The scene reached the end of its run: go on in the next run, or pause there
+  function sceneEnd() {
+    const shownEnd = intervals.length * (run?.intervalSeconds ?? 900)
+    if (!goOnInNextRun(shownEnd)) setPaused(true)
+  }
+
   // Pause holds the moment shown (while live, this leaves the live clock: the view becomes
   // historical); Play continues from it at normal speed
   function togglePlay() {
@@ -511,7 +542,7 @@ function CurrentTraffic() {
                   clock={liveClock}
                   hiddenRanges={hiddenRanges}
                   intersectionId={intersection.id}
-                  onTimeChange={setTime}
+                  onTimeChange={sceneTime}
                   jumpTo={jumpTo}
                   center={intersection.center}
                   bounds={intersection.bounds}
@@ -522,7 +553,7 @@ function CurrentTraffic() {
                   onError={setSimError}
                   paused={paused}
                   stopAtEnd
-                  onEnd={() => setPaused(true)}
+                  onEnd={sceneEnd}
                 />
               </SimulationViewport>
             </div>
