@@ -22,10 +22,13 @@ import './IntervalSlider.css'
 //   following      true while the page follows the live clock (the badge says Live)
 //   live           false for a simulated run: no Live / Historical badge and no Latest button
 //   onLatest       called by "Back to live", to follow the live clock again
+//   onPrevious     called by "‹ Previous": the interval before (null: none, the button is off)
+//   onNext         called by "Next ›": the interval after (null: none, the button is off)
 //   className      extra classes for the card, e.g. "card-floating" over the scene in full screen
 //
 // The slider moves in whole seconds. Keys: arrows 1 s, Shift + arrows 10 s, Page Up / Page Down
-// 1 minute, Home / End the start and the furthest reachable second.
+// 1 minute, Home / End the start and the furthest reachable second; the keys go on into the
+// interval before or after.
 function IntervalSlider({
   start,
   seconds,
@@ -38,6 +41,8 @@ function IntervalSlider({
   following = false,
   live = true,
   onLatest,
+  onPrevious,
+  onNext,
   className = '',
 }) {
   const startMs = Date.parse(start)
@@ -49,17 +54,23 @@ function IntervalSlider({
   // label that close to "Now" is left out, so the two never overlap
   const unfinished = limit < length
 
+  // A second of the interval. Keys may go past its start or end: the page then moves to the
+  // interval before or after (onSeek gets a negative second, or one past the end). In an
+  // interval still happening, nothing goes past "Now"
   function seek(next) {
-    onSeek(Math.max(0, Math.min(limit, Math.round(next))))
+    const rounded = Math.round(next)
+    onSeek(unfinished ? Math.max(Math.min(rounded, limit), rounded < 0 ? rounded : 0) : rounded)
   }
 
-  // the slider's own keys move 1 s; these add 10 s, 1 minute and the reachable end
+  // arrows 1 s (with Shift 10 s), Page Up / Page Down 1 minute, Home the start, End the
+  // furthest reachable second
   function onKeyDown(event) {
+    const by = event.shiftKey ? 10 : 1
     const steps = {
-      ArrowLeft: event.shiftKey ? -10 : null,
-      ArrowDown: event.shiftKey ? -10 : null,
-      ArrowRight: event.shiftKey ? 10 : null,
-      ArrowUp: event.shiftKey ? 10 : null,
+      ArrowLeft: -by,
+      ArrowDown: -by,
+      ArrowRight: by,
+      ArrowUp: by,
       PageDown: -60,
       PageUp: 60,
     }
@@ -95,6 +106,14 @@ function IntervalSlider({
         <span className="interval-slider-time">{clock(startMs + value * 1000, true)}</span>
         <span className="interval-slider-range">
           {clock(startMs, false)}–{clock(startMs + length * 1000, false)}
+        </span>
+        <span className="interval-slider-steps">
+          <Button size="sm" variant="secondary" onClick={onPrevious} disabled={!onPrevious}>
+            ‹ Previous
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onNext} disabled={!onNext}>
+            Next ›
+          </Button>
         </span>
       </div>
 

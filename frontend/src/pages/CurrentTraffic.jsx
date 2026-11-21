@@ -339,16 +339,47 @@ function CurrentTraffic() {
       return
     }
     const seconds = intervalOffset + secondsInInterval
+    const shownEnd = intervals.length * intervalSeconds
+    // past the start or the end of the run shown: on into the run before or after it
+    if (seconds < 0 && goBackToPreviousRun(seconds)) return
+    if (seconds >= shownEnd && goOnInNextRun(seconds, true)) return
+    const kept = Math.max(0, Math.min(seconds, shownEnd - 1))
     setFollowLatest(false)
-    setTime(seconds)
-    setJumpTo({ time: seconds })
+    setTime(kept)
+    setJumpTo({ time: kept })
   }
+
+  // Going back past the start of the run shown: the same moment in the run before it, or its last
+  // second after a "Not simulated" gap. Returns false when there is no run before
+  function goBackToPreviousRun(seconds) {
+    const runs = [...olderRuns(data), data]
+    const position = runs.indexOf(shown)
+    if (position <= 0) return false
+    const before = runs[position - 1]
+    const beforeEnd = before.intervals.length * before.run.intervalSeconds
+    const moment = Date.parse(shown.run.start) + seconds * 1000
+    const offset = Math.min(Math.max(0, (moment - Date.parse(before.run.start)) / 1000), beforeEnd - 1)
+    setShownId(before.run.id)
+    setFollowLatest(false)
+    setTime(offset)
+    setJumpTo({ time: offset })
+    return true
+  }
+
+  // "‹ Previous" and "Next ›": the interval before or after on the timeline that has a run
+  // ("Not simulated" gaps are skipped); the newest one follows the live clock
+  const barsWithRun = timeline.filter((bar) =>
+    [...olderRuns(data), data].some((view) => view.timeline.some((b) => b.time === bar.time)),
+  )
+  const barIndex = barsWithRun.findIndex((bar) => bar.time === interval?.start)
+  const stepTo = (bar) =>
+    bar ? () => selectBar(bar === barsWithRun[barsWithRun.length - 1] ? null : bar.time) : null
 
   // Playing an earlier run past its last interval shown (where the next run starts, or the run's
   // end) goes on in the next run: at the same moment if the runs meet, or at the next run's start
   // after a "Not simulated" gap. Returns false when there is no next run to go on in (the newest
   // run stops at the end of what has been simulated, as before)
-  function goOnInNextRun(seconds) {
+  function goOnInNextRun(seconds, keepPaused = false) {
     const runs = [...olderRuns(data), data]
     const position = runs.indexOf(shown)
     if (!live || following || position < 0 || position === runs.length - 1) return false
@@ -356,7 +387,7 @@ function CurrentTraffic() {
     const moment = Date.parse(shown.run.start) + seconds * 1000
     const offset = Math.max(0, (moment - Date.parse(next.run.start)) / 1000)
     setShownId(next === data ? null : next.run.id)
-    setPaused(false)
+    if (!keepPaused) setPaused(false)
     setTime(offset)
     setJumpTo({ time: offset })
     return true
@@ -420,6 +451,8 @@ function CurrentTraffic() {
         following={following}
         live={live}
         onLatest={() => selectBar(null)}
+        onPrevious={barIndex > 0 ? stepTo(barsWithRun[barIndex - 1]) : null}
+        onNext={barIndex >= 0 ? stepTo(barsWithRun[barIndex + 1]) : null}
         className={floating ? 'card-floating' : ''}
       />
     ) : (
