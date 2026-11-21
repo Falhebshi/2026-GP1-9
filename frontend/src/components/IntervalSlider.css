@@ -180,3 +180,8 @@
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
+
+/* Live and Historical are the same width, so switching between them does not move the text */
+.interval-slider-readout .badge {
+  min-width: 90px;
+}

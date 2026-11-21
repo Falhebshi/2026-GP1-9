@@ -253,6 +253,12 @@ function CurrentTraffic() {
   // of an earlier run switches the scene to that run; the newest bar follows the live clock. A
   // "Not simulated" bar is in no run: nothing happens.
   function selectBar(barTime) {
+    // a click on the bar already selected opens its interval as a time slider (the newest bar
+    // also goes back to following the live clock)
+    const clicked = barTime ?? timeline[timeline.length - 1]?.time // null: the newest bar shown
+    const again = clicked !== undefined && clicked === interval?.start
+    if (again) setZoomed(true)
+    if (again && barTime !== null) return
     const owner =
       barTime === null
         ? data
@@ -267,8 +273,9 @@ function CurrentTraffic() {
     const seconds = follow ? follow.seconds : target * owner.run.intervalSeconds
     setShownId(follow ? targetId(data, follow) : owner === data ? null : owner.run.id)
     setFollowLatest(barTime === null)
-    // a bar only selects its interval: "Open … ›" opens it as a time slider, so the 24-hour
-    // timeline can still be clicked through. Following the live clock never pauses
+    // a first click only selects its interval: a second click, or "Zoom into … ›", opens it as a
+    // time slider, so the 24-hour timeline can still be clicked through. Following the live
+    // clock never pauses
     if (barTime === null) setPaused(false)
     setTime(seconds)
     setJumpTo({ time: seconds })
@@ -474,7 +481,7 @@ function CurrentTraffic() {
                     {paused ? '▶ Play' : '❚❚ Pause'}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => setZoomed(true)}>
-                    Open {intervalLabel(interval)} ›
+                    Zoom into {intervalLabel(interval)} ›
                   </Button>
                 </>
               )}
@@ -559,7 +566,7 @@ function timeBadge({ live, liveInfo, following }) {
       <Badge variant="success">Live</Badge>
     </span>
   ) : (
-    <Badge variant="neutral">Earlier</Badge>
+    <Badge variant="warning">Historical</Badge>
   )
 }
 

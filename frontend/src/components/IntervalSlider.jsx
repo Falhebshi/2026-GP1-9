@@ -17,10 +17,10 @@ import './IntervalSlider.css'
 //   onSeek         called with the new seconds when the slider is moved
 //   paused         true while the playback is paused
 //   onTogglePlay   called when Pause / Play is pressed
-//   onBack         called by "All 24 hours": back to the 24-hour timeline
+//   onBack         called by "Back to 24 hours": back to the 24-hour timeline
 //   following      true while the page follows the live clock (the badge says Live)
 //   live           false for a simulated run: no Live / Historical badge and no Latest button
-//   onLatest       called by Latest, to follow the live clock again
+//   onLatest       called by "Back to live", to follow the live clock again
 //
 // The slider moves in whole seconds. Keys: arrows 1 s, Shift + arrows 10 s, Page Up / Page Down
 // 1 minute, Home / End the start and the furthest reachable second.
@@ -74,7 +74,7 @@ function IntervalSlider({
       title="Traffic Timeline"
       action={
         <Button size="sm" variant="secondary" onClick={onBack}>
-          ← All 24 hours
+          ← Back to 24 hours
         </Button>
       }
     >
@@ -144,7 +144,7 @@ function IntervalSlider({
         </p>
         {live && !following && (
           <Button variant="secondary" size="sm" onClick={onLatest}>
-            Latest
+            Back to live
           </Button>
         )}
       </div>

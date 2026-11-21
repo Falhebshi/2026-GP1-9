@@ -19,16 +19,16 @@ import './HistoricalTimeline.css'
 //   value            the time of the selected bar, or null for "the latest"
 //   onChange         function called with the new time (or null for latest)
 //                    when the user picks a bar, drags the slider or clicks
-//                    the Latest button
+//                    the "Back to live" button
 //   intervalMinutes  how long one bar lasts (15 unless you say otherwise)
 //   title            heading of the card
 //   error            text shown instead of the bars when the data failed to load
 //   emptyMessage     what to say when there are no bars (optional)
 //   following        true while the page follows the live time although the selected bar is
 //                    not the newest (a live scene plays a little behind the newest bar): the
-//                    badge still says Live and the Latest button stays hidden (optional)
+//                    badge still says Live and the "Back to live" button stays hidden (optional)
 //   live             false for a simulated run: the bars are not "the last 24 hours", so the
-//                    Live / Historical badge and the Latest button are left out (true unless
+//                    Live / Historical badge and the "Back to live" button are left out (true unless
 //                    you say otherwise)
 //
 // Anything you put between <HistoricalTimeline> and </HistoricalTimeline> is
@@ -214,7 +214,7 @@ function HistoricalTimeline({
 
             {live && !isLatest && (
               <Button variant="secondary" size="sm" onClick={() => onChange(null)}>
-                Latest
+                Back to live
               </Button>
             )}
           </div>
