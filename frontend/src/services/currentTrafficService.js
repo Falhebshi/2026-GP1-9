@@ -354,6 +354,8 @@ async function runView(folder, scenario, run, approaches, demo, status) {
     demo === 'empty' ? [] : groupByInterval(run, results ?? [], approaches.approaches)
 
   return {
+    // the folder the run is in: the scene loads the run from it (TrafficScene3D's scenario)
+    scenario,
     run: {
       id: run.run_id,
       status,
