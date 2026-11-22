@@ -145,13 +145,14 @@ function sample(trip, t) {
     prev = front,
     rear = null,
     jump = false
-  // A standing car in a smoothed lane change keeps SUMO's heading, since its small sideways steps
-  // would turn it into the car beside it. A moving car keeps following its path: switching its
-  // heading in and out of the change made it swing right and left.
+  // A smoothed lane change made while standing keeps SUMO's heading, since its small sideways
+  // steps would turn the car into the one beside it. That holds while the car stands and while it
+  // pulls away with the step still behind it. A lane change made while moving keeps following its
+  // path: switching its heading in and out of the change made it swing right and left.
   const standing = (trip.speeds?.at(lo) ?? 0) <= 1.5
   if (standing && trip.shifted.at(hi)) jump = true
   for (let i = lo; i >= 0 && need > 0; i--) {
-    if (standing && trip.shifted.at(i)) jump = true
+    if (trip.shifted.at(i) && (standing || (trip.speeds?.at(i) ?? 0) <= 1.5)) jump = true
     const p = trip.path.at(i)
     const [ex, ey] = toM(p, prev)
     const d = Math.hypot(ex, ey)
