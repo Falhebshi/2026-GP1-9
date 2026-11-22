@@ -300,15 +300,22 @@ def site_rank(
     corridors: dict[str, str],
     ranks: dict[str, float],
 ) -> float:
-    """The length-weighted rank of the given segments' corridors."""
+    """
+    The length-weighted rank of the given segments' corridors, leaving
+    out corridors without a rank.
+    """
 
     if not segments:
         raise ValueError("no segment ends at the study intersection")
 
-    lengths = [line_length_m(segment.geometry) for segment in segments]
+    ranked = [s for s in segments if corridors[s.segment_id] in ranks]
+    if not ranked:
+        raise ValueError("no segment at the study intersection has a rank")
+
+    lengths = [line_length_m(segment.geometry) for segment in ranked]
     total = sum(
         ranks[corridors[segment.segment_id]] * length
-        for segment, length in zip(segments, lengths)
+        for segment, length in zip(ranked, lengths)
     )
 
     return total / sum(lengths)
@@ -363,15 +370,52 @@ def approach_ranks(
     }
 
 
+def model_ranks(
+    segments: list[RoadSegment],
+    corridors: dict[str, str],
+    loads: dict[str, float],
+) -> dict[str, float]:
+    """
+    Every corridor's place in the trip model's ranking, 0 to 1, from the
+    segments that have a value in loads (the length-weighted mean of
+    those only). A corridor with no such segment gets no rank: the trip
+    model has no data for it, so its roads are shown as no data instead
+    of ranking as the quietest road.
+    """
+
+    totals, lengths = {}, {}
+
+    for segment in segments:
+        value = loads.get(segment.segment_id)
+        if value is None:
+            continue
+        corridor = corridors[segment.segment_id]
+        length = line_length_m(segment.geometry)
+        totals[corridor] = totals.get(corridor, 0.0) + value * length
+        lengths[corridor] = lengths.get(corridor, 0.0) + length
+
+    scores = {c: totals[c] / lengths[c] if lengths[c] > 0 else 0.0 for c in totals}
+    distinct = sorted(set(scores.values()))
+    if len(distinct) == 1:
+        place = {distinct[0]: 0.5}
+    else:
+        place = {score: i / (len(distinct) - 1) for i, score in enumerate(distinct)}
+
+    return {corridor: place[score] for corridor, score in scores.items()}
+
+
 def rank_offsets(
     segments: list[RoadSegment],
     corridors: dict[str, str],
     ranks: dict[str, float],
     site: float,
 ) -> np.ndarray:
-    """Every segment's corridor rank minus the intersection's rank."""
+    """
+    Every segment's corridor rank minus the intersection's rank; NaN
+    (no data) when its corridor has no rank.
+    """
 
-    return np.array([ranks[corridors[s.segment_id]] - site for s in segments])
+    return np.array([ranks.get(corridors[s.segment_id], np.nan) - site for s in segments])
 
 
 def approach_spread(
@@ -519,10 +563,13 @@ def travel_time_index(
     """
     The city's travel time over free-flow time, weighted by
     vehicle-kilometres (v/c x capacity x length), so that busy roads
-    count as much as the trips on them, as in TomTom's index.
+    count as much as the trips on them, as in TomTom's index. Segments
+    without data (NaN) are left out.
     """
 
-    weights = volume_to_capacity * capacities * lengths
+    known = np.isfinite(volume_to_capacity)
+    volume_to_capacity = volume_to_capacity[known]
+    weights = volume_to_capacity * capacities[known] * lengths[known]
     total = weights.sum()
 
     if total <= 0:
@@ -686,7 +733,8 @@ def load_road_network(
 ) -> RoadNetwork:
     """
     Read the segments and rank every corridor: by the trip model's v/c
-    of each hour when hourly_vc_path exists, else by the demand model;
+    of each hour when hourly_vc_path exists (corridors the trip model has
+    no data for get no rank, so no speed), else by the demand model;
     Friday and Saturday by weekend_hourly_vc_path when it exists too.
     """
 
@@ -702,13 +750,18 @@ def load_road_network(
     corridors = segment_corridors(segments, way_ids)
     at_site = site_segments(segments, centre or site_centre())
 
-    def offsets_for(loads: dict[str, float]) -> np.ndarray:
-        ranks = corridor_ranks(segments, corridors, loads)
+    def offsets_of(ranks: dict[str, float]) -> np.ndarray:
         return rank_offsets(segments, corridors, ranks, site_rank(at_site, corridors, ranks))
+
+    def offsets_for(loads: dict[str, float]) -> np.ndarray:
+        return offsets_of(corridor_ranks(segments, corridors, loads))
 
     def hourly_offsets(path: Path) -> list[np.ndarray]:
         hourly = json.loads(path.read_text(encoding="utf-8"))["segments"]
-        by_hour = [offsets_for({sid: values[h] for sid, values in hourly.items()}) for h in range(24)]
+        by_hour = [
+            offsets_of(model_ranks(segments, corridors, {sid: values[h] for sid, values in hourly.items()}))
+            for h in range(24)
+        ]
         result = []
         for slot in range(24 * INTERVALS_PER_HOUR):
             hour, share = divmod(slot, INTERVALS_PER_HOUR)
@@ -918,22 +971,26 @@ def interval_speeds(
     moment: datetime,
     site_level: float,
     factor: float | None = None,
-) -> tuple[list[int], float]:
+) -> tuple[list[int | None], float]:
     """
-    Every segment's speed (percent of free flow) in one interval, and
-    the network speed for the timeline (timeline_speed). The level is
-    the one whose network index equals the target index.
+    Every segment's speed (percent of free flow, None without data) in
+    one interval, and the network speed for the timeline
+    (timeline_speed). The level is the one whose network index equals
+    the target index.
     """
 
     slot = slot_of(moment)
     table = model.tables_on(moment)[slot]
     target = target_index(model, moment, site_level, factor)
     level = float(np.interp(target, table.indices, table.levels))
-    speeds = speed_percent(segment_volume_to_capacity(
-        1.0, model.network.offsets_on(moment)[slot], model.spread, level,
-    ))
+    ratios = segment_volume_to_capacity(1.0, model.network.offsets_on(moment)[slot], model.spread, level)
+    known = np.isfinite(ratios)
+    speeds = speed_percent(ratios[known])
+    every = [None] * len(ratios)
+    for i, speed in zip(np.nonzero(known)[0], speeds.tolist()):
+        every[i] = speed
 
-    return speeds.tolist(), timeline_speed(speeds, model.network.length_array)
+    return every, timeline_speed(speeds, model.network.length_array[known])
 
 
 def timeline_speed(speeds: np.ndarray, lengths: np.ndarray, share: float = TIMELINE_SLOWEST_SHARE) -> float:

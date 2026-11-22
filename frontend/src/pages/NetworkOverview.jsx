@@ -295,7 +295,7 @@ function NetworkOverview() {
               : !availableDays.length
                 ? 'Loading road congestion: the network map server is preparing the last 7 days.'
                 : source === 'rcrc'
-                  ? 'Modelled data: road congestion is estimated from the traffic counted at one intersection (RCRC), not measured on these roads.'
+                  ? "Modelled data: road congestion comes from a city trip model and TomTom's typical week, adjusted each day by the traffic counted at one intersection. It is not measured on these roads."
                   : 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'}
           </Notice>
         )}

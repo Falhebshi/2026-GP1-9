@@ -195,7 +195,7 @@ def test_the_usual_value_is_the_mean_for_that_weekday_and_time(network):
     assert model.usual[(1, 32)] == pytest.approx(0.1)
 
 
-def test_roads_are_ranked_by_the_trip_model_and_fall_back_to_the_demand_model(tmp_path):
+def test_roads_are_ranked_by_the_trip_model_or_else_the_demand_model(tmp_path):
     import json
     from jaadah.network_congestion.observed import DEFAULT_HOURLY_VC
 
@@ -209,7 +209,11 @@ def test_roads_are_ranked_by_the_trip_model_and_fall_back_to_the_demand_model(tm
     hourly = json.loads(DEFAULT_HOURLY_VC.read_text(encoding="utf-8"))["segments"]
     assert all(len(values) == 24 for values in hourly.values())
     middle = trip_model.offsets[17 * 4 + 2]
-    assert np.allclose(middle, 0.5 * trip_model.offsets[17 * 4] + 0.5 * trip_model.offsets[18 * 4])
+    assert np.allclose(middle, 0.5 * trip_model.offsets[17 * 4] + 0.5 * trip_model.offsets[18 * 4], equal_nan=True)
+    # roads the trip model has no data for have no offset (no data), while the demand model ranks every road
+    missing = [i for i, s in enumerate(trip_model.segments) if s.segment_id not in hourly]
+    assert missing and not np.isnan(fallback.offsets[0]).any()
+    assert np.isnan(trip_model.offsets[0]).sum() <= len(missing)
 
 
 def test_friday_and_saturday_use_the_weekend_profile(tmp_path):

@@ -41,7 +41,7 @@ class IntervalSpeeds:
     interval_start: datetime
     interval_end: datetime
     network_speed: float
-    speeds: list[int]       # one per segment, in road_segments.json order
+    speeds: list[int | None]    # one per segment, in road_segments.json order; None = no data
 
 
 @dataclass(frozen=True)

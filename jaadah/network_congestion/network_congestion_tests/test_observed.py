@@ -16,6 +16,7 @@ from jaadah.network_congestion.observed import (
     evaluate,
     fit_level,
     load_site_inputs,
+    model_ranks,
     segment_loads,
     site_capacity,
     split_by_week,
@@ -135,6 +136,51 @@ def test_site_rank_is_length_weighted():
 def test_no_site_segment_is_an_error():
     with pytest.raises(ValueError):
         site_rank([], {}, {})
+
+
+def test_model_ranks_use_only_segments_with_a_value():
+    busy = segment("busy", [0.001, 0])
+    quiet = segment("quiet", [0.002, 0])
+    gap = segment("gap", [0.003, 0])
+    corridors = {"busy": "A", "gap": "A", "quiet": "B"}
+
+    # "gap" has no value: A is ranked by "busy" alone, not pulled down by a zero
+    ranks = model_ranks([busy, quiet, gap], corridors, {"busy": 0.9, "quiet": 0.2})
+
+    assert ranks == {"A": 1.0, "B": 0.0}
+
+
+def test_a_corridor_without_model_data_gets_no_rank_and_no_offset():
+    busy, quiet, missing = segment("busy", [0.001, 0]), segment("quiet", [0.002, 0]), segment("missing", [0.003, 0])
+    corridors = {"busy": "A", "quiet": "B", "missing": "C"}
+
+    ranks = model_ranks([busy, quiet, missing], corridors, {"busy": 0.9, "quiet": 0.2})
+    offsets = rank_offsets([busy, quiet, missing], corridors, ranks, 0.5)
+
+    assert "C" not in ranks
+    assert offsets[:2].tolist() == [0.5, -0.5]
+    assert np.isnan(offsets[2])
+
+
+def test_corridors_with_one_shared_score_sit_in_the_middle():
+    a, b = segment("a", [0.001, 0]), segment("b", [0.002, 0])
+
+    ranks = model_ranks([a, b], {"a": "A", "b": "B"}, {"a": 0.4, "b": 0.4})
+
+    assert ranks == {"A": 0.5, "B": 0.5}
+
+
+def test_the_site_rank_leaves_out_corridors_without_a_rank():
+    ranked, unranked = segment("ranked", [0.001, 0]), segment("unranked", [0.002, 0])
+
+    assert site_rank([ranked, unranked], {"ranked": "A", "unranked": "B"}, {"A": 0.8}) == pytest.approx(0.8)
+
+
+def test_roads_without_data_are_left_out_of_the_index():
+    ratios = np.array([1.0, np.nan])
+    capacities, lengths = np.array([1000.0, 1000.0]), np.array([100.0, 100.0])
+
+    assert travel_time_index(ratios, capacities, lengths) == pytest.approx(1.15)
 
 
 def test_loads_divide_trips_by_capacity():

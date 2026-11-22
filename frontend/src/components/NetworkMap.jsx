@@ -247,6 +247,7 @@ function NetworkMap({
       const low = themeColor('--congestion-low')
       const moderate = themeColor('--congestion-moderate')
       const high = themeColor('--congestion-high')
+      const none = themeColor('--congestion-none')
       const selected = themeColor('--color-selected')
 
       // draw our layers under the basemap's place names, so district names stay readable
@@ -262,11 +263,10 @@ function NetworkMap({
           id: 'segments',
           type: 'line',
           source: 'segments',
-          // roads without data are not drawn, so they stay as the basemap shows them
-          filter: ['in', ['get', 'level'], ['literal', ['low', 'moderate', 'high']]],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': ['match', ['get', 'level'], 'low', low, 'moderate', moderate, high],
+            // roads without data in grey, so they read as "No data", not as low congestion
+            'line-color': ['match', ['get', 'level'], 'low', low, 'moderate', moderate, 'high', high, none],
             'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 4, 17, 8],
             'line-opacity': 0.9,
           },
