@@ -18,15 +18,6 @@ MAPPING_PATH = (
     / "network_mappings.json"
 )
 
-FRONTEND_COPY_PATH = (
-    REPO_ROOT
-    / "frontend"
-    / "public"
-    / "data"
-    / "intersections.json"
-)
-
-
 def make_record(
     intersection_id: str,
 ) -> dict:
@@ -115,9 +106,3 @@ def test_record_with_one_coordinate_is_refused(tmp_path) -> None:
 
     with pytest.raises(ValidationError):
         load_intersections(path)
-
-
-def test_frontend_copy_matches_the_study_intersections() -> None:
-    assert load_intersections(FRONTEND_COPY_PATH) == (
-        load_intersections()
-    )

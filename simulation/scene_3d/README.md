@@ -99,23 +99,22 @@ Each script can also be run on its own; its usage is at the top of the file.
   `extract_buildings.py`). Each building records whether its height is from OSM or estimated.
 - One OSM footprint is left out on purpose (`EXCLUDED_OSM_IDS` in `merge_buildings.py`): it
   duplicated the traced CST podium.
-- The committed `baseline/` files come from a test run (`TEST_SUMO_DEMAND_CHECK`), built with
-  `python simulation/scene_3d/build_test_run.py`: made-up demand of 20 vehicles per movement and
-  15-minute interval, planned with the SUMO demand generation and simulated with SUMO. Replace them
-  with `build_playback.py <baseline run folder>`. A baseline run from the detector data has no
-  tunnel traffic, because no detector counts the tunnel movements.
+- The committed `baseline/` files are one baseline run from the synthetic traffic source
+  (`RUN_BASELINE_20261118T0800-0900_S42`: Wednesday 18 Nov 2026, 08:00 to 09:00, seed 42) on the
+  current network with the Webster signal plan. They were built with `run_baseline.py --source
+  synthetic`, then `build_playback.py` and `python -m backend.analytics.service` on its run folder,
+  so `run.json`, the vehicle files, `signals.json` and `kpis.json` all describe the same run. They
+  are committed so the page works right after cloning; runs from the RCRC source stay in
+  `jaadah-private-data`. Current Traffic shows them as a sample run whenever there is no live run.
 - Test files are marked `"is_test": true` (in `run.json` from `build_test_run.py`, and in
   `kpis.json` from `build_test_kpis.py`). While they are, Current Traffic says that it shows test
-  data. A real run has no mark, so the notice goes away by itself.
+  data. The committed baseline run has no mark.
 - A failed run writes only `run.json` (status `failed` and its reason). The vehicle and signal files
   of an earlier run may stay in the folder; the view ignores them, because `run.json` lists none.
-- The committed `baseline/kpis.json` is test data too (`build_test_kpis.py`): made-up values, built
-  with the `KpiResult` model so the file has the real shape. It is replaced by the KPI engine's
-  results for the baseline run.
 - No detector counts the tunnel movements (`MOV_N_S_TUNNEL`, `MOV_S_N_TUNNEL`,
-  `MOV_TUNNEL_ONRAMP`), so the detector demand leaves the underpass empty. The test run gives them
-  the same made-up demand as every other movement, for display only. They pass under the junction
-  and no KPI uses this run.
+  `MOV_TUNNEL_ONRAMP`), so the detector demand leaves the underpass empty, as in the committed baseline run.
+  A test run from `build_test_run.py` gives them the same made-up demand as every other movement,
+  for display only.
 - The view shows only the analysis period (`analysis_start_s` to `analysis_end_s` in `run.json`),
   never the warm-up, when the network is still filling up, or the clearance. The warm-up and
   clearance vehicles stay in the files.

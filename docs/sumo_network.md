@@ -9,8 +9,6 @@ This is a documentation file for the road network used by Jaadah's study-area si
 | `data/raw/road_network/jaadah_study_area.osm` | Original study-area OSM extract, not the edited simulation network. |
 | `data/processed/road_network/jaadah_study_area.net.xml` | Current SUMO edges, lanes, connections, junctions, and traffic-light program. |
 | `data/processed/road_network/network_mappings.json` | Jaadah approach, movement, route, lane, and detector mappings. |
-| `data/processed/traffic_signals/jaadah_tls_program.xml` | Separate copy of the signal program; the baseline uses the program inside the `.net.xml`. |
-| `data/processed/road_network/backups/` | Historical snapshots from earlier editing stages, not a replacement for the current network. |
 | `simulation/configs/tests/` and `simulation/scenarios/tests/` | SUMO test configurations and their route files. |
 
 The network contains the central signalized intersection, slip and bypass roads, U-turns, ramps, and a main road that passes under the surface junction. The underpass is separated by road connections in SUMO, but SUMO-GUI draws the roads on one plane. The 3D frontend adds visual depth separately; see [its scene guide](../simulation/scene_3d/README.md).
@@ -42,7 +40,7 @@ Those 12 phases sum to 225 seconds.
 
 **Compared with the real controller.** The plan was derived from the counts alone, without the controller's settings. It ranks the approaches as the real controller's maximum greens do: East most, West second. North's green, however, is above the real controller's maximum for North in two of its time-of-day plans. The real controller serves North's traffic within that maximum, so the model's capacity for North, from the textbook saturation flow, is probably too low; calibration (PBI 9) is where to check it, and the script can then be rerun.
 
-**Limits.** One fixed plan cannot follow the actuated controller, which moves green between approaches cycle by cycle and changes plan during the day. In the busiest hours some approaches still get less green than their counted flow needs, so queues there can still reach the end of the measurement zone and those results are unavailable, with their reason. At quieter times the long cycle adds some delay. Webster's method also takes the counts as demand: stop-line counts cannot exceed what the signal served, so in saturated hours they understate the real demand, and the plan inherits that. This is a modelled assumption, and the KPI engine labels results that use the signal timing accordingly (KPI engine section 9.8). The plan is replaced by RCRC's own timing sheet if it arrives, or complemented by time-of-day plans. The separate `jaadah_tls_program.xml` is useful for inspection, but a SUMO config that loads only the `.net.xml` uses the network's embedded program. Pedestrian actuation on the real South-to-East movement is outside the current baseline model; the signal is fixed-time here. Signal changes affect both SUMO runs and the KPI engine's signal inputs, so check both after an edit; a signal edit changes the network checksum, so `network_mappings.json` and its `mapping_version` change with it.
+**Limits.** One fixed plan cannot follow the actuated controller, which moves green between approaches cycle by cycle and changes plan during the day. In the busiest hours some approaches still get less green than their counted flow needs, so queues there can still reach the end of the measurement zone and those results are unavailable, with their reason. At quieter times the long cycle adds some delay. Webster's method also takes the counts as demand: stop-line counts cannot exceed what the signal served, so in saturated hours they understate the real demand, and the plan inherits that. This is a modelled assumption, and the KPI engine labels results that use the signal timing accordingly (KPI engine section 9.8). The plan is replaced by RCRC's own timing sheet if it arrives, or complemented by time-of-day plans. Pedestrian actuation on the real South-to-East movement is outside the current baseline model; the signal is fixed-time here. Signal changes affect both SUMO runs and the KPI engine's signal inputs, so check both after an edit; a signal edit changes the network checksum, so `network_mappings.json` and its `mapping_version` change with it.
 
 ### Network geometry versus measurement scope
 
@@ -52,7 +50,7 @@ The 16 synthetic detectors have modeled positions near selected lane endpoints. 
 
 ## How the network reached this state
 
-- The original OSM extract was converted and then edited for the study area. The checked-in network includes manual road and lane geometry, connections, speed limits, slip roads, ramps, U-turns, and the traffic signal. The snapshots in `backups/` show earlier stages.
+- The original OSM extract was converted and then edited for the study area. The checked-in network includes manual road and lane geometry, connections, speed limits, slip roads, ramps, U-turns, and the traffic signal. Earlier stages were kept as snapshot files until November 2026; they are now only in the git history (see below).
 - Commit `2092709` (16 October 2026) edited the `.net.xml` in NetEdit, changing junction/internal-lane geometry and some road-lane shapes and connections, and added the `stress_test_v2` assets. For example, its diff changes the north off-ramp connections from `133973525#0` and the south approach fan-out from `539502456#7` to `539502456#8`. These are lane-connection edits, not merely drawing changes. Treat the current `.net.xml` as authoritative rather than rebuilding it from the OSM extract.
 - Commit `51191b7` (28 October 2026) changed the **mapping routes**, not the network geometry: five West-origin routes now begin at `133793906#0` instead of `133793727#0`. At 600 vehicles/hour in the documented demand check, the earlier start caused up to about 22 seconds of insertion delay; the revised start reduced that to about 1.4 seconds. See [KPI measurements](kpi_measurements.md) for the measurement context. The old `stress_test_v2.rou.xml` still starts some routes on the earlier edge, so it does not represent the current generated-demand routes.
 
@@ -62,7 +60,7 @@ The October network diff gives two concrete examples of why this review matters.
 
 ### What the snapshots can tell us
 
-The backup filenames describe editing stages, but they are not a complete, dated change log. Their contents show the scale of the study-area reduction and later connection work:
+The snapshots were removed from the repository in November 2026, since git history already keeps every earlier version. They can still be read from commit `fa7df18`, for example `git show fa7df18:data/processed/road_network/backups/jaadah_study_area_before_reduction.net.xml`. Their filenames describe editing stages, but they are not a complete, dated change log. Their contents show the scale of the study-area reduction and later connection work:
 
 | Snapshot | External edges | Connections | How to use it |
 | --- | ---: | ---: | --- |
