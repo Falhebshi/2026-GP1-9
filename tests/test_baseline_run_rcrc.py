@@ -169,3 +169,54 @@ def test_without_history_an_outage_stops_the_run(rcrc_source, tmp_path):
     problems = run(connect(missing={ANALYSIS_START + STEP}), tmp_path, history_days=0)
 
     assert problems[0] == "Movement demand could not be built:"
+
+
+def run_window(client, tmp_path, analysis_start):
+    with pytest.raises(BaselineNotStarted) as stopped:
+        run_baseline(
+            analysis_start, analysis_start + timedelta(minutes=30),
+            client=client, output_dir=tmp_path / "out", run_id="RUN_TEST",
+            source="rcrc", history_days=0,
+        )
+    return stopped.value.problems
+
+
+@pytest.mark.parametrize("analysis_start", [
+    FIRST_DAY,  # the warm-up starts before the first interval of the report
+    FIRST_DAY + timedelta(days=DAYS),  # the clearance ends after the report
+])
+def test_window_outside_the_report_stops_with_its_dates(rcrc_source, tmp_path, analysis_start):
+    connect, captured = rcrc_source
+
+    problems = run_window(connect(released_through=FIRST_DAY + DAYS * 96 * STEP), tmp_path, analysis_start)
+
+    assert problems == [
+        "The RCRC data does not cover this simulation window.",
+        f"Required: {(analysis_start - STEP).isoformat()} to "
+        f"{(analysis_start + timedelta(minutes=30) + STEP).isoformat()}",
+        f"RCRC data: {FIRST_DAY.isoformat()} to {(FIRST_DAY + timedelta(days=DAYS)).isoformat()}",
+    ]
+    assert "demands" not in captured
+
+
+def test_window_not_yet_released_names_the_replay_clock(rcrc_source, tmp_path):
+    connect, captured = rcrc_source
+
+    problems = run(connect(released_through=RUN_END - STEP), tmp_path)
+
+    assert problems[:3] == [
+        "Traffic data are not yet complete for this simulation window.",
+        f"Required through: {RUN_END.isoformat()}",
+        f"Latest available: {(RUN_END - STEP).isoformat()}",
+    ]
+    assert "JAADAH_REPLAY_OFFSET_WEEKS=0" in problems[3]
+    assert "demands" not in captured
+
+
+def test_rcrc_is_the_default_source():
+    args = baseline.parse_args([
+        "--analysis-start", "2026-09-29T08:00+03:00",
+        "--analysis-end", "2026-09-29T09:00+03:00",
+    ])
+
+    assert args.source == "rcrc"

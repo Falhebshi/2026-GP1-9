@@ -8,8 +8,8 @@ The ingestion layer forms the boundary between source-specific data formats and 
 
 The implementation supports two sources:
 
-- Jaadah's standalone synthetic traffic source, read over HTTP, which acts as a development substitute for an external provider;
-- the RCRC replay source, which plays back RCRC reports for the study intersection (site 1444) as a live feed (see [RCRC Source](#rcrc-source)).
+- the RCRC traffic feed, Jaadah's main source, which plays back RCRC reports for the study intersection (site 1444) as a live feed (see [RCRC Source](#rcrc-source));
+- Jaadah's standalone synthetic traffic source, read over HTTP, for development and testing.
 
 The ingestion flow is:
 
@@ -753,7 +753,7 @@ The 5-interval limit was chosen by evaluation on the site 1444 report (`analysis
 
 ## Current Scope
 
-The ingestion layer currently supports Jaadah's synthetic traffic source and RCRC sources (the replay source today).
+The ingestion layer currently supports the RCRC traffic feed (replayed from RCRC reports today), Jaadah's main source, and Jaadah's synthetic traffic source for development and testing.
 
 Its architecture is intentionally source-oriented so that additional adapters and clients can be introduced later when other traffic-data providers are integrated.
 

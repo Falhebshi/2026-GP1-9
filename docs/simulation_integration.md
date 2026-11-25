@@ -174,7 +174,7 @@ assets, not final generated demand.
 ## Baseline Run from a Traffic Source
 
 `simulation/scripts/run_baseline.py` runs one baseline scenario end to end:
-traffic source (synthetic or the RCRC replay source) → ingestion → demand
+traffic source (the RCRC traffic feed by default, or the synthetic source) → ingestion → demand
 transformation → `generate_and_execute_scenario()`. It stops at the raw SUMO outputs; KPIs are
 calculated from them afterwards.
 
@@ -182,18 +182,25 @@ From the repository root, start the source in one terminal and run the
 baseline in another:
 
 ```bash
-uvicorn traffic_source.synthetic.server:app
-python simulation/scripts/run_baseline.py --analysis-start 2026-10-27T08:00+03:00 --analysis-end 2026-10-27T09:00+03:00
+uvicorn traffic_source.rcrc_replay.server:app --port 8002
+python simulation/scripts/run_baseline.py --analysis-start 2026-08-10T08:00+03:00 --analysis-end 2026-08-10T09:00+03:00
 ```
+
+The RCRC report covers 13 July to 13 October 2026, and the RCRC traffic feed
+releases it on a replay clock 13 weeks behind real time
+([RCRC traffic feed](rcrc_replay_source.md#the-replay-clock)).
+For a window the clock has not reached yet, start the feed with
+`JAADAH_REPLAY_OFFSET_WEEKS=0`. For the synthetic source, start
+`uvicorn traffic_source.synthetic.server:app` instead and add `--source synthetic`.
 
 | Parameter | Meaning |
 | --- | --- |
 | `--analysis-start`, `--analysis-end` | Required. Analysis period in Riyadh time (`+03:00`). |
-| `--source` | `synthetic` (default) or `rcrc` (the [RCRC replay source](rcrc_replay_source.md)). |
+| `--source` | `rcrc` (default, the [RCRC traffic feed](rcrc_replay_source.md)) or `synthetic`. |
 | `--source-url` | Default `http://127.0.0.1:8000` (synthetic) or `http://127.0.0.1:8002` (rcrc; 8001 is the network map server). |
 | `--history-days` | Days before the run window ingested to estimate missing counts. Default 0 (synthetic) or 35 (rcrc). |
 | `--seed`, `--step-length` | Default 42 and 0.4 s. |
-| `--run-id` | Default `RUN_BASELINE_<date>T<start>-<end>_S<seed>`, e.g. `RUN_BASELINE_20261027T0800-0900_S42`. |
+| `--run-id` | Default `RUN_BASELINE_<date>T<start>-<end>_S<seed>`, e.g. `RUN_BASELINE_20260810T0800-0900_S42`. |
 | `--out` | Fresh output folder; default `simulation/outputs/baseline_runs/<run-id>/`. |
 | `--mapping`, `--net`, `--sumo-bin` | Default to the study-area mapping, network and `sumo`. |
 
@@ -201,9 +208,12 @@ The run window is the analysis period plus 900 s warm-up and 900 s clearance:
 07:45–09:15 for an 08:00–09:00 analysis, one continuous 5400 s SUMO run. The
 script first checks that SUMO can be run, then:
 
-1. reads `latest_available_timestamp` from the source's `/health`, and stops
-   unless it is at or after the end of the run window (records are labelled by
-   interval end, so 09:15 means 09:00–09:15 is stored);
+1. with the RCRC source, reads `data_start` and `data_end` from the source's
+   `/health`, and stops, naming the report's dates, if the run window is not
+   inside them; then reads `latest_available_timestamp`, and stops unless it is
+   at or after the end of the run window (records are labelled by interval end,
+   so 09:15 means 09:00–09:15 is stored). With the RCRC traffic feed, that stop
+   names the replay clock and `JAADAH_REPLAY_OFFSET_WEEKS=0`;
 2. ingests the observations of the run window, and stops if any record is
    rejected;
 3. builds `SimulationDemand` for the run window, and stops if any movement or
@@ -235,11 +245,13 @@ the SUMO run.
 
 Known limits:
 
-- Step 1 shows that the source has reached the end of the window, not that it
-  holds data that far back. On its first start the source fills only the 7 days
-  before it; an older window is reported in step 3 as missing observations.
-- The source needs the private profile files in
-  `../jaadah-private-data/processed/rcrc_sample/` (see
+- With the synthetic source, step 1 shows that the source has reached the end
+  of the window, not that it holds data that far back. On its first start the
+  synthetic source fills only the 7 days before it; an older window is reported
+  in step 3 as missing observations.
+- The RCRC traffic feed needs the private report loaded (see
+  `rcrc_replay_source.md`); the synthetic source needs the private profile files
+  in `../jaadah-private-data/processed/rcrc_sample/` (see
   `synthetic_traffic_source.md`).
 - `raw/fcd.xml` is large: about 1.1 GB for a 5400 s run with 100 vehicles per
   detector per interval. `simulation/outputs/baseline*/` is ignored by Git.

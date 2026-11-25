@@ -203,6 +203,7 @@ def test_health_reports_how_far_the_feed_has_reached(replay):
         "site_id": "1444",
         "latest_available_timestamp": (DAY + 40 * STEP).isoformat(),
         "replay_time": (DAY + 40 * STEP).isoformat(),
+        "data_start": DAY.isoformat(),
         "data_end": (DAY + 96 * STEP).isoformat(),
     }
 

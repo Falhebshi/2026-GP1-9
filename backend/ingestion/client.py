@@ -163,3 +163,20 @@ class RcrcReplayClient:
         return _fetch_latest_available_timestamp(
             self.base_url, self.timeout_s, "RCRC source"
         )
+
+    def fetch_data_window(self) -> tuple[datetime | None, datetime | None]:
+        """
+        Return the start and end of the data the source holds (data_start
+        and data_end in /health), each None when the source does not say.
+        Unlike latest_available_timestamp, they do not move with the
+        replay clock: a window outside them will never be delivered.
+        """
+
+        response = httpx2.get(f"{self.base_url}/health", timeout=self.timeout_s)
+        response.raise_for_status()
+        body = response.json()
+        start, end = body.get("data_start"), body.get("data_end")
+        return (
+            datetime.fromisoformat(start) if start else None,
+            datetime.fromisoformat(end) if end else None,
+        )
