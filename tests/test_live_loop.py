@@ -564,3 +564,111 @@ def test_a_pass_has_a_bounded_number_of_steps(source, tmp_path, monkeypatch):
 
     assert loop.step()["message"] == "Catching up."
     assert len(starts) == MAX_STEPS_PER_PASS
+
+
+# ============================================================
+# STOPPING AT ANY MOMENT, AND WHAT THE LOOP MAY DELETE
+# ============================================================
+
+def test_demand_saved_by_an_update_that_did_not_finish_is_left_out(source, tmp_path):
+    """
+    An update saves the demand before the chain's record: a loop stopped
+    between the two leaves the next interval in the demand file only. It
+    is left out, so the update that runs it again adds it once.
+    """
+    from simulation.live.demand import load_demand, save_demand
+
+    client = source()
+    first = demand_at(client, NOON - STEP).demands
+    second = demand_at(client, NOON).demands
+    save_demand(first + second, tmp_path)
+
+    assert load_demand(tmp_path, NOON - STEP) == first
+    assert load_demand(tmp_path, NOON) == first + second
+    assert load_demand(tmp_path, None) == []  # nothing simulated yet
+
+
+def test_the_loop_publishes_only_into_a_live_folder(source, tmp_path):
+    with pytest.raises(ValueError, match="must be named 'live'"):
+        LiveLoop(source(), LoopSettings(
+            source="rcrc", work_root=tmp_path / "work", mapping_path=MAPPING, network_path=NETWORK,
+            output_dir=tmp_path / "INT_001",
+        ))
+
+    baseline = tmp_path / "other" / "live"
+    baseline.mkdir(parents=True)
+    (baseline / "run.json").write_text(json.dumps({"run_id": "RUN_BASELINE"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="not a live run"):
+        LiveLoop(source(), LoopSettings(
+            source="rcrc", work_root=tmp_path / "work", mapping_path=MAPPING, network_path=NETWORK,
+            output_dir=baseline,
+        ))
+
+
+def test_cleaning_up_deletes_only_old_chain_folders(source, tmp_path):
+    import os
+    import time
+
+    loop = make_loop(source(), tmp_path)
+    chain = loop.record = some_chain()
+    work = tmp_path / "work"
+    old = time.time() - 2 * 24 * 3600
+    for name, marker in (("RUN_LIVE_20260801T0245_S42", True), ("baseline_runs", True),
+                         ("RUN_LIVE_20260802T0245_S42", False)):
+        folder = work / name
+        folder.mkdir(parents=True)
+        (folder / "something.xml").write_text("x", encoding="utf-8")
+        if marker:
+            (folder / "chain.json").write_text("{}", encoding="utf-8")
+            os.utime(folder / "chain.json", (old, old))
+        os.utime(folder, (old, old))
+    (work / chain.run_id).mkdir()
+
+    loop._clean(chain)
+
+    assert not (work / "RUN_LIVE_20260801T0245_S42").exists()  # an old chain
+    assert (work / "baseline_runs").exists()  # not a chain folder
+    assert (work / "RUN_LIVE_20260802T0245_S42").exists()  # no chain.json: not known to be a chain
+
+
+def test_a_pause_s_problems_leave_run_json_when_it_ends(source, tmp_path):
+    loop = make_loop(source(), tmp_path)
+    write_published(tmp_path / "live", "RUN_LIVE_20260806T1145_S42", NOON - STEP, 900, 1800)
+    path = tmp_path / "live" / "run.json"
+    run = json.loads(path.read_text(encoding="utf-8"))
+    run["live"] = {}
+    path.write_text(json.dumps(run), encoding="utf-8")
+
+    loop.publisher.publish_state(loop._state(
+        "paused", "Paused.", since_interval_end=NOON.isoformat(), problems=["MOV_N_L no demand"],
+    ))
+    assert json.loads(path.read_text(encoding="utf-8"))["live"]["problems"] == ["MOV_N_L no demand"]
+
+    loop.publisher.publish_state(loop._state("waiting", "Waiting for traffic data."))
+    live = json.loads(path.read_text(encoding="utf-8"))["live"]
+    assert "problems" not in live and "since_interval_end" not in live
+    assert live["state"] == "waiting"
+
+
+def test_a_new_run_moves_in_only_once_it_is_complete(source, tmp_path):
+    """
+    A new chain's first update is built in .next/; the run on the page
+    stays whole until then, and the new files move in with run.json last.
+    """
+    loop = make_loop(source(), tmp_path)
+    live = tmp_path / "live"
+    write_published(live, "RUN_LIVE_20260805T0245_S42", NOON - timedelta(days=1), 900, 3600)
+    staging = live / ".next"
+    write_published(staging, "RUN_LIVE_20260806T1145_S42", NOON - STEP, 900, 1800)
+
+    # while .next/ is built, the page still reads the old run
+    assert loop.publisher.published_run_id() == "RUN_LIVE_20260805T0245_S42"
+
+    loop.publisher._start_folder(some_chain())
+    loop.publisher._move_in(staging)
+
+    assert loop.publisher.published_run_id() == "RUN_LIVE_20260806T1145_S42"
+    assert not staging.exists()
+    assert {p.name for p in live.glob("*.json")} == {"run.json", "kpis.json", "vehicles_0.json", "vehicles_1.json"}
+    previous = json.loads((live / "previous" / "run.json").read_text(encoding="utf-8"))
+    assert previous["run_id"] == "RUN_LIVE_20260805T0245_S42"

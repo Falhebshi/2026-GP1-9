@@ -24,8 +24,9 @@ Rules applied, and why:
   before the interval would drop the first day's earlier slots, and the
   time-slot average of such a slot can then have too few values (it
   needs 3 of the same day type). The history holds the chain's own
-  earlier intervals, so a gap is counted back from now, as the live
-  rule requires (PBI 8, Decision 12).
+  earlier intervals, so a gap is counted back from the newest
+  interval, not from the end of the history, as the live loop
+  requires.
 - Long gaps: the live loop estimates a silent detector however long it
   has been silent (LIVE_FALLBACK_GAP_INTERVALS), with the plain
   time-slot average after the 5th interval
@@ -33,13 +34,13 @@ Rules applied, and why:
   and the loop pauses (simulation/live/loop.py), only when it cannot be
   estimated at all: its time slot has too few earlier values of its day
   type.
-- Rejected source rows are left out and reported, as in ingestion
-  everywhere; their detectors count as not reported for that interval,
+- Rejected source rows are left out and reported (the loop logs how
+  many, simulation/live/loop.py), as in ingestion everywhere; their detectors count as not reported for that interval,
   so they are estimated and the interval is marked as estimated.
 - Estimated intervals: an interval in which any count was estimated for
   a detector that did not report. The page shows "No detector data" for
-  it (team decision, option 3), so it is recorded with the approaches
-  and estimation methods involved.
+  it (estimated results are not shown on Current Traffic), so it is
+  recorded with the approaches and estimation methods involved.
 """
 
 import json
@@ -158,18 +159,27 @@ def estimated_interval(
     )
 
 
-def load_demand(folder: str | Path) -> list[SimulationDemand]:
-    """The chain's demand so far, oldest interval first."""
+def load_demand(folder: str | Path, until: datetime | None = None) -> list[SimulationDemand]:
+    """
+    The chain's demand so far, oldest interval first, up to and including
+    the interval ending at until (the chain's last simulated interval).
+    An update saves the demand before the chain's record, so a loop
+    stopped between the two leaves the next interval in the demand file
+    but not in the record; it is left out here, and the update that runs
+    it again adds it once. until=None means no interval has been
+    simulated yet: nothing is returned.
+    """
 
     path = Path(folder) / DEMAND_FILE
 
-    if not path.is_file():
+    if until is None or not path.is_file():
         return []
 
-    return [
+    demands = [
         SimulationDemand.model_validate(item)
         for item in json.loads(path.read_text(encoding="utf-8"))
     ]
+    return [demand for demand in demands if demand.interval_end <= until]
 
 
 def save_demand(demands: list[SimulationDemand], folder: str | Path) -> Path:

@@ -10,8 +10,9 @@
 
 const BASE = '/data'
 
+// Files under live/ are rewritten under the same names at every update: never from a cache
 async function getJson(url) {
-  const response = await fetch(url)
+  const response = await fetch(url, url.includes('/live/') ? { cache: 'no-store' } : undefined)
   if (!response.ok) throw new Error(`Could not load ${url}`)
   return response.json()
 }

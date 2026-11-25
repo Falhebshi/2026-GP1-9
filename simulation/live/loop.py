@@ -19,13 +19,13 @@ What the loop does, and why:
   wait for it.
 - New day: an interval that starts at or after 03:00 of a new day starts
   a new chain, with its warm-up from 02:45 (simulation/live/chain.py).
-- Sensor outages: a silent detector is estimated however long it is
+- Detector outages: a silent detector is estimated however long it is
   silent (backend/demand/imputation.py), and the interval is marked as
-  estimated, so the page shows "No detector data" for it (team decision,
-  option 3). The chain goes on through the outage, so the queues after
-  it are right. When an interval cannot be built at all (its time slot
-  has too few earlier values to estimate from, or any other demand
-  problem), the loop pauses: run.json says so and why, and the last
+  estimated, so the page shows "No detector data" for it (estimated
+  results are not shown on Current Traffic). The chain goes on through
+  the outage, so the queues after it are right. When an interval cannot
+  be built at all (its time slot has too few earlier values to estimate
+  from, or any other demand problem), the loop pauses: run.json says so and why, and the last
   results stay on the page. As soon as an interval can be built again,
   a new chain starts, because the old chain cannot continue across an
   interval that has no demand.
@@ -38,7 +38,8 @@ What the loop does, and why:
   45 minutes the KPIs and playback read; the last KEEP_STATES saved
   states are kept, so a segment can be rerun; trip information and
   signal states are small and kept for the chain. A chain's folder is
-  deleted 24 hours after its last update.
+  deleted 24 hours after its last update; only chain folders
+  (RUN_LIVE_* with a chain.json) are ever deleted.
 """
 
 import json
@@ -55,6 +56,7 @@ from jaadah.mapping.loader import load_network_mappings
 from jaadah.sumo_demand.planner import compute_free_flow_times
 from simulation.live.chain import (
     INTERVAL,
+    RECORD_FILE as CHAIN_FILE,
     RIYADH,
     WARMUP_S,
     ChainError,
@@ -79,6 +81,7 @@ from simulation.live.update import run_update
 log = logging.getLogger("jaadah.live")
 
 ACTIVE_FILE = "active.json"
+RUN_PREFIX = "RUN_LIVE_"
 MAX_CATCH_UP = 8
 MAX_FAILURES = 3
 # A pass can run a whole day's intervals: a chain started during the day
@@ -338,8 +341,14 @@ class LiveLoop:
     def _update(self, record: ChainRecord, demand) -> None:
         folder = self.chain_dir(record)
         started = time.monotonic()
+        if demand.rejected_rows:
+            log.warning(
+                "%s: %d source row(s) of the interval ending %s were rejected and left out; "
+                "their detectors are estimated", record.run_id, demand.rejected_rows,
+                demand.interval_end.strftime("%H:%M"),
+            )
         result = run_update(
-            record, folder, load_demand(folder), demand.demands,
+            record, folder, load_demand(folder, record.last_interval_end), demand.demands,
             estimated_interval(demand.demands, self.mapping),
             mapping=self.mapping,
             network_path=self.settings.network_path,
@@ -427,13 +436,18 @@ class LiveLoop:
         for item in segments[:-KEEP_STATES]:
             (folder / item.folder / STATE_FILE).unlink(missing_ok=True)
 
+        # Only the loop's own chain folders are deleted (RUN_LIVE_* with a
+        # chain.json), so a --work-dir pointed at another folder, such as
+        # simulation/outputs/, never loses the baseline runs.
         now = time.time()
         for path in self.work_root.iterdir():
-            if not path.is_dir() or path.name == record.run_id:
+            marker = path / CHAIN_FILE
+            if (
+                not path.is_dir() or path.name == record.run_id
+                or not path.name.startswith(RUN_PREFIX) or not marker.is_file()
+            ):
                 continue
-            marker = path / "chain.json"
-            age = now - (marker.stat().st_mtime if marker.exists() else path.stat().st_mtime)
-            if age > KEEP_CHAIN.total_seconds():
+            if now - marker.stat().st_mtime > KEEP_CHAIN.total_seconds():
                 shutil.rmtree(path, ignore_errors=True)
 
     # ------------------------------------------------------------

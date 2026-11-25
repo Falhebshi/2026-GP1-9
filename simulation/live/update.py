@@ -17,7 +17,9 @@ Steps, in order:
 Nothing in the record changes until the segment has finished, so an
 update that fails or is stopped leaves the chain as it was, and the loop
 simply runs it again. A segment folder left by such an update is not in
-the record and is removed first.
+the record and is removed first. The demand is saved just before the
+record: if the loop stops between the two, the demand file holds one
+interval more than the record, and load_demand leaves it out.
 """
 
 import hashlib

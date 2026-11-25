@@ -94,7 +94,7 @@ from jaadah.models.kpis import (
 from jaadah.models.network import MovementControl
 from jaadah.models.scenario import SimulationRun, SimulationRunStatus
 from jaadah.models.traffic import SimulationDemand
-from jaadah.sumo_demand.planner import RunWindow
+from jaadah.sumo_demand.planner import RunWindow, compute_free_flow_times
 from jaadah.sumo_demand.writer import VEHICLE_TYPE
 
 
@@ -172,6 +172,9 @@ class RunMeasurements(NamedTuple):
     run, its time window, the vehicle passages, the cycle queues and the
     demand. The KPIs are calculated from these alone, so they can be kept
     after the FCD is deleted (docs/kpi_engine.md, section 17).
+    fcd_start_s is set when they were read from FCD that covers only the
+    run's last part (RunFiles.fcd_start_s): nothing before it was
+    measured.
     """
 
     run: SimulationRun
@@ -179,6 +182,7 @@ class RunMeasurements(NamedTuple):
     passages: VehiclePassages
     queues: CycleQueues
     demands: list[SimulationDemand]
+    fcd_start_s: float | None = None
 
 
 def calculate_run_kpis(
@@ -228,13 +232,14 @@ def collect_measurements(
     queues = collect_cycle_queues(
         config, network_path, program, files.fcd_path, run_id=run.run_id,
         window=files.window, vehicle_length_m=float(VEHICLE_TYPE["length"]),
+        fcd_start_s=files.fcd_start_s,
     )
     demands = [
         SimulationDemand.model_validate(record)
         for record in json.loads(files.demand_path.read_text(encoding="utf-8"))
     ]
 
-    return RunMeasurements(run, files.window, passages, queues, demands)
+    return RunMeasurements(run, files.window, passages, queues, demands, files.fcd_start_s)
 
 
 def calculate_kpis(
@@ -243,6 +248,7 @@ def calculate_kpis(
     network_path: str | Path = DEFAULT_NETWORK_PATH,
     time_window: AnalysisInterval | None = None,
     provisional: bool = False,
+    simulated_until: datetime | None = None,
 ) -> list[KpiResult]:
     """
     The KpiResults of one run from its measurement records. Fast: the
@@ -253,7 +259,10 @@ def calculate_kpis(
     in a calculation of the whole period. The whole-period queues are
     given only when the window covers the whole analysis period. With
     provisional, the window's last interval leaves out the vehicles still
-    in their zone (docs/kpi_engine.md, section 16.5).
+    in their zone, and the vehicles due to depart in the last
+    RECENT_DEPARTURE_S before simulated_until (when the simulation
+    stopped; the window's end without it) that have not entered yet
+    (docs/kpi_engine.md, section 16.5).
 
     Raises ValueError when the run did not complete, when it was
     measured with another version of the network mapping, or when
@@ -261,7 +270,7 @@ def calculate_kpis(
     """
 
     return prepare_calculation(
-        measurements, mapping_path, network_path, time_window, provisional,
+        measurements, mapping_path, network_path, time_window, provisional, simulated_until,
     ).results()
 
 
@@ -271,6 +280,7 @@ def prepare_calculation(
     network_path: str | Path = DEFAULT_NETWORK_PATH,
     time_window: AnalysisInterval | None = None,
     provisional: bool = False,
+    simulated_until: datetime | None = None,
 ) -> "RunCalculation":
     """
     The engine calls of one run, ready to give its results or its
@@ -285,15 +295,39 @@ def prepare_calculation(
 
     run = measurements.run
     _check_completed(run)
+    _check_measured(measurements, time_window)
     config = _mapping_of(run, mapping_path)
     network = build_network_inputs(config)
     program = _program_of(run, config, network_path)
+    # only a provisional interval needs them (not_entered_yet)
+    free_flow_s = compute_free_flow_times(config, network_path) if provisional else None
 
     return RunCalculation(
         run, measurements.window, network, program,
         measurements.passages, measurements.queues, measurements.demands,
-        time_window, provisional,
+        time_window, provisional, simulated_until, free_flow_s,
     )
+
+
+def _check_measured(measurements: RunMeasurements, time_window: AnalysisInterval | None) -> None:
+    """
+    Measurements read from FCD of the end of a run (the live loop) hold
+    nothing before fcd_start_s: vehicles that entered their zone earlier
+    are left out, so earlier intervals would show false zeros. Their KPIs
+    are refused unless the window starts at least one interval after the
+    FCD does, so every vehicle of the window is seen before its zone.
+    """
+
+    if measurements.fcd_start_s is None:
+        return
+    first = measurements.window.epoch + timedelta(
+        seconds=measurements.fcd_start_s + ANALYSIS_INTERVAL_S
+    )
+    if time_window is None or time_window.start < first:
+        raise ValueError(
+            f"run {measurements.run.run_id} was measured from {measurements.fcd_start_s:g} s only; "
+            f"a time window starting at {first.isoformat()} or later is needed"
+        )
 
 
 def _check_completed(run: SimulationRun) -> None:
@@ -388,11 +422,19 @@ class IntervalParts(NamedTuple):
     blocked: dict
 
 
+# A provisional interval: a vehicle due to depart this long before the
+# simulation stopped, and not in the network yet, has not entered *yet*
+# (SUMO inserts a vehicle at its departure, or a few steps later when the
+# entry is briefly occupied); one waiting longer is held back by traffic
+# and blocks its approach (section 16.5)
+RECENT_DEPARTURE_S = 60
+
+
 class RunCalculation:
     """The engine calls of one run, kept together for their shared inputs."""
 
     def __init__(self, run, window, network, program, passages, queues, demands,
-                 time_window=None, provisional=False):
+                 time_window=None, provisional=False, simulated_until=None, free_flow_s=None):
         self.run = run
         self.program = program
         self.demands = demands
@@ -411,12 +453,42 @@ class RunCalculation:
         # first interval keeps the initial queue it inherits (section 13.4)
         self.hcm_intervals = analysis_intervals(window.epoch, self.intervals[-1].end)
         self.provisional = self.intervals[-1] if provisional else None
+        self.simulated_until = simulated_until or (self.provisional.end if self.provisional else None)
+        self.free_flow_s = free_flow_s
         self.slips = {
             m for m, a in self.attributes.items() if a.control == MovementControl.UNCONTROLLED
         }
         self.passages = passages
         self.queues = queues
         self.out: list[KpiResult] = []
+
+    def not_entered_blocking(self) -> list:
+        """
+        The vehicles that could not enter the network and block their
+        approach (section 13.7). In a provisional interval, a vehicle due
+        to depart in the last RECENT_DEPARTURE_S before the simulation
+        stopped has simply not entered yet: it may enter at the next
+        update, and the final calculation of the interval checks it. One
+        that has been waiting longer was held back by the traffic in
+        front of it (a queue that reached the network's edge), so it
+        blocks its approach, as in every interval (section 16.5).
+        """
+
+        vehicles = self.passages.uninserted
+        if self.provisional is None:
+            return vehicles
+        recent_from = self.simulated_until - timedelta(seconds=RECENT_DEPARTURE_S)
+
+        def not_entered_yet(vehicle) -> bool:
+            planned_departure = vehicle.planned_stop_line_time - timedelta(
+                seconds=self.free_flow_s[vehicle.movement_id]
+            )
+            return (
+                planned_departure >= recent_from
+                and self.provisional.start <= vehicle.planned_stop_line_time < self.provisional.end
+            )
+
+        return [vehicle for vehicle in vehicles if not not_entered_yet(vehicle)]
 
     def results(self) -> list[KpiResult]:
         parts = self.parts()
@@ -448,13 +520,9 @@ class RunCalculation:
         approach_queues = approach_interval_queues(
             run_id, signal_approaches, self.intervals, self.queues.approaches,
         )
-        uninserted = uninserted_approaches(run_id, self.movements, self.intervals, self.passages.uninserted)
-        # The provisional interval: a vehicle still waiting to enter when the
-        # simulation stopped (60 s before the interval's end) has not entered
-        # yet, it may enter at the next update; the final calculation of the
-        # interval checks it (section 16.5)
-        if self.provisional is not None:
-            uninserted = {key: reason for key, reason in uninserted.items() if key[1] != self.provisional}
+        uninserted = uninserted_approaches(
+            run_id, self.movements, self.intervals, self.not_entered_blocking(),
+        )
         zone_end = zone_end_approaches(approach_queues)
         blocked = merge_blocks(uninserted, zone_end)
 

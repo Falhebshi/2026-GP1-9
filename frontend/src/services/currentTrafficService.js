@@ -2,8 +2,8 @@
 //
 // The page shows the live run in public/data/<intersection>/live/ when the live update loop
 // (simulation/scripts/run_live.py) has published one, and otherwise the committed sample run in
-// baseline/, labelled as a sample. Never both: the folder is picked by its run.json (team
-// decision A on live outputs). From the folder it reads the run (run.json) and its KPI results
+// baseline/, labelled as a sample. Never both: the live folder is used only when it has a
+// run.json. From the folder it reads the run (run.json) and its KPI results
 // (kpis.json, KpiResult records from the KPI engine), and the approaches from
 // network/approaches.json. The alerts are still sample data. getCurrentTraffic() gives back:
 //
@@ -46,7 +46,7 @@
 //       noSensorData,                    null, or { approachIds } when the detectors were silent and
 //                                        the traffic was estimated: its KPIs are left out (kpis is
 //                                        empty, approach and movement kpis are {}), and the page
-//                                        shows "No detector data" instead (team decision, option 3)
+//                                        shows "No detector data" instead (estimated results are not shown)
 //       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
 //                                        the interval before in the same run (null for the first)
 //       approaches: [{
@@ -237,7 +237,7 @@ export async function getIntersection() {
     name: roadName(record.name_en),
     area: record.area_label,
     approaches: 4,
-    signalType: 'Fixed-time, 120 s cycle', // same signal program as in SUMO
+    signalType: 'Fixed-time (Webster), 225 s cycle', // same signal program as in SUMO
   }
 }
 
@@ -393,9 +393,10 @@ function liveState(run) {
 }
 
 // A JSON file, or null when it is not there. The dev server answers a missing file with the
-// page itself, so anything that is not JSON counts as missing too.
+// page itself, so anything that is not JSON counts as missing too. The live loop rewrites its
+// files under the same names at every update, so files under live/ are never taken from a cache.
 async function getJson(url) {
-  const response = await fetch(url)
+  const response = await fetch(url, url.includes('/live/') ? { cache: 'no-store' } : undefined)
   const isJson = response.headers?.get('content-type')?.includes('json') ?? true
   if (!response.ok || !isJson) return null
   return response.json()

@@ -24,8 +24,8 @@ the replay server does not need to run):
     python simulation/scripts/tests/run_live_fast.py --first 2026-08-18T02:45 --last 2026-08-19T03:30
 
 The working files and the page files go to
-simulation/outputs/tests/live_fast/ (ignored by git), never to the
-page's live folder. The report, one line per update, is written there as
+simulation/outputs/tests/live_fast/work/ and .../live_fast/live/
+(ignored by git), never to the page's live folder. The report, one line per update, is written there as
 report.csv; it holds timings and file sizes only, no traffic data.
 
 Exit codes: 0 every update ran, 1 an update failed or the loop paused,
@@ -121,7 +121,7 @@ def main(argv=None) -> int:
 
     if args.out.exists() and not args.keep:
         shutil.rmtree(args.out)
-    work, page = args.out / "work", args.out / "page"
+    work, page = args.out / "work", args.out / "live"  # the publisher only writes to a folder named live
 
     source = SteppedSource(RcrcReplayStorage(RCRC_REPLAY_DATABASE_PATH), args.first)
     try:

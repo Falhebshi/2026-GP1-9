@@ -14,6 +14,7 @@ import TrafficScene3D from '../components/TrafficScene3D'
 import useFullScreen from '../hooks/useFullScreen'
 import { getCurrentTraffic, withGaps } from '../services/currentTrafficService'
 import { darkness } from '../utils/daylight'
+import { RIYADH_TIME_ZONE } from '../utils/riyadhTime'
 import './CurrentTraffic.css'
 
 // Current Traffic page: the KPIs, alerts and the selected approach on the left, the 3D
@@ -73,6 +74,14 @@ function CurrentTraffic() {
 
   // Live run only: look for a new interval or a change of the loop's state every minute
   const live = data?.source === 'live'
+  // Once a live run has been shown, the minute check keeps running even if the page falls back
+  // to the sample run, so it returns to live by itself when the loop publishes again
+  const [liveSeen, setLiveSeen] = useState(false)
+  useEffect(() => {
+    if (live) setLiveSeen(true)
+  }, [live])
+  // checks in a row that found no live run while a live run was shown (see below)
+  const missesRef = useRef(0)
   // Live: the real time, read every few seconds, for which timeline bars the live clock has reached
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
@@ -81,12 +90,21 @@ function CurrentTraffic() {
     return () => clearInterval(timer)
   }, [live])
   useEffect(() => {
-    if (!live) return
+    if (!liveSeen) return
     const timer = setInterval(() => {
       getCurrentTraffic()
         .then((result) => {
           const view = viewRef.current ?? {}
           const current = view.data
+          // live/run.json is missing for a moment while a new run moves in (a restart, 03:00):
+          // one check without it is not a reason to leave live. Keep what is shown, and switch
+          // to the sample only after MAX_LIVE_MISSES checks in a row without a live run.
+          if (current?.source === 'live' && result.source !== 'live') {
+            missesRef.current += 1
+            if (missesRef.current < MAX_LIVE_MISSES) return
+          } else {
+            missesRef.current = 0
+          }
           const changed =
             result.live?.version !== current?.live?.version ||
             result.live?.state !== current?.live?.state ||
@@ -131,7 +149,7 @@ function CurrentTraffic() {
         .catch(() => {}) // keep showing what is there; the next minute tries again
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [live])
+  }, [liveSeen])
 
   // Following while the clock is still in the previous run (the minutes after a new chain is
   // published, before the clock reaches its start): move into the newest run at its start
@@ -394,6 +412,8 @@ function CurrentTraffic() {
 
 // How often a live run is checked for a new interval
 const POLL_MS = 60 * 1000
+// Checks in a row without a live run before a page showing live falls back to the sample run
+const MAX_LIVE_MISSES = 3
 // How far the live scene plays behind the data's own time (see liveClock)
 const LIVE_DELAY_MS = 20 * 60 * 1000
 
@@ -469,25 +489,32 @@ function timeBadge({ live, liveInfo, following }) {
   )
 }
 
+// Times on this page are data times at the intersection: Riyadh time, whatever the browser's zone
+const CLOCK = { hour: '2-digit', minute: '2-digit', timeZone: RIYADH_TIME_ZONE }
+
 // e.g. "21:30", or "unknown" without a time
 function formatTime(iso) {
   if (!iso) return 'unknown'
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-GB', CLOCK)
 }
 
 // e.g. "Sat 10 Oct, 21:30"
 function formatLabel(date) {
   const day = date
-    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    .toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: RIYADH_TIME_ZONE,
+    })
     .replace(',', '')
-  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const time = date.toLocaleTimeString('en-GB', CLOCK)
   return `${day}, ${time}`
 }
 
 // The 15 minutes the KPIs cover, e.g. "08:15–08:30"
 function intervalLabel({ start, end }) {
-  const time = (iso) =>
-    new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const time = (iso) => new Date(iso).toLocaleTimeString('en-GB', CLOCK)
   return `${time(start)}–${time(end)}`
 }
 
