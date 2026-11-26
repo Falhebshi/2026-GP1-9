@@ -2,7 +2,10 @@
 
 import json
 
-from backend.analytics.service import FRONTEND_DATA_DIR
+import pytest
+
+from backend.analytics.service import DEFAULT_NETWORK_PATH, FRONTEND_DATA_DIR
+from jaadah.kpi_inputs.signal_program import SignalProgramError
 from backend.outputs.signal_program import FILE_NAME, signal_program_payload, write_signal_program
 
 
@@ -38,3 +41,20 @@ def test_the_file_is_written_where_asked(tmp_path):
 
     assert path == tmp_path / FILE_NAME
     assert json.loads(path.read_text(encoding="utf-8")) == signal_program_payload()
+
+
+def test_a_network_edited_without_updating_the_mapping_is_refused(tmp_path):
+    """
+    The plan is read only from the network the mapping names (its
+    SHA-256), so the file can never hold new greens next to an old hash:
+    East green 90 s changed to 80 s in a copy of the network.
+    """
+
+    edited = tmp_path / "edited.net.xml"
+    text = DEFAULT_NETWORK_PATH.read_text(encoding="utf-8")
+    old = '<phase duration="90" state="GGGGGGrrrrrrrrrrr"/>'
+    assert text.count(old) == 1
+    edited.write_text(text.replace(old, old.replace('"90"', '"80"')), encoding="utf-8")
+
+    with pytest.raises(SignalProgramError, match="SHA-256 does not match"):
+        signal_program_payload(network_path=edited)

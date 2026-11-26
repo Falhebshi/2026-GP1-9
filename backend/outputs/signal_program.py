@@ -1,7 +1,7 @@
 """
-The study intersection's signal program for the website: the Location
-card's "Signal type" and the baseline plan of the alert and
-recommendation pages.
+The study intersection's signal program for the website: the "Signal
+type" of the Location card on Current Traffic, Traffic Forecast and
+Traffic Patterns & Trends.
 
 The program is read from the network file that SUMO runs, with the KPI
 engine's own reader (jaadah/kpi_inputs/signal_program.py), so the pages

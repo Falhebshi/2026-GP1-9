@@ -947,7 +947,7 @@ For an approach that is never congested, delay is almost the same in every slot:
 - **No comparison with a previous period.** The network and signal timing do not change between periods, so a change would only reflect demand, which the daily trend already shows day by day; and a 30-day comparison would need 60 days of history.
 - **The LOS distribution shows unavailable intervals as their own share** rather than leaving them out. On 22 Oct the intersection had 5 unavailable intervals of 96: leaving them out would scale up the known grades, although the missing ones were almost certainly F. Intervals with no vehicles have no grade and are not counted.
 - **Not produced here:** recurring alerts and threshold windows (recurring-problem detection, backlog items 24–25, which can run on the stored measurements) and anomaly days (`anomalies` is empty).
-- **The page opens on 7 days**, the period that is available soonest and most reliably: a 30-day view can fail its coverage rule (17.6) when the days of one weekday are missing, for example Fridays that could not be estimated, and the page should open on data. The 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
+- **The page opens on 7 days**, the longest period with enough stored days today; the 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
 
 ## 17.9 Results that combine days
 
