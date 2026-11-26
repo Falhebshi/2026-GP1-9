@@ -454,6 +454,8 @@ The `input_origins` of capacity and volume-to-capacity results follow `SignalPro
 
 The baseline signal program (embedded in `data/processed/road_network/jaadah_study_area.net.xml`: four phases, greens of 90, 27, 41 and 47 s, cycle 225 s) was derived from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)); its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
 
+**On the website.** The pages that show the signal type (the Location card on Current Traffic, Traffic Forecast and Traffic Patterns & Trends) read it from `frontend/public/data/<intersection>/signal_program.json`, written from the network with the same reader the engine uses (`python -m backend.outputs.signal_program`), so a page always describes the plan SUMO runs: "Fixed-time, 225 s cycle (modelled)", the note following the program's source. After any change to the plan in the network, the file is written again; a test fails while it does not match the network.
+
 ## 9.9 Scope limitation: passenger cars only
 
 Because heavy vehicles and buses are outside Jaadah's scope, both the simulation and the HCM calculation describe traffic made of passenger cars only. Real capacity, with trucks and buses present, would be somewhat lower.
@@ -945,7 +947,7 @@ For an approach that is never congested, delay is almost the same in every slot:
 - **No comparison with a previous period.** The network and signal timing do not change between periods, so a change would only reflect demand, which the daily trend already shows day by day; and a 30-day comparison would need 60 days of history.
 - **The LOS distribution shows unavailable intervals as their own share** rather than leaving them out. On 22 Oct the intersection had 5 unavailable intervals of 96: leaving them out would scale up the known grades, although the missing ones were almost certainly F. Intervals with no vehicles have no grade and are not counted.
 - **Not produced here:** recurring alerts and threshold windows (recurring-problem detection, backlog items 24–25, which can run on the stored measurements) and anomaly days (`anomalies` is empty).
-- **The page opens on 7 days**, the longest period with enough stored days today; the 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
+- **The page opens on 7 days**, the period that is available soonest and most reliably: a 30-day view can fail its coverage rule (17.6) when the days of one weekday are missing, for example Fridays that could not be estimated, and the page should open on data. The 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
 
 ## 17.9 Results that combine days
 
