@@ -452,7 +452,7 @@ The demand v of a movement in an interval is its `SimulationDemand` vehicle coun
 
 The `input_origins` of capacity and volume-to-capacity results follow `SignalProgram.source`: a program with source `observed` is labelled *observed*; `baseline_model` and `intervention` are labelled *modelled assumption*.
 
-The baseline signal program (`data/processed/traffic_signals/jaadah_tls_program.xml`: four phases, greens of 90, 27, 41 and 47 s, cycle 225 s) was derived from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)); its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
+The baseline signal program (embedded in `data/processed/road_network/jaadah_study_area.net.xml`: four phases, greens of 90, 27, 41 and 47 s, cycle 225 s) was derived from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)); its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
 
 ## 9.9 Scope limitation: passenger cars only
 

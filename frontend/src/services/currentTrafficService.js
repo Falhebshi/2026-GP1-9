@@ -67,7 +67,7 @@ import { notApplicableResult, sampleResult } from './sampleKpiResults'
 import { roadName } from '../utils/roadName'
 
 // The study intersection. Its name, area and centre come from its record in
-// public/data/intersections.json, a copy of data/processed/intersections.json.
+// public/data/intersections.json, the same file the backend loads (backend/outputs/intersections.py).
 const INTERSECTION_ID = 'INT_001'
 
 // Half the width of the square that is shown around the centre, in metres. 350 m is just inside
