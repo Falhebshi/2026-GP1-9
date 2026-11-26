@@ -34,6 +34,9 @@ Thumbs.db
 
 # Stored days of the historical analysis (rebuilt by run_history.py; about 2.5 MB a day)
 /data/history/
+# Trends page files: built from private RCRC data by backend/analytics/trends_page.py
+# on the computer that runs the history; never committed (docs/kpi_engine.md, section 17)
+/frontend/public/data/*/history/
 
 # Generated synthetic traffic database
 /data/synthetic_traffic/*.db

@@ -65,7 +65,8 @@
 //
 // Throws EmptyPeriodError, with the backend's reason, when the period has
 // too few simulated days (for example "not enough data: 14 of 30 days are
-// stored (at least 24 are needed)").
+// stored (at least 24 are needed)"), or when this computer has no trends
+// files at all ("No traffic history has been built on this computer yet.").
 //
 // ---------------------------------------------------------------------------
 // getBreakdown({ periodDays, dayType, approachId, windowId })
@@ -162,7 +163,7 @@ async function loadTrendsFile(periodDays, dayType) {
   if (!loaded.has(name)) {
     loaded.set(
       name,
-      getJson(`${DATA_FOLDER}/${INTERSECTION_ID}/history/${name}`).then((file) =>
+      getHistoryFile(`${DATA_FOLDER}/${INTERSECTION_ID}/history/${name}`).then((file) =>
         file.available ? unpack(file, file.resultDefaults) : file,
       ),
     )
@@ -221,6 +222,21 @@ async function loadIntersection(file) {
     approaches: file.approaches.length,
     signalType: SIGNAL_TYPE,
   }
+}
+
+// The trends files are built from private RCRC data on the computer that
+// runs the history, and are not in git (docs/kpi_engine.md, section 17),
+// so a computer without them shows the empty state. A missing file comes
+// back as a 404, or from the development server as the website's own
+// page (HTML), never as JSON.
+const NO_HISTORY = 'No traffic history has been built on this computer yet.'
+
+async function getHistoryFile(url) {
+  const response = await fetch(url)
+  const isJson = (response.headers.get('content-type') ?? '').includes('json')
+  if (response.status === 404 || (response.ok && !isJson)) throw new EmptyPeriodError(NO_HISTORY)
+  if (!response.ok) throw new Error(`The performance data could not be loaded (${response.status}).`)
+  return response.json()
 }
 
 async function getJson(url) {
