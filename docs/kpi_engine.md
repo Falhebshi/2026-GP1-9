@@ -678,22 +678,22 @@ SUMO creates a vehicle at the network edge only when there is a safe gap; otherw
 
 ## 13.8 Demand close to capacity
 
-Stop-line counts count vehicles as they are served: in an overloaded interval fewer vehicles are counted than arrived, so a demand built from them is too low near capacity. This does not apply to the current demand, which is synthetic: the demand given to SUMO is the demand itself, not a count of served vehicles. It applies once demand comes from real counts, where the data-quality rules for the counts decide how such intervals are treated. Recorded as a limitation (section 14) and as an open issue.
+Stop-line counts count vehicles as they are served: in an overloaded interval fewer vehicles are counted than arrived, so a demand built from them is too low near capacity. This applies to the RCRC demand: calibration found that at the West approach's busiest hours the counted traffic exceeds the fixed plan's capacity (`calibration.md`, limitation 1). It is not corrected; recorded as a limitation (section 14) and as an open issue.
 
 ---
 
 # 14. Limitations
 
-- **Served volume:** stop-line counts are vehicles served, not vehicles arriving. Once demand comes from real counts, oversaturated periods will have their demand underestimated, so simulated queues, delays and v/c ratios will be lower than real ones; the current synthetic demand is not affected (section 13.8).
+- **Served volume:** stop-line counts are vehicles served, not vehicles arriving, so in oversaturated periods the RCRC demand is underestimated and simulated queues, delays and v/c ratios are lower than real ones (section 13.8).
 - **Random arrivals:** platoons from upstream signals are not represented, consistent with arrival type 3 in the HCM delay (section 10.1). The nearest signals are 1.3–2.1 km away.
-- **Driving behaviour:** SUMO passenger-car defaults, not calibrated. The comparison of measured and HCM saturation flow is the planned check.
+- **Driving behaviour:** SUMO's default driver settings, accepted by calibration against the RCRC counts at site 1444 (`calibration.md`); delays and queues themselves were not observed, so they are model outputs, not validated measurements.
 - **Instantaneous lane changes:** no lane-change duration is set, so a vehicle never blocks two lanes while changing lanes.
 - **Passenger cars only:** no heavy vehicles or buses (section 9.9).
 - **Signal patterns:** one green per movement and cycle; permitted left turns, several greens per cycle and greens lasting the whole cycle have no HCM delay (sections 9.3, 9.5, 10.1). Plans with overlapping phases, where a movement stays green from one phase into the next, are rejected when the signal program is built ([KPI measurements](kpi_measurements.md), section 3.1).
 - **Modelled geometry:** lane widths are SUMO's 3.2 m default and storage lengths are not yet known, so every result carries *modelled assumption* and storage ratios are `unavailable`. When storage lengths are added, only lanes that end near the stop line get one (section 6.5); approach and intersection storage ratios stay `unavailable`.
 - **Modelled signal timing:** the baseline signal program was built for the model, not taken from the controller (section 9.8).
-- **Synthetic demand:** until RCRC data is available, demand comes from synthetic detector counts; shared-lane counts are split by an assumed method (`is_allocated`).
-- **Historical analysis** (section 17): public holidays count as ordinary days of their weekday; only the last 7, 30 or 90 days can be chosen, because the page reads files made in advance (a free date range would need the results calculated on request); all stored days are held in memory while the page files are built: 14 days took 2.3 GB and 6 minutes to load (about 26 s a day), so 30 days need about 5 GB and 90 days about 15 GB, and a history longer than a few weeks needs a leaner approach; anomaly days are not marked.
+- **Demand assumptions:** demand comes from the RCRC detector counts; shared-lane counts are split by an assumed method (`is_allocated`), movements no detector counts use assumed shares (`is_share_estimated`), and missing counts are estimated (`is_imputed`). All three are labelled *modelled assumption* (section 12.5).
+- **Historical analysis** (section 17): public holidays count as ordinary days of their weekday; only the last 7, 30 or 90 days can be chosen, because the page reads files made in advance (a free date range would need the results calculated on request); all stored days are held in memory while the page files are built, about 51 MB a day (17.10); days whose missing counts cannot be estimated are not stored (17.1); anomaly days are not marked.
 
 ---
 
@@ -824,7 +824,7 @@ The loop asks for the previous and the newest interval at each update, so a prov
 The Traffic Patterns & Trends page shows how the intersection performed over the last 7, 30 or 90 days, for all days, weekdays or weekends. Its values come from simulating whole days and combining their measurements with the engine's own rules, so a day, a week and a 15-minute interval follow the same definitions.
 
 ```text
-synthetic source (or RCRC demand)
+RCRC replay source (site 1444)
    │  simulation/scripts/run_history.py   one SUMO run per day, 00:00–24:00
    ▼
 data/history/<date>.json.gz               the day's measurements (17.3); the 4 GB FCD is deleted
@@ -838,34 +838,38 @@ frontend/public/data/INT_001/history/trends_<days>d_<day type>.json   9 files (1
 Commands, from the repository root:
 
 ```bash
-uvicorn traffic_source.synthetic.server:app                                          # the source, in one terminal
-python simulation/scripts/run_history.py --first-day 2026-10-27 --last-day 2026-11-09 # the days, in another
-python -m backend.analytics.trends_page                                              # the 9 page files
+uvicorn traffic_source.rcrc_replay.server:app --port 8002     # the source, in one terminal
+python simulation/scripts/run_history.py --first-day 2026-07-13  # the days, in another
+python -m backend.analytics.trends_page                       # the 9 page files
 ```
+
+Each night the same two commands store the day that has just finished and rebuild the files (17.11).
 
 ## 17.1 Which days are simulated
 
 - **Whole days**, 00:00–24:00 Riyadh time, each as one continuous run with 15 minutes of warm-up before and clearance after (23:45 to 00:15 the next day). A period and a day type are made of calendar days, and the heatmap needs every hour.
 - **One fixed seed for every day** (42). Like current and forecast simulations, historical ones use one fixed seed; several matched seeds are used only to compare scenarios (section 12). A stored day can therefore always be rebuilt identically.
-- **One demand source per history.** The history is built from one source (synthetic, or RCRC once it is available) and never mixes them: a trend that switched from synthetic to observed days would show a change caused by the data, not by the traffic. With RCRC demand, the history covers the days RCRC provides; periods longer than that report "not enough data" (17.6).
-- **Cost of one day**, measured on 22 Oct 2026 (synthetic demand): SUMO run 8.7 min, reading the FCD into measurements 6.5 min, FCD file 4.3 GB. The 14 days of 27 Oct–9 Nov 2026 took 6 to 12 minutes each, 2 hours 20 minutes in all; at that rate 90 days take about 15 hours.
+- **Every day the source has released, and no later day.** The history starts on the RCRC report's first day (13 Jul 2026) and ends on the last day whose whole run window, to 00:15 the next day, the source has delivered. The replay source runs 13 weeks behind the real clock, so this is the day before the demo's current day; the current day and later ones are never run, and a later day asked for is reported as not released, not as a failure. The history then grows by one day each night (17.11).
+- **One demand source per history.** The history uses the RCRC source and never mixes sources: a trend that switched from synthetic to observed days would show a change caused by the data, not by the traffic. The runner refuses to add days of another source to the folder, and the page builder refuses stored days from more than one source (`source_of` in `history.py`).
+- **Missing counts are estimated with the demand transformation's existing rules** ([Traffic demand transformation](traffic_demand_transformation.md)): from a neighbouring detector, else from the same time slot and day type on earlier days, adjusted to the hour before the gap. An outage longer than 75 minutes is estimated with the plain time-slot average, as in the live update loop (`LIVE_FALLBACK_GAP_INTERVALS`), so that it does not stop the day. Results built on estimated demand are labelled *modelled assumption* (section 12.5). A day with a count that these rules cannot estimate, such as a time slot with fewer than 3 earlier values of its day type (the report's first weeks, and the Friday and Saturday afternoons when the site's detectors are often silent), fails and is reported; no other rule is added for it.
+- **Cost of one day**, measured on 19 Aug 2026 (RCRC demand, 102,401 vehicles): 37.7 minutes for the SUMO run and reading its FCD. The 44 days from 13 Jul to 26 Aug take about 28 hours; a batch can be stopped and started again (below).
 - A day already stored is skipped, so a batch can be restarted with the same dates; a finished run whose day was not stored is read again instead of simulated again; a day that fails is reported and the batch continues, and nothing partial is stored.
 
 ## 17.2 Measurements first, KPIs later
 
-Reading a day's FCD takes almost all of the 6.5 minutes; calculating the KPIs from what it produces takes seconds. `service.py` therefore has two steps: `collect_measurements` (FCD → measurement records) and `calculate_kpis` (records → results). `calculate_run_kpis` still does both, and gives the same results as before the split. Both steps refuse a run that did not complete: stored or supplied measurements reach `calculate_kpis` and `prepare_day` without the first step, so the rule "only a completed run has KPIs" is checked again where the calculation starts.
+Reading a day's FCD takes a large part of a day's run; calculating the KPIs from what it produces takes seconds. `service.py` therefore has two steps: `collect_measurements` (FCD → measurement records) and `calculate_kpis` (records → results). `calculate_run_kpis` still does both, and gives the same results as before the split. Both steps refuse a run that did not complete: stored or supplied measurements reach `calculate_kpis` and `prepare_day` without the first step, so the rule "only a completed run has KPIs" is checked again where the calculation starts.
 
 `RunCalculation.parts()` returns the measured building blocks of every 15-minute interval before they become results: each movement's delays **with the number of vehicles behind each mean**, its throughput, each lane's and approach's largest cycle queue, and the blocked approaches (section 13.7). The published results and the historical analysis start from this one calculation, so their rules cannot drift apart.
 
 ## 17.3 The measurement store
 
-`backend/analytics/history.py` keeps one compressed file per day in `data/history/` (about 2.5 MB a day; 14 days take 35 MB; ignored by git):
+`backend/analytics/history.py` keeps one compressed file per day in `data/history/` (4.0 MB for 19 Aug 2026 with RCRC demand, so about 175 MB for 44 days; ignored by git):
 
 - **Only measurements** are stored: vehicle passages, incomplete passages, vehicles not entered, lane and approach cycle queues, demand and the run's record. KPI results are never stored: they are calculated from these, and storing both would keep two copies of the same facts.
 - **Whole days only**: a run whose analysis period is not exactly 00:00–24:00 Riyadh time is refused.
 - A file is written under a temporary name and renamed when complete, so a stopped run never leaves half a day; a stored day is never overwritten.
 - Every file carries a format version; a file of another version is refused rather than read wrongly. A day measured with another network-mapping version is refused when its KPIs are calculated, as for a run folder.
-- The computed demand fields `is_allocated` and `is_imputed` are not saved; they are recalculated when a day is loaded.
+- The computed demand fields `is_allocated`, `is_imputed` and `is_share_estimated` are not saved; they are recalculated when a day is loaded.
 
 ## 17.4 Combining days and times of day
 
@@ -894,8 +898,7 @@ A value is shown only when it cannot be wrong. The gaps in a simulation are not 
 - **Delay, level of service, queue duration and throughput are strict**: one unavailable interval in the selection makes the selection unavailable, with that interval's reason. A missing interval's delay could be anything, so no value without it can be shown, and no "at most X % worse" can be given either: delay has no upper limit.
 - **Queues use the percentile rule**, which is exact. A cycle cut off at the end of what was measured is at least as long as the stretch, so cut-off cycles sort to the top; the 95th percentile is unavailable only when the cycle at its rank is one of them. Example: 720 cycles, rank 684. With 30 cut-off cycles (positions 691–720), cycle 684 is a measured one and its value is exact, because the unknown cycles are certainly longer. With 40 (positions 681–720), cycle 684 is cut off and the queue is unavailable. A day with no cycle record at all for a lane or approach counts as no cycles in its intervals, so the queue is unavailable, as for that day alone.
 - **Intervals with no vehicles are left out**: an empty interval is not missing data.
-- **Example, 3–9 Nov 2026 (synthetic demand).** On weekdays North's and South's queues reach the end of their zones around 06:00 and for about six hours every evening (Tue 3 Nov: North 17:00–22:15, South 17:30–23:30; peak v/c 2.01 and 1.82); on Friday 6 Nov only South, 22:00–23:45. Every day therefore has an unavailable interval, so the intersection's, North's and South's daily delay and level of service are unavailable on every day, and 24 % of the intersection's intervals have no grade; East and West are unaffected. This reflects the model (synthetic demand built from another intersection's counts, and modelled signal timing), not a rule of the analysis, and is an input to calibration.
-- **Example, 22 Oct 2026 (synthetic demand).** North's queue reached the end of its 500 m zone from 06:00 to 07:15: North-left demand was 1,052–1,320 veh/h against a capacity of 659 veh/h. North's and the intersection's delay are unavailable for those intervals, and so for the day; East, West and South are unaffected. A longer zone would not help: the road in the network ends 625.5 m from the stop line, and the queue grew by about 250–410 m every 15 minutes.
+- **Example.** When an approach's queue is near the end of its measurement zone in one interval, that approach's and the intersection's delay are unavailable for the interval, and so for every day, week or time window that includes it; the other approaches are unaffected.
 
 ## 17.6 Coverage of a period
 
@@ -925,7 +928,7 @@ Days go missing for reasons unrelated to traffic (a run that failed, a day RCRC 
 
 The two can point to different times; they answer different questions. The peak window is **unavailable when any slot's delay is unavailable**, because that slot could be the peak (17.5).
 
-For an approach that is never congested, delay is almost the same in every slot: at a fixed-time signal a vehicle waits for the red whatever the demand. Its peak window is then the slot with marginally the most delay, which can fall at night (West, 3–9 Nov 2026: 03:30), not a congestion period.
+For an approach that is never congested, delay is almost the same in every slot: at a fixed-time signal a vehicle waits for the red whatever the demand. Its peak window is then the slot with marginally the most delay, which can fall at night, not a congestion period.
 
 ## 17.8 The page's parts
 
@@ -967,6 +970,9 @@ trends_90d_all.json   trends_90d_weekdays.json   trends_90d_weekends.json
 ```
 
 A period without enough days still gets its file, holding `available: false` and the reason.
+
+- **The files are not in git.** They are built from RCRC data, which stays outside the repository like every RCRC-derived result (`calibration.md`), so each computer that runs the history builds them; `.gitignore` excludes `frontend/public/data/*/history/`. A computer without them shows "No traffic history has been built on this computer yet."
+- **Memory.** Building the files keeps every prepared day in memory. A prepared day keeps its per-interval parts but releases its raw vehicle passages, which nothing needs afterwards: 51 MB a day instead of 210 MB (19 Aug 2026), so 45 days take about 2.3 GB and 90 days about 4.6 GB.
 
 **The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB (the real 7-day files of 3–9 Nov 2026 are 1.6–1.8 MB); without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
 
