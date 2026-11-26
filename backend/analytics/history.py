@@ -22,6 +22,10 @@ Rules applied, and why:
   so a run that stops half-way never leaves a partial day behind.
 - Every file carries a format version; a file of another version is
   refused rather than read wrongly.
+- One demand source per history (RCRC or synthetic, never both): a
+  trend that switched source would show a change caused by the data,
+  not the traffic. source_of and stored_source let the runner and the
+  page builder check it.
 
 The folder is data/history/ in the repository, ignored by git: the
 files are large and can be rebuilt, since each day's run has a fixed
@@ -168,6 +172,38 @@ def load_day(day: date, folder: str | Path = HISTORY_DIR) -> RunMeasurements:
         ),
         demands=[SimulationDemand.model_validate(d) for d in payload["demands"]],
     )
+
+
+def source_of(measurements: RunMeasurements) -> str:
+    """
+    The demand source of one day's measurements, 'rcrc' or 'synthetic'.
+    Raises HistoryError when the day has no demand or mixes sources.
+    """
+
+    return _one_source({d.source.value for d in measurements.demands}, "the day's measurements")
+
+
+def stored_source(folder: str | Path = HISTORY_DIR) -> str | None:
+    """
+    The demand source of the days stored in the folder, read from its
+    latest day without loading the whole day; None when no day is stored.
+    """
+
+    days = stored_days(folder)
+    if not days:
+        return None
+
+    path = day_file(days[-1], folder)
+    with gzip.open(path, "rt", encoding="utf-8") as file:
+        payload = json.load(file)
+
+    return _one_source({d["source"] for d in payload["demands"]}, path.name)
+
+
+def _one_source(sources: set[str], where: str) -> str:
+    if len(sources) != 1:
+        raise HistoryError(f"{where} should have one demand source, not {sorted(sources) or 'none'}")
+    return next(iter(sources))
 
 
 def whole_day_of(window: RunWindow) -> date:

@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from backend.analytics.history import save_day
+from backend.analytics.history import DEMAND_COMPUTED_FIELDS, HistoryError, save_day
 
 from backend.analytics.kpi.parameters import HISTORY_MIN_DAY_SHARE
 from backend.analytics.trends_page import (
@@ -31,7 +31,8 @@ from backend.analytics.trends_page import (
     write_trends,
 )
 from jaadah.models.kpis import KpiResult
-from test_history import measurements as one_day_measurements
+from jaadah.models.traffic import SimulationDemand
+from test_history import measurements as one_day_measurements, whole_day_window
 from test_trends import ALL_SLOTS_SET, car, cycles, demand, stored_day
 
 
@@ -390,6 +391,21 @@ def test_stored_days_are_loaded_and_prepared(tmp_path):
 
     assert list(stored) == [date(2026, 10, 22)]
     assert stored[date(2026, 10, 22)].calculation.run.run_id == "RUN_HISTORY_20261022_S42"
+
+
+def test_days_from_two_sources_are_refused(tmp_path):
+    """22 Oct has synthetic demand, 23 Oct RCRC demand: one history uses one source."""
+
+    save_day(one_day_measurements(), tmp_path)
+    day = one_day_measurements(whole_day_window(date(2026, 10, 23)))
+    rcrc = [
+        SimulationDemand.model_validate({**d.model_dump(exclude=DEMAND_COMPUTED_FIELDS), "source": "rcrc"})
+        for d in day.demands
+    ]
+    save_day(day._replace(demands=rcrc), tmp_path)
+
+    with pytest.raises(HistoryError, match=r"2026-10-22 is synthetic, 2026-10-23 is rcrc"):
+        load_stored_days(tmp_path)
 
 
 def test_the_command_stops_when_no_day_is_stored(tmp_path, monkeypatch):

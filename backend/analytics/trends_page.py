@@ -74,7 +74,7 @@ from backend.analytics.kpi.parameters import (
     LOS_THRESHOLDS,
     VOLUME_TO_CAPACITY_LOS_F,
 )
-from backend.analytics.history import HISTORY_DIR, load_day, stored_days
+from backend.analytics.history import HISTORY_DIR, HistoryError, load_day, source_of, stored_days
 from backend.analytics.service import FRONTEND_DATA_DIR
 from backend.analytics.trends import (
     ALL_SLOTS,
@@ -692,9 +692,27 @@ def write_trends(stored: dict[date, DayParts], folder: str | Path) -> list[Path]
 
 
 def load_stored_days(history_dir: str | Path = HISTORY_DIR) -> dict[date, DayParts]:
-    """Every stored day, run through the engine once (a few seconds a day)."""
+    """
+    Every stored day, run through the engine once (a few seconds a day).
 
-    return {day: prepare_day(day, load_day(day, history_dir)) for day in stored_days(history_dir)}
+    Raises HistoryError when the days come from more than one demand
+    source: one history uses one source (docs/kpi_engine.md, 17.1).
+    """
+
+    stored, first = {}, None
+    for day in stored_days(history_dir):
+        measurements = load_day(day, history_dir)
+        source = source_of(measurements)
+        if first is None:
+            first = (day, source)
+        elif source != first[1]:
+            raise HistoryError(
+                f"the stored days come from more than one source ({first[0]} is {first[1]}, "
+                f"{day} is {source}); a history uses one source, so keep the days of one"
+            )
+        stored[day] = prepare_day(day, measurements)
+
+    return stored
 
 
 def main() -> None:
