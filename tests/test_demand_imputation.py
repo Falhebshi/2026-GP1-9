@@ -1,6 +1,8 @@
+import math
 from datetime import datetime, timedelta
 
 from backend.demand.imputation import (
+    LIVE_FALLBACK_GAP_INTERVALS,
     MAX_GAP_INTERVALS,
     day_type,
     fit_neighbour_line,
@@ -914,3 +916,99 @@ def test_live_outage_stops_being_estimated_after_the_gap_limit() -> None:
     )
 
     assert result.demands == []
+
+
+def make_two_source_config() -> NetworkMappingConfig:
+    """make_config() plus an RCRC detector at another site, so two sources are mapped."""
+
+    data = make_config().model_dump(mode="json")
+    data["detector_mappings"].append({
+        **make_detector_mapping(
+            detector_id="R1", approach_id="APP_N", movement_ids=["MOV_N_E"], mapping_status="usable",
+        ),
+        "source": "rcrc",
+        "site_id": "1444",
+    })
+    return NetworkMappingConfig.model_validate(data)
+
+
+def test_a_silent_window_is_checked_only_for_the_source_of_the_history() -> None:
+    """
+    The live loop builds one interval at a time, so in an outage the batch is
+    empty. The history says the run is synthetic: the RCRC detector mapped for
+    the same movement must not be reported missing.
+    """
+
+    result = transform_observations(
+        observations=[],
+        config=make_two_source_config(),
+        history=make_site_history(days=22),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+    )
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert not [error for error in result.errors if "R1" in error.message]
+
+
+def silent_before_now(intervals: int) -> list[TrafficObservation]:
+    """The site history with the site silent for `intervals` intervals before NOW."""
+
+    return [
+        observation
+        for observation in make_site_history(days=22)
+        if observation.interval_start < NOW - intervals * INTERVAL
+    ]
+
+
+def live_outage(intervals_before: int, **options):
+    return transform_observations(
+        observations=[],
+        config=make_config(),
+        history=silent_before_now(intervals_before),
+        window_start=NOW,
+        window_end=NOW + INTERVAL,
+        available_until=NOW + INTERVAL,
+        **options,
+    )
+
+
+def test_the_live_fallback_estimates_a_longer_gap_with_the_plain_average() -> None:
+    """NOW is the 6th silent interval: past the gap limit."""
+
+    result = live_outage(MAX_GAP_INTERVALS, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert {
+        detector.method for demand in result.demands for detector in demand.imputed_detectors
+    } == {ImputationMethod.HISTORICAL_AVERAGE}
+
+
+def test_a_fallback_with_a_limit_ends_there() -> None:
+    assert live_outage(8, fallback_gap_intervals=8).demands == []
+
+
+def test_the_live_fallback_has_no_limit() -> None:
+    """NOW is the 41st silent interval (10 hours): still estimated, with the plain average."""
+
+    result = live_outage(40, fallback_gap_intervals=LIVE_FALLBACK_GAP_INTERVALS)
+
+    assert {demand.movement_id for demand in result.demands} == {
+        "MOV_N_E", "MOV_W_N", "MOV_W_E", "MOV_W_S_SLIP",
+    }
+    assert {
+        detector.method for demand in result.demands for detector in demand.imputed_detectors
+    } == {ImputationMethod.HISTORICAL_AVERAGE}
+
+
+def test_without_the_live_fallback_the_gap_limit_is_unchanged() -> None:
+    assert live_outage(MAX_GAP_INTERVALS).demands == []
+
+
+def test_the_live_loop_estimates_gaps_of_any_length() -> None:
+    assert LIVE_FALLBACK_GAP_INTERVALS == math.inf
