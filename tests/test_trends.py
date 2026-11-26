@@ -134,6 +134,16 @@ def stored_day(day, cars=(), queues=None, demands=(), slots=frozenset({30})):
     return prepare_day(day, measurements)
 
 
+def test_a_prepared_day_keeps_its_parts_but_not_its_raw_passages():
+    """The passages are three quarters of a day's memory and are already summed up in parts."""
+
+    day = stored_day(DAY_A, cars=[car(DAY_A, 1, "07:31:00", 20, 5)])
+
+    assert day.calculation.passages is None
+    assert day.parts.delays                      # the per-interval delays are kept
+    assert day.calculation.demands is not None   # the set-up is kept, for input origins
+
+
 # ============================================================
 # SLOTS
 # ============================================================
