@@ -969,3 +969,36 @@ trends_90d_all.json   trends_90d_weekdays.json   trends_90d_weekends.json
 A period without enough days still gets its file, holding `available: false` and the reason.
 
 **The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB (the real 7-day files of 3–9 Nov 2026 are 1.6–1.8 MB); without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
+
+## 17.11 Storing new days
+
+Each night, the day that has just finished is simulated and stored exactly like the past days, and the page files are rebuilt, so the Trends page gains one day a night without anyone running a command.
+
+- **The same command as the past days.** `run_history.py` with no `--last-day` runs every day up to the last day the source has fully released (17.1) and skips stored days, so the nightly run stores the new day and tries again any earlier day that failed. With the RCRC replay source, the last released day is the day before the demo's current day.
+- **A whole-day run, not the live loop's day.** The live update loop restarts and warms up after an outage and keeps only its newest output, so its day is not one continuous run. Simulating each stored day the same way keeps a trend from mixing two methods.
+- **Run at 03:00.** The day's clearance ends at 00:15 and is released then; 03:00 leaves a margin and is when the live loop starts its day. A day takes about 40 minutes to simulate (37.7 minutes for 19 Aug 2026 with RCRC demand), then the page files are rebuilt.
+- **The page files are rebuilt even when a day failed.** A day whose counts cannot be estimated fails every night until the estimate changes; the days that were stored still appear.
+- **Nothing is silently skipped.** The task wakes the computer, runs as soon as possible after a missed start (the computer was off), and runs on battery. If the RCRC replay source is not answering (after a restart), the script starts it. Windows does not start a second copy of the task while one is running, so a long run and a nightly run never overlap.
+- Output, with a line per day, is added to `data/history/nightly.log` (ignored by git).
+
+`simulation/scripts/nightly_history.cmd` runs both steps. To schedule it on Windows, once (PowerShell, from the repository root):
+
+```powershell
+$action   = New-ScheduledTaskAction -Execute "$PWD\simulation\scripts\nightly_history.cmd"
+$trigger  = New-ScheduledTaskTrigger -Daily -At 3am
+$settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Days 3)
+Register-ScheduledTask -TaskName "Jaadah trends history" -Action $action -Trigger $trigger -Settings $settings
+
+Start-ScheduledTask -TaskName "Jaadah trends history"        # run it now
+Get-Content data\history\nightly.log -Tail 20 -Wait           # follow its output
+Unregister-ScheduledTask -TaskName "Jaadah trends history"   # to remove it
+```
+
+Waking for the task needs the power plan's *Allow wake timers* to be enabled (Control Panel → Power Options → Change plan settings → Change advanced power settings → Sleep). The 3-day time limit lets a first run of many days finish.
+
+On macOS or Linux, the same two steps as a cron line (`crontab -e`):
+
+```text
+0 3 * * * cd /path/to/2026-GP1-9 && (.venv/bin/python simulation/scripts/run_history.py --first-day 2026-07-13; .venv/bin/python -m backend.analytics.trends_page) >> data/history/nightly.log 2>&1
+```
