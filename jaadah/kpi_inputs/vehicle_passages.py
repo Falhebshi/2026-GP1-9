@@ -328,8 +328,20 @@ def collect_vehicle_passages(
     manifest_path: str | Path,
     demand_path: str | Path,
     fcd_period_s: float = 0.4,
+    fcd_start_s: float | None = None,
 ) -> VehiclePassages:
-    """Every analysed vehicle's passage through its movement's zone in one run."""
+    """
+    Every analysed vehicle's passage through its movement's zone in one run.
+
+    fcd_start_s is set when the FCD covers only the end of the run, from
+    that second on (the live update loop, which keeps the last 45
+    minutes). A vehicle already inside its zone in the FCD's first
+    timestep entered it before the FCD starts; its passage cannot be
+    measured and belongs to an earlier interval, so it is left out
+    instead of being reported as a measurement problem. Without
+    fcd_start_s the FCD covers the whole run, and such a vehicle is an
+    error.
+    """
 
     zones = movement_zones(config, network_path)
     lengths, speeds = read_lanes(network_path)
@@ -351,6 +363,8 @@ def collect_vehicle_passages(
             continue
         entry_m = stop_m - zone.upstream_m
         if entry_m < rows[0].odometer_m:
+            if fcd_start_s is not None and rows[0].time_s <= fcd_start_s + fcd_period_s / 2:
+                continue
             problems.append(f"{vehicle_id}: first seen inside its zone")
             continue
         entry_s = time_at(rows, entry_m)

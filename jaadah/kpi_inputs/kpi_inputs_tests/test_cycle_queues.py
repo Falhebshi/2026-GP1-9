@@ -88,12 +88,14 @@ def lane_and_pos(distance):
     return PATH[0][0], 0.0
 
 
-def collect(tmp_path, cars, offset=0, until=180.0):
+def collect(tmp_path, cars, offset=0, until=180.0, fcd_start_s=None):
     """cars: {vehicle_id: [(start_s, end_s, distance_m, speed_mps), ...]}, one row every 0.4 s."""
     (tmp_path / "net.xml").write_text(network(offset), encoding="utf-8")
     steps = []
     for number in range(int(round(until / 0.4))):
         t = round(number * 0.4, 1)
+        if fcd_start_s is not None and t < fcd_start_s:
+            continue
         rows = ""
         for vehicle_id, spans in cars.items():
             for start, end, distance, speed in spans:
@@ -103,7 +105,8 @@ def collect(tmp_path, cars, offset=0, until=180.0):
         steps.append(f'<timestep time="{t}">{rows}</timestep>')
     (tmp_path / "fcd.xml").write_text("<fcd-export>" + "".join(steps) + "</fcd-export>", encoding="utf-8")
     return collect_cycle_queues(CONFIG, tmp_path / "net.xml", PROGRAM, tmp_path / "fcd.xml",
-                                run_id="RUN", window=WINDOW, vehicle_length_m=5.0)
+                                run_id="RUN", window=WINDOW, vehicle_length_m=5.0,
+                                fcd_start_s=fcd_start_s)
 
 
 def stopped(*distances, start=0.0, end=30.0):
@@ -255,6 +258,15 @@ def test_every_lane_approach_and_whole_cycle_has_a_record(tmp_path):
     assert [r.max_queue_vehicles for r in queues.lanes] == [1, 0, 0]
     assert [(r.approach_id, r.max_queue_vehicles) for r in queues.approaches] == [
         ("APP_A", 1), ("APP_A", 0), ("APP_A", 0)]
+
+
+def test_fcd_of_the_end_of_a_run_gives_no_record_for_cycles_it_did_not_watch(tmp_path):
+    """The FCD starts at 50 s: cycle 0-60 was not watched whole, so it has no record (not a 0)."""
+    queues = collect(tmp_path, stopped(1, start=50.0, end=90.0), fcd_start_s=50.0)
+
+    assert [r.cycle_start for r in queues.lanes] == [EPOCH + timedelta(seconds=s) for s in (60, 120)]
+    assert [r.max_queue_vehicles for r in queues.lanes] == [1, 0]
+    assert [r.cycle_start for r in queues.approaches] == [EPOCH + timedelta(seconds=s) for s in (60, 120)]
 
 
 def test_approach_queue_continues_behind_the_lane_section(tmp_path):

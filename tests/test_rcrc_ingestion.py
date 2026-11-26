@@ -199,6 +199,16 @@ def test_latest_available_follows_the_replay_clock(client):
     assert rcrc.fetch_latest_available_timestamp() == DAY + 41 * STEP
 
 
+def test_the_source_clock_is_the_replay_time(client):
+    rcrc, now = client
+
+    assert rcrc.fetch_source_clock() == ANCHOR - CONFIG.offset
+
+    now.moment = ANCHOR + timedelta(minutes=7)
+
+    assert rcrc.fetch_source_clock() == ANCHOR + timedelta(minutes=7) - CONFIG.offset
+
+
 def test_missing_interval_arrives_as_no_rows(client):
     rcrc, _ = client
 

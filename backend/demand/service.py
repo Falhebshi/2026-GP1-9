@@ -486,6 +486,7 @@ def impute_missing_detectors(
     conflicted_detectors: set,
     silent_sites: dict[tuple, set[str]] | None = None,
     available_until: datetime | None = None,
+    fallback_gap_intervals: int | None = None,
 ) -> dict[tuple, dict[tuple, ImputedCount]]:
     """
     Estimate the counts of usable detectors that did not report in an
@@ -571,6 +572,7 @@ def impute_missing_detectors(
                 history_index=history_index,
                 first_known=first_known,
                 last_known=last_known,
+                fallback_gap_intervals=fallback_gap_intervals,
             )
 
             if estimate is not None:
@@ -585,6 +587,7 @@ def impute_outage_shared_detectors(
     config: NetworkMappingConfig,
     silent_sites: dict[tuple, set[str]],
     available_until: datetime | None = None,
+    fallback_gap_intervals: int | None = None,
 ) -> dict[tuple, dict[tuple, ImputedCount]]:
     """
     Estimate the counts of shared-lane detectors at a site that sent
@@ -635,6 +638,7 @@ def impute_outage_shared_detectors(
                 history_index=history_index,
                 first_known=first_known,
                 last_known=last_known,
+                fallback_gap_intervals=fallback_gap_intervals,
             )
 
             if estimate is not None:
@@ -718,6 +722,7 @@ def transform_observations(
     share_config: ShareConfig | None = None,
     share_scenario: ShareScenario = ShareScenario.CENTRAL,
     available_until: datetime | None = None,
+    fallback_gap_intervals: int | None = None,
 ) -> DemandTransformationResult:
     """
     Turn detector observations into movement demand for each interval.
@@ -754,6 +759,11 @@ def transform_observations(
     latest_available_timestamp, says which silent intervals were
     already delivered and are therefore missing rather than still to
     come; without it, only gaps followed by data are estimated.
+
+    fallback_gap_intervals is for the live update loop: a gap longer
+    than MAX_GAP_INTERVALS is still estimated, up to that many
+    intervals, with the plain time-slot average (imputation.py). By
+    default such gaps stay missing, as in every other run.
 
     share_config estimates the demand of movements that no detector
     counts, as a ratio of observed movements on the same approach
@@ -910,6 +920,7 @@ def transform_observations(
             conflicted_detectors=conflicted_detectors,
             silent_sites=silent_sites,
             available_until=available_until,
+            fallback_gap_intervals=fallback_gap_intervals,
         )
         if history
         else {}
@@ -920,6 +931,7 @@ def transform_observations(
         config=config,
         silent_sites=silent_sites,
         available_until=available_until,
+        fallback_gap_intervals=fallback_gap_intervals,
     ) if silent_sites else {}
 
     def counted(group_key, detector_key):
@@ -1203,7 +1215,9 @@ def transform_observations(
             share_config=share_config,
             config=config,
             scenario=share_scenario,
-            sources={observation.source for observation in observations},
+            # With the history, as in find_window_gaps: a silent window
+            # still has a source to estimate for.
+            sources={observation.source for observation in observations + valid_history},
             intervals=(
                 window_intervals(window_start, window_end)
                 if window_start is not None
@@ -1230,7 +1244,7 @@ def transform_observations(
     if window_start is not None:
         errors.extend(
             find_window_gaps(
-                observations=observations,
+                observations=observations + valid_history,
                 config=config,
                 handled=(
                     set(groups) | set(allocated) | set(blocked) | set(imputed)
@@ -1260,6 +1274,12 @@ def find_window_gaps(
     """
     Report every movement and interval of the window that received no
     observation at all, so the window is fully accounted for.
+
+    The sources checked are those of the observations, which include the
+    history: in a window in which a whole site was silent (the live loop
+    builds one interval at a time), the batch itself can be empty, and
+    the history still says which source the run is for. Only with no
+    observation at all are all mapped sources checked.
     """
 
     sources = sorted(
@@ -1323,6 +1343,7 @@ def build_simulation_demand(
     share_config_path: str | Path | None = DEFAULT_SHARE_CONFIG_PATH,
     share_scenario: ShareScenario = ShareScenario.CENTRAL,
     available_until: datetime | None = None,
+    fallback_gap_intervals: int | None = None,
 ) -> DemandTransformationResult:
     """
     Load the network mappings and transform a batch of observations
@@ -1353,4 +1374,5 @@ def build_simulation_demand(
         ),
         share_scenario=share_scenario,
         available_until=available_until,
+        fallback_gap_intervals=fallback_gap_intervals,
     )
