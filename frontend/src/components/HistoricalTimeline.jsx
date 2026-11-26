@@ -14,6 +14,8 @@ import './HistoricalTimeline.css'
 //                      value   congestion from 0 (free flow) to 1 (worst).
 //                              Sets the HEIGHT. Leave it out for "no data".
 //                      level   'low', 'moderate' or 'high'. Sets the COLOR.
+//                      note    what to say instead of "No data" when there is no
+//                              value, e.g. why it is missing (optional)
 //   value            the time of the selected bar, or null for "the latest"
 //   onChange         function called with the new time (or null for latest)
 //                    when the user picks a bar, drags the slider or clicks
@@ -22,6 +24,9 @@ import './HistoricalTimeline.css'
 //   title            heading of the card
 //   error            text shown instead of the bars when the data failed to load
 //   emptyMessage     what to say when there are no bars (optional)
+//   following        true while the page follows the live time although the selected bar is
+//                    not the newest (a live scene plays a little behind the newest bar): the
+//                    badge still says Live and the Latest button stays hidden (optional)
 //   live             false for a simulated run: the bars are not "the last 24 hours", so the
 //                    Live / Historical badge and the Latest button are left out (true unless
 //                    you say otherwise)
@@ -48,6 +53,7 @@ function HistoricalTimeline({
   title = 'Historical Timeline',
   error,
   live = true,
+  following = false,
   emptyMessage = 'No traffic data is available for the last 24 hours.',
   className = '',
   children,
@@ -62,7 +68,7 @@ function HistoricalTimeline({
 
   const selectedIndex = findSelectedIndex(points, value)
   const selected = points[selectedIndex]
-  const isLatest = selectedIndex === lastIndex
+  const isLatest = selectedIndex === lastIndex || following
   const hovered = hoverIndex === null ? null : points[hoverIndex]
 
   function select(index) {
@@ -254,7 +260,8 @@ function levelOf(point) {
 }
 
 function levelLabel(point) {
-  return hasValue(point) ? (LEVEL_LABELS[point.level] ?? 'Not classified') : 'No data'
+  if (!hasValue(point)) return point.note ?? 'No data'
+  return LEVEL_LABELS[point.level] ?? 'Not classified'
 }
 
 // 0 to 1 becomes "0%" to "100%". A bar with no data becomes a short stub.

@@ -22,8 +22,8 @@ from jaadah.network_congestion.synthetic import (
     City,
     SampleMeasures,
     city_day,
-    corridor_key,
     interval_speeds,
+    segment_corridors,
     slot_speed,
 )
 
@@ -49,7 +49,7 @@ def road(segment_id, name):
 @pytest.fixture
 def city():
     segments = [road("SEG_00001", "Main Rd"), road("SEG_00002", "Quiet Rd")]
-    corridors = {s.segment_id: corridor_key(s, 1) for s in segments}
+    corridors = segment_corridors(segments, {s.segment_id: 1 for s in segments})
     factors = {
         corridors["SEG_00001"]: (1.3, 1.2),
         corridors["SEG_00002"]: (0.7, 0.8),

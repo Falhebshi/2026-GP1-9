@@ -1,22 +1,52 @@
 // Where the Current Traffic page gets its data.
 //
-// The page shows the simulated run in public/data/<intersection>/baseline/ (the only real data in
-// Sprint 1): the run (run.json), its KPI results (kpis.json, KpiResult records from the KPI
-// engine) and the approaches (network/approaches.json). The alerts are still sample data.
-// getCurrentTraffic() gives back:
+// The page shows the live run in public/data/<intersection>/live/ when the live update loop
+// (simulation/scripts/run_live.py) has published one, and otherwise the committed sample run in
+// baseline/, labelled as a sample. Never both: the live folder is used only when it has a
+// run.json. From the folder it reads the run (run.json) and its KPI results
+// (kpis.json, KpiResult records from the KPI engine), and the approaches from
+// network/approaches.json. The alerts are still sample data. getCurrentTraffic() gives back:
 //
 //   {
-//     source: 'run',                     'run' for a simulated run; 'live' once live data exists
+//     source: 'run',                     'live' for the live run, 'run' for the sample run
+//     scenario: 'baseline',              the folder the run is in: 'live' or 'baseline'
+//     isSample: true when the page shows the committed sample run, because nothing is live
+//     live: null for the sample run; for the live run:
+//       { state, message,                'running', 'starting' (a new run is warming up and the
+//                                        previous one is shown), 'waiting' (the source cannot
+//                                        be reached), 'paused' or 'stopped', and why
+//         updatedAt, dataUntil,          when the loop last reported (real time) and the end of
+//                                        the newest interval it has simulated (data time), ISO
+//         stale,                         true when the loop has not reported for 30 minutes
+//         clockOffsetMs,                 how far the source's clock is behind the real clock
+//                                        (13 weeks for the replay source, 0 on real time)
+//         simulatedUntilSeconds,         where the simulation stopped, in seconds from the run
+//                                        start (the warm-up)
+//         version }                      changes whenever a new interval is published
+//     previous: null, or for a live run the run before it, while it is less than 24 hours old
+//       (live/previous/): { scenario: 'live/previous', run, hasKpis, isTest, intervals,
+//       timeline } as below, with only the intervals before the newest run's first one
+//     earlier: [], or for a live run the runs before previous (after restarts), oldest first, in
+//       the same form, with scenario 'live/earlier/<run ID>'; each with only the intervals before
+//       the next run's first one
 //     intersection: { id, center, bounds, name, area, approaches, signalType },
-//     run: { id, status, failureReason, start, duration, intervalSeconds },
-//                                        null when there is no run yet. status 'completed' or
-//                                        'failed' (then failureReason says why, and there are no
-//                                        intervals). start: the start of the analysis period (ISO
-//                                        time); duration and intervalSeconds in seconds
+//     run: { id, status, failureReason, start, duration, intervalSeconds, analysisStartSeconds },
+//                                        null when there is no run yet. status 'completed',
+//                                        'running' (a live run) or 'failed' (then failureReason
+//                                        says why, and there are no intervals). start: the start
+//                                        of the analysis period (ISO time); duration and
+//                                        intervalSeconds in seconds
 //     hasKpis: false when the run has no KPI results yet (no kpis.json, or one of another run)
 //     isTest: true when the run or its KPIs are test data ("is_test" in run.json or kpis.json)
 //     intervals: [{                      one per 15 minutes of the analysis period, oldest first
 //       start, end,                      ISO times
+//       provisional,                     true for the newest interval of a live run: simulated up to
+//                                        60 s before its end, with some vehicles still driving, so
+//                                        its values change at the next update
+//       noSensorData,                    null, or { approachIds } when the detectors were silent and
+//                                        the traffic was estimated: its KPIs are left out (kpis is
+//                                        empty, approach and movement kpis are {}), and the page
+//                                        shows "No detector data" instead (estimated results are not shown)
 //       kpis: [{ current: KpiResult, previous: KpiResult }],   intersection level; previous is
 //                                        the interval before in the same run (null for the first)
 //       approaches: [{
@@ -25,7 +55,8 @@
 //         movements: [{ movement_id, label, kpis: { <kpi name>: KpiResult } }],
 //       }],
 //     }],
-//     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay
+//     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay;
+//                                        no bar (no value) for an interval without detector data
 //     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
 //   }
 //
@@ -206,7 +237,7 @@ export async function getIntersection() {
     name: roadName(record.name_en),
     area: record.area_label,
     approaches: 4,
-    signalType: 'Fixed-time, 120 s cycle', // same signal program as in SUMO
+    signalType: 'Fixed-time (Webster), 225 s cycle', // same signal program as in SUMO
   }
 }
 
@@ -223,11 +254,22 @@ export async function getCurrentTraffic() {
   const approaches = await getJson(`${folder}/network/approaches.json`)
   if (!approaches) throw new Error('The approaches could not be loaded.')
 
-  let run = demo === 'no-run' ? null : await getJson(`${folder}/baseline/run.json`)
+  // The live run if there is one (?demo=sample shows the sample run anyway)
+  const liveRun =
+    demo === 'no-run' || demo === 'sample' ? null : await getJson(`${folder}/live/run.json`)
+  const scenario = liveRun ? 'live' : 'baseline'
+  let run = liveRun ?? (demo === 'no-run' ? null : await getJson(`${folder}/baseline/run.json`))
   if (run && demo === 'failed') {
     run = { ...run, status: 'failed', failure_reason: 'TraCIException: connection closed by SUMO' }
   }
-  const page = { source: 'run', intersection, alerts: SAMPLE_ALERTS }
+  const page = {
+    source: liveRun ? 'live' : 'run',
+    scenario,
+    isSample: !liveRun && Boolean(run),
+    live: liveRun ? liveState(liveRun) : null,
+    intersection,
+    alerts: SAMPLE_ALERTS,
+  }
 
   if (!run || run.status === 'failed') {
     return {
@@ -242,24 +284,87 @@ export async function getCurrentTraffic() {
       isTest: Boolean(run?.is_test),
       intervals: [],
       timeline: [],
+      previous: null,
+      earlier: [],
     }
   }
 
+  const status = liveRun ? 'running' : 'completed'
+  const current = await runView(folder, scenario, run, approaches, demo, status)
+
+  // Live only: the run before this one (the day before, or the chain before a restart), kept
+  // in live/previous/, and the runs before that (after more restarts) in live/earlier/<run ID>/,
+  // listed in live/earlier/index.json; each until its intervals are 24 hours old, so the
+  // timeline shows the last 24 hours. Each run's intervals end where the next run's start,
+  // never overlapping it.
+  let previous = null
+  let earlier = []
+  if (liveRun && demo !== 'empty') {
+    const index = await getJson(`${folder}/live/earlier/index.json`)
+    const scenarios = [...(index?.runs ?? []).map((id) => `live/earlier/${id}`), 'live/previous']
+    const older = []
+    for (const name of scenarios) {
+      const olderRun = await getJson(`${folder}/${name}/run.json`)
+      if (!olderRun || olderRun.run_id === run.run_id || olderRun.status === 'failed') continue
+      older.push(await runView(folder, name, olderRun, approaches, demo, 'completed'))
+    }
+    // newest first, so each run is cut where the run after it starts
+    let nextStart = current.intervals[0] ? Date.parse(current.intervals[0].start) : Infinity
+    const kept = []
+    for (const view of older.reverse()) {
+      const intervals = view.intervals.filter((item) => Date.parse(item.start) < nextStart)
+      if (!intervals.length) continue
+      kept.unshift({ ...view, intervals, timeline: intervals.map(timelineBar) })
+      nextStart = Date.parse(intervals[0].start)
+    }
+    if (kept.length && kept[kept.length - 1].scenario === 'live/previous') previous = kept.pop()
+    earlier = kept
+  }
+
+  return { ...page, ...current, previous, earlier }
+}
+
+// Live: the timeline bars of several runs, oldest first, with an empty bar for each interval
+// that no run covers (the loop was stopped, or the computer was asleep, and started again at
+// the newest data), so the gap shows instead of the bars on its two sides looking next to each
+// other. Hovering one says "Not simulated"; it cannot be selected.
+export function withGaps(bars, intervalSeconds) {
+  const step = intervalSeconds * 1000
+  const out = []
+  for (const bar of bars) {
+    const before = out[out.length - 1]
+    if (before) {
+      for (let t = Date.parse(before.time) + step; t < Date.parse(bar.time); t += step) {
+        out.push({ time: new Date(t).toISOString(), value: null, level: null, note: NOT_SIMULATED })
+      }
+    }
+    out.push(bar)
+  }
+  return out
+}
+
+export const NOT_SIMULATED = 'Not simulated'
+
+// One run as the page shows it: the run, its intervals with their KPIs and the timeline bars
+async function runView(folder, scenario, run, approaches, demo, status) {
   // Only the KPI results of this run; a kpis.json left from another run is not used
-  const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/baseline/kpis.json`)
+  const kpis = demo === 'no-kpis' ? null : await getJson(`${folder}/${scenario}/kpis.json`)
   const results = kpis?.run_id === run.run_id ? kpis.results : null
   const intervals =
     demo === 'empty' ? [] : groupByInterval(run, results ?? [], approaches.approaches)
 
   return {
-    ...page,
+    // the folder the run is in: the scene loads the run from it (TrafficScene3D's scenario)
+    scenario,
     run: {
       id: run.run_id,
-      status: 'completed',
+      status,
       failureReason: null,
       start: addSeconds(run.run_start, run.analysis_start_s),
       duration: run.analysis_end_s - run.analysis_start_s,
       intervalSeconds: run.interval_s,
+      // seconds from the run start (the warm-up) to the analysis period: the scene's own clock
+      analysisStartSeconds: run.analysis_start_s,
     },
     hasKpis: results !== null,
     isTest: Boolean(run.is_test || (results && kpis.is_test)),
@@ -268,10 +373,30 @@ export async function getCurrentTraffic() {
   }
 }
 
+// A live run stops counting as live when the loop has not reported for this long: it reports
+// every 10 seconds, and publishes a new interval every 15 minutes
+const STALE_AFTER = 30 * 60 * 1000
+
+// What the page shows about the live loop, from run.json's "live" part
+function liveState(run) {
+  const live = run.live ?? {}
+  return {
+    state: live.state ?? 'running',
+    message: live.message ?? null,
+    updatedAt: live.updated_at ?? null,
+    dataUntil: live.data_until ?? null,
+    stale: live.updated_at ? Date.now() - Date.parse(live.updated_at) > STALE_AFTER : false,
+    clockOffsetMs: (live.clock_offset_s ?? 0) * 1000,
+    simulatedUntilSeconds: live.simulated_until_s ?? null,
+    version: `${run.run_id}|${live.data_until ?? ''}`,
+  }
+}
+
 // A JSON file, or null when it is not there. The dev server answers a missing file with the
-// page itself, so anything that is not JSON counts as missing too.
+// page itself, so anything that is not JSON counts as missing too. The live loop rewrites its
+// files under the same names at every update, so files under live/ are never taken from a cache.
 async function getJson(url) {
-  const response = await fetch(url)
+  const response = await fetch(url, url.includes('/live/') ? { cache: 'no-store' } : undefined)
   const isJson = response.headers?.get('content-type')?.includes('json') ?? true
   if (!response.ok || !isJson) return null
   return response.json()
@@ -306,19 +431,57 @@ function groupByInterval(run, results, approaches) {
   for (let s = run.analysis_start_s; s < run.analysis_end_s; s += run.interval_s) {
     starts.push(addSeconds(run.run_start, s))
   }
+  // Live runs only: the intervals with estimated traffic, and the provisional (newest) one
+  const estimated = (run.live?.estimated_intervals ?? []).map((item) => ({
+    start: addSeconds(run.run_start, item.start_s),
+    approachIds: item.approach_ids,
+  }))
+  const provisional =
+    run.live?.provisional_interval_start_s != null
+      ? addSeconds(run.run_start, run.live.provisional_interval_start_s)
+      : null
 
   return starts.map((start, i) => {
     const before = starts[i - 1]
+    const noSensorData = estimated.find((item) => at(item.start) === at(start)) ?? null
+    const end = addSeconds(start, run.interval_s)
+
+    // No detector data: the results come from estimated traffic, so none are shown
+    if (noSensorData) {
+      return {
+        start,
+        end,
+        provisional: false,
+        noSensorData: { approachIds: noSensorData.approachIds },
+        kpis: [],
+        approaches: approaches.map((a) => ({
+          approach_id: a.approach_id,
+          arm: a.side[0].toUpperCase() + a.side.slice(1),
+          road: a.road,
+          kpis: {},
+          movements: a.movements.map((m) => ({
+            movement_id: m.movement_id,
+            label: movementLabel(m),
+            kpis: {},
+          })),
+        })),
+      }
+    }
+
     const intersection = Object.values(of('intersection', run.intersection_id, start))
 
     return {
       start,
-      end: addSeconds(start, run.interval_s),
+      end,
+      provisional: provisional !== null && at(provisional) === at(start),
+      noSensorData: null,
       kpis: intersection.map((current) => ({
         current,
-        previous: before
-          ? (of('intersection', run.intersection_id, before)[current.kpi] ?? null)
-          : null,
+        // no comparison with an interval whose values are not shown
+        previous:
+          before && !estimated.some((item) => at(item.start) === at(before))
+            ? (of('intersection', run.intersection_id, before)[current.kpi] ?? null)
+            : null,
       })),
       approaches: approaches.map((a) => ({
         approach_id: a.approach_id,
@@ -339,8 +502,10 @@ function groupByInterval(run, results, approaches) {
 const BAR_LEVELS = { A: 'low', B: 'low', C: 'low', D: 'moderate', E: 'high', F: 'high' }
 
 // One timeline bar for an interval: its height from the intersection's control delay (80 s/veh,
-// where LOS F starts, is a full bar) and its colour from the level of service. No delay, no bar.
-function timelineBar({ start, kpis }) {
+// where LOS F starts, is a full bar) and its colour from the level of service. No delay, no bar,
+// and the note says why: no detector data, or the delay could not be measured (an approach's
+// queue reaching past its measurement zone says so on the approach, not on the intersection).
+function timelineBar({ start, kpis, approaches, noSensorData }) {
   const result = (kpi) => kpis.find((k) => k.current.kpi === kpi)?.current
   const delay = result('control_delay')
   const grade = result('level_of_service')?.los_grade
@@ -349,5 +514,29 @@ function timelineBar({ start, kpis }) {
     time: start,
     value: delay?.status === 'ok' ? Math.min(1, delay.value / 80) : undefined,
     level: BAR_LEVELS[grade],
+    note: barNote(delay, approaches, noSensorData),
   }
 }
+
+// An approach's KPIs are keyed by KPI name (see `of` in runView)
+const approachDelay = (approach) => approach.kpis?.control_delay
+
+// Why a bar has no value, in words for the timeline
+function barNote(delay, approaches, noSensorData) {
+  if (noSensorData) return 'No detector data'
+  if (!delay || delay.status === 'ok') return undefined
+  // the approaches whose queue reached past their measurement zone (the KPI engine's
+  // ZONE_END_REASON; tests/test_kpi_reasons.py fails if its wording loses these words)
+  const beyond = (approaches ?? [])
+    .filter((a) => approachDelay(a)?.reason?.includes(ZONE_END_WORDS))
+    .map((a) => a.arm)
+  if (beyond.length) {
+    return `Delay not measured: ${beyond.join(' and ')} queue beyond the measured area`
+  }
+  if (delay.reason?.includes(ZONE_END_WORDS)) {
+    return 'Delay not measured: queue beyond the measured area'
+  }
+  return 'Delay not measured'
+}
+
+const ZONE_END_WORDS = 'end of the measurement zone'

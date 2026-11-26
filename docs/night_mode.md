@@ -8,6 +8,7 @@ The moon / sun button at the end of the nav bar switches the whole app between l
 - **`frontend/src/theme/theme-dark.css` gives the color roles from `frontend/src/index.css` new values** when `data-theme="dark"`. Components don't change: they already use `var(--color-...)`. The file is imported in `frontend/src/main.jsx` after `frontend/src/index.css`.
 - **`frontend/src/hooks/useTheme.js`** reads and switches the mode, saves the choice (`localStorage`, key `jaadah-theme`) and follows the computer's setting until the user picks one. Where the browser supports it, the switch is a short cross-fade.
 - **`frontend/src/components/ThemeToggle.jsx`** is the button. Screen readers hear "Night mode, on/off".
+- **The Network Overview map switches basemap too:** OpenFreeMap `positron` in light mode, `dark` in night mode (`NetworkMap.jsx`). `map.setStyle()` keeps our own sources and layers (segments, heat, intersections) across the switch.
 
 ## Rules for new code
 
@@ -29,7 +30,6 @@ The 3D scene keeps its colors too, with one exception: an approach without an LO
 
 ## Known limitations
 
-- **The map background stays light.** Network Overview uses OpenFreeMap's light `positron` style (`NetworkMap.jsx`), so in night mode the map is a bright area on a dark page. Switching to a dark style later needs care: `map.setStyle()` removes our own layers (segments, heat, intersections), so they must be added again after the switch.
 - **No toggle on Welcome and Login.** The button lives in the nav bar, which those pages don't have. A user whose computer is set to dark gets night mode there and can switch it off only after logging in.
 - **Open tabs don't follow each other.** Switching the mode in one tab updates other open tabs only when they reload.
 
