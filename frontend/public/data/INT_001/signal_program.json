@@ -1,0 +1,51 @@
+{
+  "intersection_id": "INT_001",
+  "network_sha256": "49d546ae5dff93ab9ada7e3ee9129df6eb332d96171d3c3217833a16919fbf08",
+  "control_type": "fixed_time",
+  "source": "baseline_model",
+  "cycle_length_s": 225.0,
+  "phases": [
+    {
+      "phase_id": "PHASE_1",
+      "sequence_order": 0,
+      "served_movement_ids": [
+        "MOV_E_W",
+        "MOV_E_S"
+      ],
+      "green_time_s": 90.0,
+      "yellow_time_s": 3.0,
+      "all_red_time_s": 2.0
+    },
+    {
+      "phase_id": "PHASE_2",
+      "sequence_order": 1,
+      "served_movement_ids": [
+        "MOV_S_W"
+      ],
+      "green_time_s": 27.0,
+      "yellow_time_s": 3.0,
+      "all_red_time_s": 2.0
+    },
+    {
+      "phase_id": "PHASE_3",
+      "sequence_order": 2,
+      "served_movement_ids": [
+        "MOV_W_E",
+        "MOV_W_N"
+      ],
+      "green_time_s": 41.0,
+      "yellow_time_s": 3.0,
+      "all_red_time_s": 2.0
+    },
+    {
+      "phase_id": "PHASE_4",
+      "sequence_order": 3,
+      "served_movement_ids": [
+        "MOV_N_E"
+      ],
+      "green_time_s": 47.0,
+      "yellow_time_s": 3.0,
+      "all_red_time_s": 2.0
+    }
+  ]
+}
