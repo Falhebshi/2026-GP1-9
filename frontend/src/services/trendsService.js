@@ -231,12 +231,28 @@ async function loadIntersection(file) {
 // page (HTML), never as JSON.
 const NO_HISTORY = 'No traffic history has been built on this computer yet.'
 
+// Any other failure (no answer, an error status, a file that is not valid
+// JSON) shows one plain sentence, never the browser's technical message
+// (NFR-03).
+const NOT_LOADED = 'The performance data could not be loaded. Try again in a moment.'
+
 async function getHistoryFile(url) {
-  const response = await fetch(url)
+  let response
+  try {
+    response = await fetch(url)
+  } catch {
+    throw new Error(NOT_LOADED)
+  }
+
   const isJson = (response.headers.get('content-type') ?? '').includes('json')
   if (response.status === 404 || (response.ok && !isJson)) throw new EmptyPeriodError(NO_HISTORY)
-  if (!response.ok) throw new Error(`The performance data could not be loaded (${response.status}).`)
-  return response.json()
+  if (!response.ok) throw new Error(NOT_LOADED)
+
+  try {
+    return await response.json()
+  } catch {
+    throw new Error(NOT_LOADED)
+  }
 }
 
 async function getJson(url) {
