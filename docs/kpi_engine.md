@@ -913,7 +913,7 @@ Otherwise the page receives `available: false` and the reason, such as "not enou
 | --- | --- |
 | 7 days | Complete: 7 days, one of each weekday (6 of 7 is 86 %, but the weekday rule stops it) |
 | 30 days, all days | At least 24 days, every weekday present |
-| 30 days, weekends | At least 7 of the 8–9 weekend days, Friday and Saturday both present |
+| 30 days, weekends | At least 7 of 8 weekend days, or 8 of 9 (80 % rounded up), Friday and Saturday both present |
 
 Days go missing for reasons unrelated to traffic (a run that failed, a day RCRC did not send), so a share of them makes a result less certain but not systematically better. What they can change is the weekday mix (Thursday evenings and Sunday mornings differ from midweek), which the second rule protects; it also keeps every heatmap column filled. **80 % is a project choice, not a value from a standard**; it is defined once, in `parameters.py`.
 
