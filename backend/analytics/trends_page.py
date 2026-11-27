@@ -74,7 +74,14 @@ from backend.analytics.kpi.parameters import (
     LOS_THRESHOLDS,
     VOLUME_TO_CAPACITY_LOS_F,
 )
-from backend.analytics.history import HISTORY_DIR, load_day, stored_days
+from backend.analytics.history import (
+    HISTORY_DIR,
+    HistoryError,
+    load_day,
+    source_of,
+    stored_days,
+    stored_source_of_day,
+)
 from backend.analytics.service import FRONTEND_DATA_DIR
 from backend.analytics.trends import (
     ALL_SLOTS,
@@ -692,9 +699,38 @@ def write_trends(stored: dict[date, DayParts], folder: str | Path) -> list[Path]
 
 
 def load_stored_days(history_dir: str | Path = HISTORY_DIR) -> dict[date, DayParts]:
-    """Every stored day, run through the engine once (a few seconds a day)."""
+    """
+    Every stored day, run through the engine once (a few seconds a day).
 
-    return {day: prepare_day(day, load_day(day, history_dir)) for day in stored_days(history_dir)}
+    Raises HistoryError when the days come from more than one demand
+    source: one history uses one source (docs/kpi_engine.md, 17.1).
+    """
+
+    days = stored_days(history_dir)
+    if days:
+        # A cheap look at the first and last days before the slow part
+        first_source = stored_source_of_day(days[0], history_dir)
+        last_source = stored_source_of_day(days[-1], history_dir)
+        if first_source != last_source:
+            raise HistoryError(
+                f"the stored days come from more than one source ({days[0]} is {first_source}, "
+                f"{days[-1]} is {last_source}); a history uses one source, so keep the days of one"
+            )
+
+    stored, first = {}, None
+    for day in days:
+        measurements = load_day(day, history_dir)
+        source = source_of(measurements)
+        if first is None:
+            first = (day, source)
+        elif source != first[1]:
+            raise HistoryError(
+                f"the stored days come from more than one source ({first[0]} is {first[1]}, "
+                f"{day} is {source}); a history uses one source, so keep the days of one"
+            )
+        stored[day] = prepare_day(day, measurements)
+
+    return stored
 
 
 def main() -> None:

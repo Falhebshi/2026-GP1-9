@@ -35,9 +35,9 @@ const DAY_TYPE_OPTIONS = [
 
 function TrafficTrends() {
   // The filters. Changing any of them loads the data again.
-  // The page opens on 7 days: the longest period with enough simulated days
-  // today (docs/kpi_engine.md, section 17.6).
-  const [periodDays, setPeriodDays] = useState(7)
+  // The page opens on 30 days: a 30-day view still has data when a day is
+  // missing, a 7-day view does not (docs/kpi_engine.md, sections 17.6 and 17.8)
+  const [periodDays, setPeriodDays] = useState(30)
   const [dayType, setDayType] = useState('all')
   const [approachId, setApproachId] = useState('all')
 
@@ -297,4 +297,4 @@ function describePeriod(period) {
   return `${range} · based on ${period.daysUsed} of ${period.daysExpected} days · ${period.intervalCount.toLocaleString('en-US')} fifteen-minute intervals`
 }
 
-export default TrafficTrends
+export default TrafficTrends
