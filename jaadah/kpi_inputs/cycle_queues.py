@@ -51,6 +51,11 @@ Rules applied, and why:
   The record holds the longest queue in the cycle, in metres and in
   vehicles (each the largest of the cycle), and a cycle without a queue
   is a measured 0.
+- FCD of the end of a run: when the FCD covers only the run's last part
+  (fcd_start_s, the live update loop), a cycle that starts before the
+  FCD does was not watched whole, so it gets no record, rather than a
+  measured 0. Its interval then has no cycle records, and its queue is
+  unavailable.
 """
 
 import math
@@ -278,8 +283,13 @@ def collect_cycle_queues(
     run_id: str,
     window: RunWindow,
     vehicle_length_m: float,
+    fcd_start_s: float | None = None,
 ) -> CycleQueues:
-    """Every canonical lane's and approach's longest queue in every whole signal cycle of the run."""
+    """
+    Every canonical lane's and approach's longest queue in every whole
+    signal cycle of the run. With fcd_start_s (the FCD covers the run
+    from that second on), only the cycles that start at or after it.
+    """
 
     cycle = program.cycle_length_s
     plans = [item for item in ET.parse(network_path).getroot().findall("tlLogic")
@@ -340,6 +350,7 @@ def collect_cycle_queues(
             element.clear()
 
     whole_cycles = int(window.duration_s // cycle + TOLERANCE_S)
+    first_cycle = 0 if fcd_start_s is None else math.ceil(fcd_start_s / cycle - TOLERANCE_S)
     lane_records = [
         CycleQueueRecord(
             run_id=run_id,
@@ -351,7 +362,7 @@ def collect_cycle_queues(
             reaches_section_end=best[(lane_id, number)][2],
         )
         for lane_id in sections
-        for number in range(whole_cycles)
+        for number in range(first_cycle, whole_cycles)
     ]
     approach_records = [
         ApproachCycleQueueRecord(
@@ -364,6 +375,6 @@ def collect_cycle_queues(
             reaches_zone_end=best[(approach_id, number)][2],
         )
         for approach_id in approach_ids
-        for number in range(whole_cycles)
+        for number in range(first_cycle, whole_cycles)
     ]
     return CycleQueues(lanes=lane_records, approaches=approach_records)

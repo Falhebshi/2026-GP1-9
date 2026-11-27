@@ -31,13 +31,19 @@ Rules applied, and why:
   has not been simulated yet.
 - run.json is written last, and every file is written under a temporary
   name and then renamed, so the page never reads a half-written file,
-  and a run.json always describes files that are already there (team
-  decision A on live outputs).
-- The folder holds one run only. When a new chain publishes for the
-  first time, the previous chain's files move to previous/, run.json
-  first, so the page never mixes two runs; the run that was in
-  previous/ moves to earlier/<run ID>/, so restarts never lose the
-  last 24 hours.
+  and a run.json always describes files that are already there.
+- The folder holds one run only. A new chain's first update is built in
+  .next/ while the previous chain stays on the page; only when its
+  run.json is ready does the previous chain move to previous/ (run.json
+  first) and the new files move in (run.json last). So the page never
+  mixes two runs, and live/run.json is missing only for the moment the
+  files are renamed, not for the minute or two the first update takes.
+  The run that was in previous/ moves to earlier/<run ID>/, so restarts
+  never lose the last 24 hours.
+- Only a folder named live, holding a live run or nothing, is written
+  to: the loop moves and deletes the .json files it finds there, so a
+  wrong --out (such as the intersection's folder with the committed
+  baseline files) is refused.
 """
 
 import json
@@ -82,6 +88,7 @@ REPORTED_INTERVALS = 2
 UPDATE_DIR = "update"
 RUN_FILE = "run.json"
 SIGNALS_FILE = "signals.json"
+NEXT_DIR = ".next"
 # The page shows the last 24 hours: the newest run in live/, the run before
 # it in live/previous/, and the runs before that (after restarts) in
 # live/earlier/<run ID>/, listed in live/earlier/index.json, each until
@@ -168,6 +175,7 @@ class LivePublisher:
         self.network_path = Path(network_path)
         self.intersection_id = mapping.intersection_mapping.intersection_id
         self.output_dir = Path(output_dir) if output_dir else live_folder(self.intersection_id)
+        check_output_folder(self.output_dir)
         self.signal_links = find_signal_links(mapping)
         self._underpass = None
 
@@ -232,7 +240,14 @@ class LivePublisher:
         window = chain_window(record, interval_end)
         reported = reported_window(record, interval_end)
 
-        self._start_folder(record)
+        # A new chain's first update is built in .next/, so the run on the
+        # page stays complete until the new one is ready.
+        staging = self.output_dir / NEXT_DIR
+        remove_published(staging)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        new_chain = self.published_run_id() != record.run_id
+        target = staging if new_chain else self.output_dir
+        target.mkdir(exist_ok=True)
 
         # KPIs
         files = RunFiles(
@@ -243,9 +258,10 @@ class LivePublisher:
         results = calculate_kpis(
             measurements, self.mapping_path, self.network_path,
             time_window=reported, provisional=True,
+            simulated_until=record.epoch_time + timedelta(seconds=record.last_end_s),
         )
         write_kpis(
-            results, self.output_dir, run,
+            results, target, run,
             provisional_interval_start=interval_end - INTERVAL, merge=True,
         )
 
@@ -270,7 +286,7 @@ class LivePublisher:
             underpass=self.underpass,
         )
         for name, payload in payloads.items():
-            write_json_atomic(self.output_dir / name, payload)
+            write_json_atomic(target / name, payload)
 
         changes = read_signal_changes(
             tls_path=joined["tls_states"],
@@ -280,15 +296,25 @@ class LivePublisher:
         )
         check_one_indication_per_approach(changes=changes, config=self.mapping)
         write_json_atomic(
-            self.output_dir / SIGNALS_FILE,
+            target / SIGNALS_FILE,
             pack_signal_changes(run_id=record.run_id, changes=changes),
         )
 
         # run.json, last
         run_json = live_run_index(run_index, record, state)
-        write_json_atomic(self.output_dir / RUN_FILE, run_json, compact=False)
+        write_json_atomic(target / RUN_FILE, run_json, compact=False)
+        if new_chain:
+            self._start_folder(record)
+            self._move_in(staging)
         self.trim_previous(interval_end)
         return run_json
+
+    def _move_in(self, staging: Path) -> None:
+        """Move a new chain's files from .next/ into live/, run.json last."""
+
+        for path in sorted(staging.iterdir(), key=lambda item: item.name == RUN_FILE):
+            os.replace(path, self.output_dir / path.name)
+        staging.rmdir()
 
     def published_run_id(self) -> str | None:
         """The run ID of the published run.json, or None when nothing is published."""
@@ -310,6 +336,10 @@ class LivePublisher:
             return None
 
         run_json = json.loads(path.read_text(encoding="utf-8"))
+        # problems and since_interval_end describe a pause: they go when it ends
+        if state["state"] != "paused":
+            for key in PAUSE_KEYS:
+                run_json["live"].pop(key, None)
         run_json["live"].update(state)
         run_json["status"] = state_status(state["state"])
         write_json_atomic(path, run_json, compact=False)
@@ -409,6 +439,22 @@ class LivePublisher:
         self._write_earlier_index()
 
 
+def check_output_folder(folder: Path) -> None:
+    """
+    Refuse an output folder the loop must not move or delete files in:
+    one not named live, or one whose run.json is not a live run's.
+    """
+
+    if folder.name != LIVE_SCENARIO:
+        raise ValueError(
+            f"the live output folder must be named {LIVE_SCENARIO!r} "
+            f"(e.g. frontend/public/data/<intersection>/live/), not {str(folder)!r}"
+        )
+    path = folder / RUN_FILE
+    if path.is_file() and json.loads(path.read_text(encoding="utf-8")).get("source") != "live":
+        raise ValueError(f"{path} is not a live run's run.json; refusing to publish into {folder}")
+
+
 def trim_published(folder: Path, newest_end: datetime) -> None:
     """
     Drop a published run's intervals that are 24 hours older than the
@@ -477,6 +523,8 @@ def remove_published(folder: Path) -> None:
     (folder / RUN_FILE).unlink(missing_ok=True)
     shutil.rmtree(folder)
 
+
+PAUSE_KEYS = ("problems", "since_interval_end")
 
 LOOP_STATUSES = {
     "running": SimulationRunStatus.RUNNING.value,

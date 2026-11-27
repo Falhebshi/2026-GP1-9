@@ -7,10 +7,12 @@ from jaadah.models.network import Intersection
 # Project and data paths
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# The website's copy is the only one, so the page and the backend can't drift apart
 INTERSECTIONS_PATH = (
     REPO_ROOT
+    / "frontend"
+    / "public"
     / "data"
-    / "processed"
     / "intersections.json"
 )
 

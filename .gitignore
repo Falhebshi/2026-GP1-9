@@ -46,10 +46,16 @@ Thumbs.db
 # shaped by the RCRC measures
 /data/network_congestion/
 
+# Network map OD matrices: rebuilt from the code (python -m jaadah.network_congestion.trips)
+/data/processed/network/od_matrices.npz
+/data/processed/network/od_sensitivity.npz
+/data/processed/network/assigned_flows.json
+/data/processed/network/assigned_flows_friday.json
+
 # Accounts database (backend/accounts/storage.py): holds password hashes
 /data/accounts/
 
 # Live update loop (simulation/scripts/run_live.py): the chain's working files and
-# the page's live outputs, rebuilt as the loop runs (team decision A on live outputs)
+# the page's live outputs, rebuilt as the loop runs; never committed
 /simulation/outputs/live/
 /frontend/public/data/*/live/

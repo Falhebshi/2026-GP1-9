@@ -323,16 +323,19 @@ def test_provisional_window_end_uses_the_vehicles_that_have_finished():
     assert provisional.value == pytest.approx(40.0)   # 80 s in the zone - 40 s free flow
 
 
-def test_a_vehicle_waiting_to_enter_blocks_only_a_final_interval():
+def _north_left_last_interval(planned_departure_hhmmss):
     """
-    23:45-24:00: one North-left car has not entered the network when the
-    simulation stopped. As final, North is unavailable (it could not
-    enter); as provisional it may still enter, so North has a value.
+    23:45-24:00 with one finished North-left car, and one more that has
+    not entered the network, planned to depart at planned_departure_hhmmss
+    (it would reach the stop line one free-flow time later, in 23:45-24:00).
     """
 
     from test_history import RUN_ID, at, measurements
     from jaadah.models.outputs import UninsertedVehicle, VehicleDelayRecord
+    from jaadah.sumo_demand.planner import compute_free_flow_times
+    from backend.analytics.service import DEFAULT_NETWORK_PATH
 
+    free_flow_s = compute_free_flow_times(load_network_mappings(DEFAULT_MAPPING_PATH), DEFAULT_NETWORK_PATH)
     day = measurements()
     finished = VehicleDelayRecord(
         run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2345__001", movement_id="MOV_N_E",
@@ -340,26 +343,78 @@ def test_a_vehicle_waiting_to_enter_blocks_only_a_final_interval():
         zone_distance_m=565.0, free_flow_travel_time_s=40.0, halted_time_s=30.0,
     )
     waiting = UninsertedVehicle(
-        run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2350__002", movement_id="MOV_N_E",
-        planned_stop_line_time=at("23:51:00"),
+        run_id=RUN_ID, vehicle_id="MOV_N_E__20261022T2345__002", movement_id="MOV_N_E",
+        planned_stop_line_time=at(planned_departure_hhmmss) + timedelta(seconds=free_flow_s["MOV_N_E"]),
     )
     passages = day.passages._replace(
         records=[*day.passages.records, finished], uninserted=[*day.passages.uninserted, waiting],
     )
-    day = day._replace(passages=passages)
     last = AnalysisInterval(at("23:45:00"), at("00:00:00") + timedelta(days=1))
+    # the live loop stops each segment 60 s before the interval's end
+    stopped = last.end - timedelta(seconds=60)
+    return day._replace(passages=passages), last, stopped
 
-    def north_delay(results):
-        return next(r for r in results if r.kpi == KpiName.CONTROL_DELAY and r.movement_id == "MOV_N_E"
-                    and r.method.value == "simulation" and r.interval_start == last.start)
 
-    final = north_delay(calculate_kpis(day, time_window=last))
+def _north_left_delay(results, interval):
+    return next(r for r in results if r.kpi == KpiName.CONTROL_DELAY and r.movement_id == "MOV_N_E"
+                and r.method.value == "simulation" and r.interval_start == interval.start)
+
+
+def test_a_vehicle_due_just_before_the_stop_has_not_entered_yet():
+    """
+    Planned to depart 20 s before the simulation stopped: it has not
+    entered yet and may at the next update, so as provisional North has a
+    value. As final, a vehicle that never entered blocks North.
+    """
+
+    day, last, stopped = _north_left_last_interval("23:58:40")
+
+    final = _north_left_delay(calculate_kpis(day, time_window=last), last)
     assert final.status == KpiStatus.UNAVAILABLE
     assert "could not enter the network" in final.reason
 
-    provisional = north_delay(calculate_kpis(day, time_window=last, provisional=True))
+    provisional = _north_left_delay(
+        calculate_kpis(day, time_window=last, provisional=True, simulated_until=stopped), last,
+    )
     assert provisional.status == KpiStatus.OK
     assert provisional.value == pytest.approx(40.0)
+
+
+def test_a_vehicle_waiting_for_minutes_blocks_a_provisional_interval_too():
+    """
+    Planned to depart 8 minutes before the simulation stopped and still
+    outside the network: traffic is holding it back (a queue up to the
+    network's edge), so its delay is not measured and North stays
+    unavailable, provisional or not.
+    """
+
+    day, last, stopped = _north_left_last_interval("23:51:00")
+
+    provisional = _north_left_delay(
+        calculate_kpis(day, time_window=last, provisional=True, simulated_until=stopped), last,
+    )
+    assert provisional.status == KpiStatus.UNAVAILABLE
+    assert "could not enter the network" in provisional.reason
+
+
+def test_measurements_of_the_end_of_a_run_refuse_earlier_intervals():
+    """
+    Measured from FCD that starts at 23:00 (live loop): vehicles that
+    entered their zone before then are missing, so intervals before
+    23:15 would show false zeros and are refused.
+    """
+
+    from test_history import at
+
+    day, last, _ = _north_left_last_interval("23:58:40")
+    fcd_start_s = (at("23:00:00") - day.window.epoch).total_seconds()
+    day = day._replace(fcd_start_s=fcd_start_s)
+
+    with pytest.raises(ValueError, match="measured from"):
+        calculate_kpis(day, time_window=AnalysisInterval(at("23:00:00"), last.end))
+    with pytest.raises(ValueError, match="measured from"):
+        calculate_kpis(day)
+    assert calculate_kpis(day, time_window=AnalysisInterval(at("23:15:00"), last.end))
 
 
 # ============================================================

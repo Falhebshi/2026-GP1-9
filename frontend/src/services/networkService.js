@@ -1,6 +1,7 @@
 // Where the Network Traffic Overview page gets its data.
 //
-// The intersections are sample data; the road congestion is synthetic (see below). When the
+// The intersections are sample data; the road congestion comes from the network map server (see
+// below). When the
 // backend is ready, only the inside of these functions changes; the page stays the same as long
 // as the data keeps these shapes:
 //
@@ -13,12 +14,15 @@
 //                          filling its first interval; null when the server is not running
 
 import { getIntersection, sampleTimelineBars } from './currentTrafficService'
+import { drawnSpeeds, segmentEnds } from './segmentNeighbours'
 import { roadName } from '../utils/roadName'
 
 // Road segment congestion comes from the network map server (jaadah/network_congestion/server.py),
-// through the Vite proxy at /api/network (vite.config.js). Like the synthetic traffic source, it
-// adds every completed 15 minutes by itself and keeps today plus the 6 days before. Start it next
-// to `npm run dev` with `uvicorn jaadah.network_congestion.server:app --port 8001`.
+// through the Vite proxy at /api/network (vite.config.js). It works the speeds out from the RCRC
+// counts at the study intersection, so it follows the RCRC replay's clock and shows the data's own
+// dates; it adds every completed 15 minutes by itself and keeps the latest day plus the 6 days
+// before. Start the RCRC replay (port 8002), then the server next to `npm run dev` with
+// `uvicorn jaadah.network_congestion.server:app --port 8001`.
 //
 //   /days              the days with data and the speed limits of the levels
 //   /segments          every segment's line, name, road class and lanes
@@ -34,13 +38,17 @@ import { roadName } from '../utils/roadName'
 //
 // getSegments(time) resolves to a GeoJSON FeatureCollection, one LineString per segment, with
 //   id, name, road_class, lanes, source  from /segments
-//   speed       percent of free-flow speed
+//   speed       percent of free-flow speed, as drawn: short pieces and ramps are kept between
+//               the speeds of the roads at their two ends (segmentNeighbours.js)
+//   model_speed the server's own speed for the segment
 //   level       'low', 'moderate' or 'high' (sets the line color), or null with no data
-// and `limits`, the level limits in percent of free flow, for the Heatmap view
+// and `limits`, the level limits in percent of free flow, for the Heatmap view, and `hasSpeeds`,
+// false when the server has no stored 15 minutes for the requested time (every level is then null)
 const API = '/api/network'
 const QUARTER_HOUR = 15 * 60 * 1000
 
 let segmentsPromise = null
+let endsOf = null // the roads at each segment's two ends, worked out once per segment list
 
 function fetchApi(path) {
   return fetch(`${API}/${path}`).then((response) => {
@@ -85,18 +93,28 @@ function slotTime(day, slot) {
 }
 
 // The days with network data, oldest first: [] while the server is filling its first interval,
-// null when the server is not running
+// null when the server is not running. Also where the speeds come from: 'rcrc' (modelled from
+// the RCRC counts at the study intersection) or 'synthetic', null without the server.
 export async function getAvailableDays() {
   const index = await loadInfo()
   return index ? index.days : null
 }
 
-// Where the page opens: null (the latest data) when the data reaches today; otherwise the current
-// time of day on the newest day with data. Also null when the server is not running.
+export async function getNetworkSource() {
+  const index = await loadInfo()
+  return index?.source ?? null
+}
+
+// Where the page opens: null (the latest data) when the data is live, that is it reaches today or,
+// for a source that runs whole weeks behind (the RCRC replay), its latest 15 minutes reach the
+// current time of day; otherwise the current time of day on the newest day with data. Also null
+// when the server is not running.
 export async function getOpeningTime() {
   const index = await loadInfo()
   const now = riyadhSlot(Date.now())
   if (!index || !index.days.length || index.days.includes(now.day)) return null
+  const latest = index.latest_interval_end && riyadhSlot(Date.parse(index.latest_interval_end))
+  if (latest && latest.slot >= now.slot - 1) return null
   return slotTime(index.days.at(-1), now.slot)
 }
 
@@ -110,18 +128,22 @@ export async function getSegments(time = null) {
     throw err
   })
   const [segments, speeds] = await Promise.all([segmentsPromise, loadSpeeds(time)])
+  if (endsOf?.segments !== segments) endsOf = { segments, ends: segmentEnds(segments.features) }
+  const own = segments.features.map((f) => speeds?.[f.properties.id] ?? null)
+  const drawn = drawnSpeeds(own, endsOf.ends)
 
   return {
     type: 'FeatureCollection',
+    hasSpeeds: speeds !== null,
     // the level limits in percent of free flow, for the Heatmap view's areas
     limits: {
       lowAboveSpeed: index.low_above_speed_ratio * 100,
       moderateAboveSpeed: index.moderate_above_speed_ratio * 100,
     },
-    features: segments.features.map((feature) => {
+    features: segments.features.map((feature, i) => {
       const p = feature.properties
-      const speed = speeds?.[p.id]
-      const known = speed !== undefined && speed !== null
+      const speed = drawn[i]
+      const known = speed !== null
       return {
         type: 'Feature',
         geometry: feature.geometry,
@@ -132,6 +154,7 @@ export async function getSegments(time = null) {
           lanes: p.lanes,
           source: p.source,
           speed: known ? speed : null,
+          model_speed: own[i],
           level: known ? levelOf(speed, index) : null,
         },
       }
