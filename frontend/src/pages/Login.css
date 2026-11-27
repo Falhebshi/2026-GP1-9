@@ -1,51 +1,83 @@
 /* Login page ("/login"). Every color and size comes from index.css.
-   Only the login form, in a white card in the middle of the page. */
+   Jaadah's name on an indigo panel on the left, the sign-in form on the right. */
 
-/* The whole page: the card centered, the footer at the bottom */
 .login {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: calc(var(--space-xl) * 1.5) var(--page-padding) var(--space-lg);
+  display: grid;
+  grid-template-columns: minmax(320px, 4fr) 5fr;
   background: var(--color-bg);
 }
 
+/* The brand panel: indigo with a few faint roads, the name at the bottom */
+.login-brand-panel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-xl) calc(var(--space-xl) + var(--space-md));
+  background: var(--indigo-deep);
+  color: var(--white);
+}
+
+.login-roads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.login-roads path {
+  fill: none;
+  stroke: var(--white);
+  stroke-width: 7;
+  opacity: 0.28;
+}
+
+/* Roads tinted like the map: low, moderate and high congestion */
+.login-roads .login-road-low {
+  stroke: var(--congestion-low);
+  opacity: 0.45;
+}
+
+.login-roads .login-road-moderate {
+  stroke: var(--congestion-moderate);
+  opacity: 0.5;
+}
+
+.login-roads .login-road-high {
+  stroke: var(--congestion-high);
+  opacity: 0.45;
+}
+
+.login-brand-text {
+  position: relative;
+}
+
+.login-brand-name {
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.login-brand-tagline {
+  margin-top: var(--space-sm);
+  font-size: var(--text-md);
+  opacity: 0.85;
+}
+
+/* The form, centered in the right part of the page */
 .login-panel {
   width: 100%;
   max-width: calc(var(--content-narrow) + var(--space-xl) * 2);
-  margin: auto 0;
+  margin: auto;
   padding: var(--space-xl);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-
-.login-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-xl);
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.login-brand:hover {
-  color: var(--color-text);
 }
 
 .login-title {
   font-size: var(--text-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
-}
-
-.login-subtitle {
-  margin-top: var(--space-xs);
-  color: var(--color-text-muted);
 }
 
 .login-form {
@@ -160,47 +192,28 @@
   margin-top: var(--space-sm);
 }
 
-.login-footer {
-  width: 100%;
-  max-width: var(--content-narrow);
-  margin-top: var(--space-lg);
+/* Under the button: what to do without a password */
+.login-help {
+  margin-top: var(--space-md);
   font-size: var(--text-xs);
   text-align: center;
   color: var(--color-text-muted);
 }
 
-.login-footer p + p {
-  margin-top: var(--space-xs);
-}
+/* ---- Narrow windows: the brand panel becomes a band above the form -------- */
 
-/* The team's email, after a small envelope: opens the visitor's email app */
-.login-footer-email {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  color: var(--color-text-muted);
-  text-decoration: none;
-}
-
-.login-footer-email:hover {
-  color: var(--color-action);
-}
-
-.login-footer-icon {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linejoin: round;
-}
-
-/* ---- Narrow windows: the card fills the width ----------------------------- */
-
-@media (max-width: 480px) {
+@media (max-width: 760px) {
   .login {
-    padding-left: var(--space-md);
-    padding-right: var(--space-md);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .login-brand-panel {
+    padding: var(--space-lg);
+  }
+
+  .login-brand-name {
+    font-size: var(--text-2xl);
   }
 
   .login-panel {

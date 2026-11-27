@@ -3,7 +3,8 @@ import EmptyState from '../../components/EmptyState'
 import { STATUS_LABELS, STATUS_VARIANTS } from './accountFormat'
 
 // The list of engineer accounts on the Admin Dashboard (ADM-02): name,
-// email and status. Clicking a row selects that engineer.
+// email and status, one small card each. Clicking a row selects that engineer.
+// The dashboard's card around it shows how many there are.
 //
 //   engineers   [{ id, name, email, status }], already ordered by name
 //   selectedId  the selected engineer's id, or null
@@ -20,9 +21,6 @@ function EngineerList({ engineers, selectedId, onSelect }) {
 
   return (
     <div className="engineer-list">
-      <p className="engineer-list-count">
-        {engineers.length} {engineers.length === 1 ? 'engineer' : 'engineers'}
-      </p>
       <ul className="engineer-rows">
         {engineers.map((engineer) => (
           <li key={engineer.id}>

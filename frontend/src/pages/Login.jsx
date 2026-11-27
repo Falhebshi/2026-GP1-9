@@ -1,20 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import BrandMark from '../components/BrandMark'
+import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import { HOME_BY_ROLE, getCurrentUser, logIn } from '../services/authService'
-import { CONTACT_EMAIL, CONTACT_HREF } from '../utils/contact'
 import './Login.css'
 
-// The Login page, at "/login": the login form in a centered card, with the
-// team's email in the footer.
+// The Login page, at "/login": Jaadah's name on an indigo panel with faint roads on the left,
+// the sign-in form on the right.
 //
 // It logs in through logIn() in services/authService.js, which asks the
 // accounts server. After logging in, engineers go to the Network Traffic
 // Overview and administrators to the Admin Dashboard (PBI 31).
-
-// For the copyright line in the footer
-const YEAR = new Date().getFullYear()
 
 // A simple check that something looks like an email address. The backend
 // still decides whether the account exists.
@@ -107,16 +102,30 @@ function Login() {
 
   return (
     <main className="login">
-      <div className="login-panel">
-        <Link to="/" className="login-brand">
-          <BrandMark size="md" />
-          Jaadah
-        </Link>
+      <aside className="login-brand-panel">
+        {/* A few faint roads in the map's congestion colours: low, moderate and high */}
+        <svg
+          className="login-roads"
+          viewBox="0 0 533 750"
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true"
+        >
+          <path d="M322 0 L533 480" className="login-road-moderate" />
+          <path d="M0 333 L204 228" className="login-road-low" />
+          <path d="M204 228 L533 58" className="login-road-high" />
+          <path d="M105 0 L270 380" className="login-road-low" />
+          <path d="M0 520 L270 380" className="login-road-low" />
+          <path d="M270 380 L430 750" className="login-road-high" />
+          <path d="M270 380 L533 240" className="login-road-high" />
+        </svg>
+        <div className="login-brand-text">
+          <p className="login-brand-name">Jaadah</p>
+          <p className="login-brand-tagline">Traffic digital twin for Riyadh intersections</p>
+        </div>
+      </aside>
 
-        <h1 className="login-title">Log in</h1>
-        <p className="login-subtitle">
-          Use the account provided by the Jaadah team.
-        </p>
+      <div className="login-panel">
+        <h1 className="login-title">Sign in</h1>
 
         {formError && (
           <div className="login-error" role="alert">
@@ -127,7 +136,7 @@ function Login() {
         <form className="login-form" onSubmit={handleSubmit} noValidate>
           <div className="login-field">
             <label htmlFor="login-email" className="login-label">
-              Work email
+              Email
             </label>
             <input
               ref={emailRef}
@@ -188,25 +197,12 @@ function Login() {
           </div>
 
           <Button type="submit" className="login-submit" disabled={loading}>
-            {loading ? 'Logging in…' : 'Log in'}
+            {loading ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
 
+        <p className="login-help">Forgot your password? Contact your administrator.</p>
       </div>
-
-      <footer className="login-footer">
-        <p>Authorized access only.</p>
-        <p>© {YEAR} Jaadah · King Saud University</p>
-        <p>
-          <a href={CONTACT_HREF} className="login-footer-email">
-            <svg className="login-footer-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
-              <path d="M2 4.5 8 9l6-4.5" />
-            </svg>
-            {CONTACT_EMAIL}
-          </a>
-        </p>
-      </footer>
     </main>
   )
 }

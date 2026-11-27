@@ -1,7 +1,7 @@
 import './LosBadge.css'
 
 // A level-of-service grade, A to F, as a small colored square.
-// The colors run from light (A, free flow) to dark (F, breakdown).
+// The colors run like traffic colors, from green (A, free flow) to dark red (F, breakdown).
 //
 //   grade   'A' to 'F'. Leave it out when there is no grade: the badge
 //           then shows a dash instead of a misleading letter.
