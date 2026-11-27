@@ -7,12 +7,16 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from backend.analytics.history import (
+    DEMAND_COMPUTED_FIELDS,
     FORMAT_VERSION,
     HistoryError,
     day_file,
     load_day,
     save_day,
+    source_of,
     stored_days,
+    stored_source,
+    stored_source_of_day,
     whole_day_of,
 )
 from backend.analytics.service import DEFAULT_MAPPING_PATH, RunMeasurements, calculate_kpis
@@ -213,3 +217,34 @@ def test_a_file_holding_another_day_is_refused(tmp_path):
 
     with pytest.raises(HistoryError, match="holds 2026-10-22, not 2026-10-23"):
         load_day(date(2026, 10, 23), tmp_path)
+
+
+# ============================================================
+# ONE SOURCE PER HISTORY
+# ============================================================
+
+def test_the_source_of_a_day_is_the_source_of_its_demand(tmp_path):
+    day = measurements()
+
+    assert source_of(day) == "synthetic"
+    assert stored_source(tmp_path) is None            # nothing stored yet
+
+    save_day(day, tmp_path)
+    assert stored_source(tmp_path) == "synthetic"
+
+
+def test_a_day_whose_demand_mixes_sources_is_refused():
+    day = measurements()
+    rcrc = SimulationDemand.model_validate(
+        {**day.demands[0].model_dump(exclude=DEMAND_COMPUTED_FIELDS), "demand_id": "DEM_RCRC", "source": "rcrc"}
+    )
+
+    with pytest.raises(HistoryError, match="one demand source, not \\['rcrc', 'synthetic'\\]"):
+        source_of(day._replace(demands=[*day.demands, rcrc]))
+
+
+def test_a_stored_day_without_demand_has_no_source(tmp_path):
+    save_day(measurements()._replace(demands=[]), tmp_path)
+
+    with pytest.raises(HistoryError, match="should have one demand source, not none"):
+        stored_source_of_day(date(2026, 10, 22), tmp_path)

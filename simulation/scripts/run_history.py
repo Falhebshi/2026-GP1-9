@@ -24,11 +24,29 @@ Rules applied, and why:
 - Every day uses the same fixed seed (42 by default): normal historical
   simulations use one fixed seed (kpi_engine.md, decision on
   replication), so a day can always be rebuilt identically.
+- Only days the source has fully released are run: a day needs its
+  data to 00:15 the next day (its clearance). With the RCRC source,
+  "released" is also capped at the demo clock, the real time minus the
+  replay offset (ReplayConfig, 13 weeks), so the demo's current day and
+  everything after it are never run, even when the replay server was
+  started with another offset (as for calibration). A later day asked
+  for is reported as not released yet, not as a failure.
+- The last day defaults to the last released day, so the same command
+  run every night stores the day that has just finished, and tries
+  again any earlier day that failed.
+- One demand source per history: if the folder holds days from another
+  source, nothing is run.
+- Missing counts are estimated with the demand transformation's rules
+  for every run other than the live loop: gaps up to 75 minutes
+  (MAX_GAP_INTERVALS). A day with a longer gap, or a count those rules
+  cannot estimate (for example a time slot with fewer than 3 earlier
+  values of its day type), fails and is reported.
 
-Usage, from the repository root, with the synthetic source running:
-    python simulation/scripts/run_history.py --first-day 2026-10-27 --last-day 2026-11-09
+Usage, from the repository root, with the RCRC replay source running:
+    python simulation/scripts/run_history.py --first-day 2026-07-14
 
-Exit codes: 0 every day is stored, 1 at least one day failed.
+Exit codes: 0 every released day is stored, 1 a day failed or nothing
+could be run.
 """
 
 import argparse
@@ -45,24 +63,33 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import httpx2
 
-from backend.analytics.history import HISTORY_DIR, save_day, stored_days
+from backend.analytics.history import HISTORY_DIR, save_day, stored_days, stored_source
 from backend.analytics.service import collect_measurements, load_run
-from backend.ingestion.client import SyntheticTrafficClient
+from backend.ingestion.client import RcrcReplayClient, SyntheticTrafficClient
 from jaadah.models.scenario import SimulationRunStatus
 from simulation.scripts.run_baseline import (
+    CLEARANCE_S,
+    DEFAULT_HISTORY_DAYS,
     DEFAULT_OUTPUT_ROOT,
-    DEFAULT_SOURCE_URL,
+    DEFAULT_SOURCE_URLS,
     RIYADH,
     BaselineNotStarted,
     run_baseline,
 )
+from traffic_source.rcrc_replay.config import ReplayConfig
+
+CLIENTS = {"rcrc": RcrcReplayClient, "synthetic": SyntheticTrafficClient}
 
 # The raw SUMO outputs deleted once a day's measurements are stored
 RAW_FILES = (Path("run") / "raw" / "fcd.xml", Path("run") / "raw" / "tripinfo.xml")
 
 
 class DayOutcome(NamedTuple):
-    """What happened to one day: 'stored', 'skipped' or 'failed', with details."""
+    """
+    What happened to one day, with details: 'stored', 'skipped' (already
+    stored), 'not released' (the source has not delivered the whole day
+    yet) or 'failed'.
+    """
 
     day: date
     status: str
@@ -73,6 +100,45 @@ def history_run_id(day: date, seed: int) -> str:
     """RUN_HISTORY_<date>_S<seed>, e.g. RUN_HISTORY_20261022_S42."""
 
     return f"RUN_HISTORY_{day:%Y%m%d}_S{seed}"
+
+
+def day_end(day: date) -> datetime:
+    """When a day's run window ends: 00:15 the next day, Riyadh time (its clearance)."""
+
+    return datetime(day.year, day.month, day.day, tzinfo=RIYADH) + timedelta(days=1, seconds=CLEARANCE_S)
+
+
+def released_until(client, source: str, now: datetime, report: Callable[[str], None] = print) -> datetime | None:
+    """
+    The end of the latest interval the history may use. For the RCRC
+    source it is capped at the demo clock, the real time minus the
+    replay offset (ReplayConfig): a replay server started with a smaller
+    offset (for calibration) releases later days, which are still the
+    demo's future. Example: real time Thu 26 Nov 19:30 gives 27 Aug 19:30.
+    """
+
+    latest = client.fetch_latest_available_timestamp()
+    if source != "rcrc" or latest is None:
+        return latest
+
+    demo_now = now.astimezone(RIYADH) - ReplayConfig().offset
+    if latest > demo_now:
+        report(f"The replay source has released up to {latest.isoformat()}, after the demo clock "
+               f"({demo_now.isoformat(timespec='minutes')}); was it started with another "
+               f"offset? Days after the demo clock are not run.")
+        return demo_now
+    return latest
+
+
+def last_released_day(latest: datetime) -> date:
+    """
+    The last day whose whole run window the source has released, given
+    the end of its latest interval. Example: latest 27 Aug 08:15 gives
+    26 Aug (its window ends 27 Aug 00:15); latest 27 Aug 00:00 gives
+    25 Aug, because 26 Aug's clearance is not released yet.
+    """
+
+    return (latest.astimezone(RIYADH) - timedelta(seconds=CLEARANCE_S)).date() - timedelta(days=1)
 
 
 def days_between(first_day: date, last_day: date) -> list[date]:
@@ -87,7 +153,8 @@ def days_between(first_day: date, last_day: date) -> list[date]:
 def run_history(
     days: list[date],
     *,
-    client: SyntheticTrafficClient,
+    client: RcrcReplayClient | SyntheticTrafficClient,
+    source: str = "rcrc",
     seed: int = 42,
     history_dir: str | Path = HISTORY_DIR,
     output_root: str | Path = DEFAULT_OUTPUT_ROOT,
@@ -95,15 +162,28 @@ def run_history(
     run: Callable = run_baseline,
     collect: Callable = collect_measurements,
     report: Callable[[str], None] = print,
+    now: Callable[[], datetime] = lambda: datetime.now(RIYADH),
 ) -> list[DayOutcome]:
     """
-    Simulate and store each day that is not stored yet; return one
-    outcome per day, in the order given. run and collect are the
+    Simulate and store each released day that is not stored yet; return
+    one outcome per day, in the order given. run and collect are the
     simulation and FCD-reading steps (replaced in tests).
+
+    Raises ValueError when the folder holds days from another source.
     """
 
     history_dir, output_root = Path(history_dir), Path(output_root)
+
+    existing = stored_source(history_dir)
+    if existing is not None and existing != source:
+        raise ValueError(
+            f"{history_dir} holds days from the {existing} source; a history uses one "
+            f"source, so {source} days are not added. Move or delete those days first."
+        )
+
     already = set(stored_days(history_dir))
+    latest = released_until(client, source, now(), report)
+    options = {"source": source, "history_days": DEFAULT_HISTORY_DAYS[source]}
     outcomes = []
 
     for number, day in enumerate(days, start=1):
@@ -114,9 +194,15 @@ def run_history(
             report(f"{prefix}: already stored, skipped")
             continue
 
+        if latest is None or day_end(day) > latest:
+            released = latest.isoformat() if latest else "nothing"
+            outcomes.append(DayOutcome(day, "not released", f"the source has released {released}"))
+            report(f"{prefix}: not released yet ({outcomes[-1].detail}), skipped")
+            continue
+
         started = time.monotonic()
         try:
-            detail = _store_day(day, client, seed, history_dir, output_root, keep_raw, run, collect)
+            detail = _store_day(day, client, seed, history_dir, output_root, keep_raw, run, collect, options)
         except (BaselineNotStarted, httpx2.HTTPError, ValueError, OSError) as exc:
             outcomes.append(DayOutcome(day, "failed", str(exc)))
             report(f"{prefix}: FAILED - {exc}")
@@ -129,7 +215,7 @@ def run_history(
     return outcomes
 
 
-def _store_day(day, client, seed, history_dir, output_root, keep_raw, run, collect) -> str:
+def _store_day(day, client, seed, history_dir, output_root, keep_raw, run, collect, options) -> str:
     """Simulate (or reuse) one day's run, store its measurements, delete its raw files."""
 
     run_id = history_run_id(day, seed)
@@ -146,7 +232,7 @@ def _store_day(day, client, seed, history_dir, output_root, keep_raw, run, colle
         start = datetime(day.year, day.month, day.day, tzinfo=RIYADH)
         summary = run(
             start, start + timedelta(days=1),
-            client=client, output_dir=run_dir, run_id=run_id, seed=seed,
+            client=client, output_dir=run_dir, run_id=run_id, seed=seed, **options,
         )
         if summary["status"] != "completed":
             raise ValueError(f"the simulation did not complete (status {summary['status']}); see {run_dir}")
@@ -165,10 +251,14 @@ def _store_day(day, client, seed, history_dir, output_root, keep_raw, run, colle
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--first-day", required=True, type=date.fromisoformat,
-                        help="First day to simulate, e.g. 2026-10-27")
-    parser.add_argument("--last-day", required=True, type=date.fromisoformat,
-                        help="Last day to simulate, included, e.g. 2026-11-09")
-    parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
+                        help="First day to simulate, e.g. 2026-07-14")
+    parser.add_argument("--last-day", type=date.fromisoformat,
+                        help="Last day to simulate, included. Default: the last day "
+                             "the source has fully released (the day before the demo's today)")
+    parser.add_argument("--source", choices=sorted(CLIENTS), default="rcrc",
+                        help="Traffic source (default rcrc)")
+    parser.add_argument("--source-url",
+                        help="Default: http://127.0.0.1:8002 (rcrc), :8000 (synthetic)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--history-dir", type=Path, default=HISTORY_DIR)
     parser.add_argument("--keep-raw", action="store_true",
@@ -176,23 +266,34 @@ def parse_args(argv=None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, client=None, now=None, **run_options) -> int:
+    """The command; client, now and run_options replace the source, the clock and the steps in tests."""
+
     args = parse_args(argv)
+    client = client or CLIENTS[args.source](args.source_url or DEFAULT_SOURCE_URLS[args.source])
+    now = now or (lambda: datetime.now(RIYADH))
 
     try:
-        days = days_between(args.first_day, args.last_day)
-    except ValueError as exc:
+        last_day = args.last_day
+        if last_day is None:
+            latest = released_until(client, args.source, now())
+            if latest is None:
+                raise ValueError("the source has released no data yet")
+            last_day = last_released_day(latest)
+        days = days_between(args.first_day, last_day)
+        outcomes = run_history(
+            days, client=client, source=args.source, seed=args.seed,
+            history_dir=args.history_dir, keep_raw=args.keep_raw, now=now, **run_options,
+        )
+    except (ValueError, httpx2.HTTPError) as exc:
         print(exc, file=sys.stderr)
         return 1
 
-    outcomes = run_history(
-        days, client=SyntheticTrafficClient(args.source_url), seed=args.seed,
-        history_dir=args.history_dir, keep_raw=args.keep_raw,
-    )
-
-    counts = {s: sum(o.status == s for o in outcomes) for s in ("stored", "skipped", "failed")}
+    counts = {s: sum(o.status == s for o in outcomes)
+              for s in ("stored", "skipped", "not released", "failed")}
     print(f"\n{len(days)} days: stored {counts['stored']}, "
-          f"already stored {counts['skipped']}, failed {counts['failed']}")
+          f"already stored {counts['skipped']}, not released {counts['not released']}, "
+          f"failed {counts['failed']}")
     for outcome in outcomes:
         if outcome.status == "failed":
             print(f"  {outcome.day}: {outcome.detail}")
