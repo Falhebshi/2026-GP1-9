@@ -66,7 +66,7 @@
 // Throws EmptyPeriodError, with the backend's reason, when the period has
 // too few simulated days (for example "not enough data: 14 of 30 days are
 // stored (at least 24 are needed)"), or when this computer has no trends
-// files at all ("No traffic history has been built on this computer yet.").
+// files at all ("No traffic history has been built yet.").
 //
 // ---------------------------------------------------------------------------
 // getBreakdown({ periodDays, dayType, approachId, windowId })
@@ -224,12 +224,13 @@ async function loadIntersection(file) {
   }
 }
 
-// The trends files are built from private RCRC data on the computer that
-// runs the history, and are not in git (docs/kpi_engine.md, section 17),
-// so a computer without them shows the empty state. A missing file comes
-// back as a 404, or from the development server as the website's own
-// page (HTML), never as JSON.
-const NO_HISTORY = 'No traffic history has been built on this computer yet.'
+// The trends files are built from RCRC data by the computer that runs the
+// history and are ignored by git (docs/kpi_engine.md, section 17), so a
+// site without them shows the empty state. A missing file comes back as a
+// 404, or, from the Vite development server, as the website's own page
+// (HTML) with status 200: the "not JSON" check is aimed at that server. A
+// host that serves .json files as text/plain would need it changed.
+const NO_HISTORY = 'No traffic history has been built yet.'
 
 // Any other failure (no answer, an error status, a file that is not valid
 // JSON) shows one plain sentence, never the browser's technical message
