@@ -150,18 +150,10 @@ def run_baseline(
     sumo_bin: str = "sumo",
     source: str = "synthetic",
     history_days: int = 0,
-    fallback_gap_intervals: float | None = None,
 ) -> dict:
     """
     Run one baseline simulation and return its summary; raise
     BaselineNotStarted when the run cannot start.
-
-    fallback_gap_intervals is passed to the demand transformation: a
-    detector silent for longer than MAX_GAP_INTERVALS is estimated with
-    the plain time-slot average, up to that many intervals
-    (backend/demand/imputation.py). None, the default, keeps longer gaps
-    missing; the history runner passes LIVE_FALLBACK_GAP_INTERVALS, as
-    the live update loop does.
     """
 
     ingest = INGESTERS[source]
@@ -220,7 +212,6 @@ def run_baseline(
         window_start=window.epoch,
         window_end=window.run_end,
         available_until=latest,
-        fallback_gap_intervals=fallback_gap_intervals,
     )
     if transformation.errors:
         raise BaselineNotStarted(
