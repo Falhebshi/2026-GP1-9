@@ -1,5 +1,5 @@
 """
-Run one baseline simulation from a traffic source (synthetic or RCRC).
+Run one baseline simulation from a traffic source (RCRC by default, or synthetic).
 
 The run covers the analysis period plus 15 minutes of warm-up before it
 and 15 minutes of clearance after it, as one continuous SUMO run. For an
@@ -7,8 +7,9 @@ and 15 minutes of clearance after it, as one continuous SUMO run. For an
 
 Steps:
 
-1. ask the source for the latest interval it has stored, and stop if the
-   whole run window is not available yet;
+1. with the RCRC source, stop if the run window falls outside the
+   report's dates; then ask the source for the latest interval it has
+   released, and stop if the whole run window is not available yet;
 2. fetch and ingest the observations of the run window; stop if any
    record is rejected;
 3. turn them into movement demand; stop if any demand cannot be built.
@@ -121,6 +122,10 @@ def _demand_problems(errors) -> list[str]:
     return problems
 
 
+def _iso_or_unknown(moment: datetime | None) -> str:
+    return moment.isoformat() if moment else "unknown"
+
+
 def _kept_files(output_dir: Path) -> list[str]:
     if not output_dir.exists():
         return []
@@ -176,14 +181,32 @@ def run_baseline(
     config = SimulationConfig(warmup_duration_s=WARMUP_S, clearance_duration_s=CLEARANCE_S)
     window = build_run_window(scenario, config)
 
-    # 1. The whole run window must be available at the source.
+    # 1. The whole run window must be inside the source's data and released.
+    if source == "rcrc":
+        data_start, data_end = client.fetch_data_window()
+        if (data_start and window.epoch < data_start) or (
+            data_end and window.run_end > data_end
+        ):
+            raise BaselineNotStarted([
+                "The RCRC data does not cover this simulation window.",
+                f"Required: {window.epoch.isoformat()} to {window.run_end.isoformat()}",
+                f"RCRC data: {_iso_or_unknown(data_start)} to {_iso_or_unknown(data_end)}",
+            ])
     latest = client.fetch_latest_available_timestamp()
     if latest is None or latest < window.run_end:
-        raise BaselineNotStarted([
+        problems = [
             "Traffic data are not yet complete for this simulation window.",
             f"Required through: {window.run_end.isoformat()}",
             f"Latest available: {latest.isoformat() if latest else 'none'}",
-        ])
+        ]
+        if source == "rcrc" and latest is not None:
+            problems.append(
+                "The RCRC traffic feed is replayed on a clock a whole number "
+                "of weeks behind real time (JAADAH_REPLAY_OFFSET_WEEKS, default 13). "
+                "Choose a window that ends by the latest available time, or restart "
+                "the replay with JAADAH_REPLAY_OFFSET_WEEKS=0 to release the whole report."
+            )
+        raise BaselineNotStarted(problems)
 
     # 2. Ingestion: every source record must be accepted.
     ingestion = ingest(client, start=window.epoch, end=window.run_end)
@@ -303,11 +326,11 @@ def run_baseline(
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--analysis-start", required=True, type=datetime.fromisoformat,
-                        help="Start of the analysis period, e.g. 2026-10-20T08:00+03:00")
+                        help="Start of the analysis period, e.g. 2026-09-29T08:00+03:00")
     parser.add_argument("--analysis-end", required=True, type=datetime.fromisoformat,
-                        help="End of the analysis period, e.g. 2026-10-20T09:00+03:00")
-    parser.add_argument("--source", choices=sorted(INGESTERS), default="synthetic",
-                        help="Traffic source to pull from (default synthetic).")
+                        help="End of the analysis period, e.g. 2026-09-29T09:00+03:00")
+    parser.add_argument("--source", choices=sorted(INGESTERS), default="rcrc",
+                        help="Traffic source to pull from (default rcrc).")
     parser.add_argument("--source-url",
                         help="Default: http://127.0.0.1:8000 (synthetic), :8002 (rcrc)")
     parser.add_argument("--history-days", type=int,

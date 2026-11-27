@@ -3,7 +3,7 @@ from datetime import datetime
 import httpx2
 import pytest
 
-from backend.ingestion.client import SyntheticTrafficClient
+from backend.ingestion.client import RcrcReplayClient, SyntheticTrafficClient
 
 
 def make_response(
@@ -338,3 +338,34 @@ def test_invalid_health_response_is_rejected(
         match=message,
     ):
         client.fetch_latest_available_timestamp()
+
+
+def test_rcrc_data_window_is_read_from_health(monkeypatch) -> None:
+    captured = {}
+    fake_health(
+        monkeypatch,
+        captured,
+        json_data={
+            "status": "ok",
+            "source": "rcrc",
+            "latest_available_timestamp": "2026-08-27T08:15:00+03:00",
+            "data_start": "2026-07-13T00:00:00+03:00",
+            "data_end": "2026-10-13T00:00:00+03:00",
+        },
+    )
+
+    client = RcrcReplayClient(base_url="http://rcrc-source/", timeout_s=5.0)
+
+    assert client.fetch_data_window() == (
+        datetime.fromisoformat("2026-07-13T00:00:00+03:00"),
+        datetime.fromisoformat("2026-10-13T00:00:00+03:00"),
+    )
+    assert captured == {"url": "http://rcrc-source/health", "timeout": 5.0}
+
+
+def test_rcrc_data_window_is_unknown_when_health_does_not_say(monkeypatch) -> None:
+    fake_health(monkeypatch, {}, json_data={"status": "no_report", "data_end": None})
+
+    client = RcrcReplayClient(base_url="http://rcrc-source")
+
+    assert client.fetch_data_window() == (None, None)
