@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import Card from '../../components/Card'
 import EmptyState from '../../components/EmptyState'
+import InfoTip from '../../components/InfoTip'
 import LosBadge from '../../components/LosBadge'
 import Select from '../../components/Select'
 import { getBreakdown } from '../../services/trendsService'
@@ -48,7 +49,7 @@ function BreakdownTable({ filters, windows }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [closed, setClosed] = useState(new Set()) // approaches folded away
+  const [open, setOpen] = useState(new Set()) // approaches unfolded; all folded at first
 
   const { periodDays, dayType, approachId } = filters
 
@@ -75,14 +76,21 @@ function BreakdownTable({ filters, windows }) {
   }, [periodDays, dayType, approachId, windowId])
 
   function toggle(id) {
-    const next = new Set(closed)
+    const next = new Set(open)
     if (next.has(id)) next.delete(id)
     else next.add(id)
-    setClosed(next)
+    setOpen(next)
   }
 
   const menu = (
     <div className="bd-menu">
+      <InfoTip label="How the table is calculated" align="end">
+        Approach delay = flow-weighted average of its movements; approach v/c, queue and storage
+        ratio = worst movement; throughput = sum. Intersection v/c is the critical v/c (Xc). A
+        movement with v/c above 1.0 is LOS F regardless of delay. Highlighted: v/c above 1.0 and
+        storage ratio of 1.0 or more. &quot;Shared lane&quot; = measured on a lane used by two
+        movements.
+      </InfoTip>
       <Select
         label="Window"
         size="sm"
@@ -148,7 +156,7 @@ function BreakdownTable({ filters, windows }) {
 
           <tbody>
             {data.approaches.map((approach) => {
-              const isOpen = !closed.has(approach.approach_id)
+              const isOpen = open.has(approach.approach_id)
 
               return (
                 <Fragment key={approach.approach_id}>
@@ -190,12 +198,6 @@ function BreakdownTable({ filters, windows }) {
         </table>
       </div>
 
-      <p className="bd-footnote">
-        Approach delay = flow-weighted average of its movements; approach v/c, queue and
-        storage ratio = worst movement; throughput = sum. Intersection v/c is the critical
-        v/c (Xc). A movement with v/c above 1.0 is LOS F regardless of delay. Highlighted:
-        v/c above 1.0 and storage ratio of 1.0 or more. "Shared lane" = measured on a lane used by two movements.
-      </p>
     </Card>
   )
 }

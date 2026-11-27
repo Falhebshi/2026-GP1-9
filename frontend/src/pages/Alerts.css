@@ -45,12 +45,6 @@
 }
 
 /* Lined up with the title, not the dot */
-.alerts-section-description {
-  margin: 2px 0 var(--space-md) 20px;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
 /* The "Show all" button under a long section */
 .alerts-more {
   display: flex;

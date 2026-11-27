@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
+import InfoTip from '../components/InfoTip'
 import NetworkMap from '../components/NetworkMap'
 import Notice from '../components/Notice'
 import SegmentedControl from '../components/SegmentedControl'
@@ -256,6 +257,14 @@ function NetworkOverview() {
   }
 
   const { bounds, maxBounds, intersections } = network
+  // What the road colours are made from, behind the info button next to the title; only once
+  // the server has data, since before that the notices below say what is happening
+  const dataNote =
+    network.isSample && availableDays?.length
+      ? source === 'rcrc'
+        ? "Road colours are estimated, not measured: they follow the city's typical traffic, adjusted each day by the counts at one intersection."
+        : 'Road colours are simulated test data, not measured traffic.'
+      : null
 
   return (
     <div className="network-overview" style={{ '--map-bottom-inset': `${timelineHeight + 32}px` }}>
@@ -278,6 +287,7 @@ function NetworkOverview() {
       <div className="network-overview-side" ref={sideRef}>
         <Card floating className="network-overview-title">
           <h1>Network Traffic Overview</h1>
+          {dataNote && <InfoTip label="About the congestion data">{dataNote}</InfoTip>}
         </Card>
 
         {segments && !segments.hasSpeeds && (
@@ -288,27 +298,25 @@ function NetworkOverview() {
           </Notice>
         )}
 
-        {network.isSample && (
-          <Notice variant="warning">
-            {availableDays === null
-              ? 'Road congestion is not available: the network map server is not running.'
-              : !availableDays.length
-                ? 'Loading road congestion: the network map server is preparing the last 7 days.'
-                : source === 'rcrc'
-                  ? "Modelled data: road congestion comes from a city trip model and TomTom's typical week, adjusted each day by the traffic counted at one intersection. It is not measured on these roads."
-                  : 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'}
-          </Notice>
+        {network.isSample && availableDays === null && (
+          <Notice variant="warning">Road congestion is not available right now.</Notice>
+        )}
+        {network.isSample && availableDays?.length === 0 && (
+          <Notice variant="warning">Preparing road congestion for the last 7 days…</Notice>
         )}
 
         <Card floating title="Intersections by area" className="network-overview-picker">
           {intersections.length ? (
-            <Select
-              ariaLabel="Intersection"
-              placeholder="Select intersection"
-              options={intersectionOptions(intersections)}
-              value={intersectionId}
-              onChange={setIntersectionId}
-            />
+            <>
+              <Select
+                ariaLabel="Intersection"
+                placeholder="Select intersection"
+                options={intersectionOptions(intersections)}
+                value={intersectionId}
+                onChange={setIntersectionId}
+              />
+              <p className="network-overview-hint">Or click a point on the map</p>
+            </>
           ) : (
             <EmptyState>No intersections are available.</EmptyState>
           )}
