@@ -86,13 +86,11 @@
 // ---------------------------------------------------------------------------
 
 import { roadName } from '../utils/roadName'
+import { getSignalProgram, signalTypeLabel } from './signalProgramService'
 
 const INTERSECTION_ID = 'INT_001'
 const DATA_FOLDER = '/data'
 const WHOLE_DAY = 'whole-day'
-
-// Same words as Current Traffic (currentTrafficService.js): one signal program
-const SIGNAL_TYPE = 'Fixed-time, 120 s cycle'
 
 export async function getTrends({ periodDays = 7, dayType = 'all', approachId = 'all' } = {}) {
   checkDemo()
@@ -220,7 +218,8 @@ async function loadIntersection(file) {
     name: roadName(found?.name_en),
     area: found?.area_label,
     approaches: file.approaches.length,
-    signalType: SIGNAL_TYPE,
+    // The same words as Current Traffic: both read the plan SUMO runs
+    signalType: signalTypeLabel(await getSignalProgram().catch(() => null)),
   }
 }
 

@@ -454,6 +454,8 @@ The `input_origins` of capacity and volume-to-capacity results follow `SignalPro
 
 The baseline signal program (embedded in `data/processed/road_network/jaadah_study_area.net.xml`: four phases, greens of 90, 27, 41 and 47 s, cycle 225 s) was derived from the RCRC site 1444 counts with Webster's method ([SUMO network](sumo_network.md#signal-program)); its timings were not taken from the intersection's controller. Its source is therefore `baseline_model`, and every capacity, volume-to-capacity and HCM delay result is labelled *modelled assumption*. When the intersection's actual timing plan is available, the program's phases and timings are replaced with it and its source becomes `observed`; nothing else in the engine changes.
 
+**On the website.** The pages that show the signal type (the Location card on Current Traffic, Traffic Forecast and Traffic Patterns & Trends) read it from `frontend/public/data/<intersection>/signal_program.json`, written from the network with the same reader the engine uses (`python -m backend.outputs.signal_program`), so a page always describes the plan SUMO runs: "Fixed-time, 225 s cycle (modelled)", the note following the program's source. After any change to the plan in the network, the file is written again; a test fails while it does not match the network.
+
 ## 9.9 Scope limitation: passenger cars only
 
 Because heavy vehicles and buses are outside Jaadah's scope, both the simulation and the HCM calculation describe traffic made of passenger cars only. Real capacity, with trucks and buses present, would be somewhat lower.

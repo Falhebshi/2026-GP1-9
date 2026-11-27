@@ -118,16 +118,16 @@ python simulation/scripts/run_simulation.py
 
 This uses `simulation/configs/tests/smoke_test.sumocfg` and runs for 300 simulation seconds. It does not fetch traffic data or calculate KPIs.
 
-For a baseline run from the synthetic source, leave the source running and use another terminal at the repository root:
+For a baseline run, leave the RCRC traffic feed running and use another terminal at the repository root:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python simulation/scripts/run_baseline.py --analysis-start YYYY-MM-DDT08:00+03:00 --analysis-end YYYY-MM-DDT09:00+03:00
 ```
 
-To run from the RCRC replay source instead, add `--source rcrc`.
+To run from the synthetic source instead, start it and add `--source synthetic`.
 
-Replace `YYYY-MM-DD` with a date available from the source. Keep the Riyadh `+03:00` offset. The run adds 15 minutes before and after the analysis period. Check that `/health` reports a `latest_available_timestamp` at or after the end of this full window; a new source initially has only seven days of history. Each run needs a new output directory under `simulation/outputs/baseline_runs/` by default. It writes generated demand, `raw/fcd.xml`, `raw/tripinfo.xml`, and `summary.json`. FCD files can be large, and raw outputs are not automatically shown as dashboard KPIs.
+Replace `YYYY-MM-DD` with a date the source has released. Keep the Riyadh `+03:00` offset. The run adds 15 minutes before and after the analysis period. The RCRC report covers **13 July to 13 October 2026**; with the default 13-week replay clock, the feed has released dates up to 13 weeks before today. For a later date in the report, restart the feed with `$env:JAADAH_REPLAY_OFFSET_WEEKS = "0"`, which releases the whole report. The runner says which of these applies when a date cannot be used. A new synthetic source has only seven days of history. Each run needs a new output directory under `simulation/outputs/baseline_runs/` by default. It writes generated demand, `raw/fcd.xml`, `raw/tripinfo.xml`, and `summary.json`. FCD files can be large, and raw outputs are not automatically shown as dashboard KPIs.
 
 ### Live update loop
 

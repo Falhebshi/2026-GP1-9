@@ -17,7 +17,7 @@ clock (ReplayConfig).
 
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException
 
@@ -91,6 +91,16 @@ def create_app(
             "site_id": info["site_id"] if info else None,
             "latest_available_timestamp": latest.isoformat() if latest else None,
             "replay_time": replay_now(now(), config).isoformat(),
+            # data_start and data_end bound the whole report; they do not
+            # move with the replay clock.
+            "data_start": (
+                (
+                    info["first_interval_end"]
+                    - timedelta(minutes=INTERVAL_MINUTES)
+                ).isoformat()
+                if info and info["first_interval_end"]
+                else None
+            ),
             "data_end": (
                 info["last_interval_end"].isoformat()
                 if info and info["last_interval_end"]

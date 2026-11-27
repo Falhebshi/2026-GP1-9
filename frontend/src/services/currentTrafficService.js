@@ -65,6 +65,7 @@
 
 import { notApplicableResult, sampleResult } from './sampleKpiResults'
 import { roadName } from '../utils/roadName'
+import { getSignalProgram, signalTypeLabel } from './signalProgramService'
 
 // The study intersection. Its name, area and centre come from its record in
 // public/data/intersections.json, the same file the backend loads (backend/outputs/intersections.py).
@@ -237,7 +238,8 @@ export async function getIntersection() {
     name: roadName(record.name_en),
     area: record.area_label,
     approaches: 4,
-    signalType: 'Fixed-time (Webster), 225 s cycle', // same signal program as in SUMO
+    // Read from the plan SUMO runs (signalProgramService.js); "Unavailable" if it cannot be loaded
+    signalType: signalTypeLabel(await getSignalProgram().catch(() => null)),
   }
 }
 
