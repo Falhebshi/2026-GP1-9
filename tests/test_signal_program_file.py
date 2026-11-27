@@ -5,8 +5,8 @@ import json
 import pytest
 
 from backend.analytics.service import DEFAULT_NETWORK_PATH, FRONTEND_DATA_DIR
-from jaadah.kpi_inputs.signal_program import SignalProgramError
 from backend.outputs.signal_program import FILE_NAME, signal_program_payload, write_signal_program
+from jaadah.kpi_inputs.signal_program import SignalProgramError
 
 
 def test_the_payload_is_the_network_s_webster_plan():
