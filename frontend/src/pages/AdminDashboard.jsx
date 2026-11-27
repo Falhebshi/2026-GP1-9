@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
@@ -15,12 +14,11 @@ import './admin/AdminDashboard.css'
 // logging in (PBI 31). Only administrators can open it (RequireRole in
 // App.jsx).
 //
-//   left    the engineer accounts (ADM-02); clicking one selects it
+//   left    the engineer accounts in a card, with how many there are (ADM-02); clicking one
+//           selects it
 //   right   the panel: the selected engineer's details and account actions
 //           (ADM-03, ADM-05, ADM-04), or the Create account form (ADM-01)
 function AdminDashboard() {
-  const { user } = useOutletContext()
-
   // null while loading the first time
   const [engineers, setEngineers] = useState(null)
   const [loadError, setLoadError] = useState('')
@@ -120,10 +118,9 @@ function AdminDashboard() {
     <>
       <PageHeader
         title="Admin Dashboard"
-        subtitle={`Logged in as ${user.name}`}
         actions={
           <Button onClick={startCreating} disabled={creating}>
-            Create account
+            + Create account
           </Button>
         }
       />
@@ -140,7 +137,17 @@ function AdminDashboard() {
         </EmptyState>
       ) : (
         <div className="admin-layout">
-          <section className="admin-list" aria-label="Engineer accounts">
+          <Card
+            title="Engineer accounts"
+            action={
+              engineers?.length ? (
+                <span className="engineer-list-count">
+                  {engineers.length} {engineers.length === 1 ? 'engineer' : 'engineers'}
+                </span>
+              ) : null
+            }
+            className="admin-list"
+          >
             {engineers === null ? (
               <p className="admin-panel-note" role="status">
                 Loading engineer accounts…
@@ -148,7 +155,7 @@ function AdminDashboard() {
             ) : (
               <EngineerList engineers={engineers} selectedId={selectedId} onSelect={select} />
             )}
-          </section>
+          </Card>
           <section className="admin-side" aria-label="Account details">
             {panel}
           </section>

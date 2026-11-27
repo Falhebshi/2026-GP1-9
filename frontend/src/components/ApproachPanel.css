@@ -102,31 +102,38 @@
   color: var(--color-text);
 }
 
-/* the whole approach: four numbers in two columns, name above value */
+/* the whole approach: four small tiles in a row, name above value */
 .approach-summary {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
-  padding: var(--space-sm);
-  background: var(--color-bg);
-  border-radius: var(--radius);
+}
+
+.approach-summary > div {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 .approach-summary dt,
-.approach-movement-details dt {
+.approach-movement-grid dt,
+.approach-movement-delay > span {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 
 .approach-summary dd,
-.approach-movement-details dd {
+.approach-movement-grid dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .approach-movements-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
   margin: var(--space-xs) 0 0;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -138,15 +145,15 @@
 .approach-movements {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* one movement: arrow, name and LOS on the first line, its numbers on the second */
+/* one movement: a card with arrow, name, LOS and the open/close button on the first line */
 .approach-movement {
-  padding: var(--space-sm);
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
 }
@@ -158,8 +165,8 @@
 }
 
 .approach-movement-arrow {
-  width: 22px;
-  font-size: 18px;
+  width: 18px;
+  font-size: 16px;
   line-height: 1;
   text-align: center;
   color: var(--color-text-muted);
@@ -170,42 +177,76 @@
   font-weight: 600;
 }
 
+.approach-movement-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.approach-movement-toggle:hover {
+  background: var(--color-selected-bg);
+}
+
+.approach-movement-open .approach-movement-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* a closed card: its delay and queue as two small chips */
 .approach-movement-numbers {
   display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  margin: 4px 0 0 30px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0 26px;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .approach-movement-numbers > span {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
   white-space: nowrap;
 }
 
-.approach-movement-more {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--color-selected);
-  cursor: pointer;
-}
-
+/* an open card: the control delay large, then the other KPIs three to a row */
 .approach-movement-details {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px var(--space-md);
-  margin: var(--space-sm) 0 0 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-sm);
 }
 
-/* the shared-lane sentence under the movements */
-.approach-note {
+.approach-movement-delay,
+.approach-movement-grid > div {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.approach-movement-delay {
+  display: flex;
+  flex-direction: column;
+}
+
+.approach-movement-delay strong {
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.approach-movement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
 }
 
 .approach-kpi-missing {

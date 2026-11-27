@@ -1,11 +1,15 @@
 .kpi-group {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
 
-/* What the tiles share: the comparison and the method */
-.kpi-group-note {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
+/* The info button with what the tiles share, in the top right corner of the last tile, so it
+   takes no row of its own */
+.kpi-group-info {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
 }

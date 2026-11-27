@@ -1,7 +1,7 @@
 /* The Admin Dashboard: the engineer list on the left, the panel on the right */
 .admin-layout {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-lg);
   align-items: start;
   margin-top: var(--space-lg);
@@ -21,23 +21,17 @@
 /* ---------- The list ---------- */
 
 .engineer-list-count {
-  margin: 0 0 var(--space-sm);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
+/* One small card per engineer */
 .engineer-rows {
+  display: grid;
+  gap: var(--space-sm);
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  overflow: hidden;
-}
-
-.engineer-rows li + li {
-  border-top: 1px solid var(--color-border);
 }
 
 /* One engineer: a button so it works with the keyboard (Tab, Enter) */
@@ -47,11 +41,12 @@
   justify-content: space-between;
   gap: var(--space-md);
   width: 100%;
-  padding: var(--space-sm) var(--space-md);
-  border: none;
-  /* A see-through bar on the left that turns indigo when selected */
-  border-left: 3px solid transparent;
-  background: none;
+  padding: 10px var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  /* A thicker left edge that turns indigo when selected */
+  border-left-width: 3px;
+  background: var(--color-surface);
   color: var(--color-text);
   text-align: left;
 }
@@ -79,7 +74,7 @@
 .engineer-row-email {
   overflow: hidden;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

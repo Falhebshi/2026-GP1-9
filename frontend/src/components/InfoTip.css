@@ -1,0 +1,66 @@
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+/* Small and quiet until pointed at, so it does not compete with the values */
+.info-tip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.info-tip-button:hover,
+.info-tip-button-open {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.info-tip-button:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 1px;
+}
+
+/* The explanation: a compact box under the button, above maps and charts */
+.info-tip-box {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 50;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
+
+.info-tip-start {
+  left: -4px;
+}
+
+.info-tip-end {
+  right: -4px;
+}
+
+/* More than one paragraph inside */
+.info-tip-box p + p {
+  margin-top: var(--space-xs);
+}

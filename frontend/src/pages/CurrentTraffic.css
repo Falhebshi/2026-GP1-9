@@ -154,3 +154,10 @@
 .current-traffic-time .badge {
   min-width: 90px;
 }
+
+/* The KPI card's interval and its info button */
+.current-traffic-kpi-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}

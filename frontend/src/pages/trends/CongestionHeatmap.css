@@ -9,10 +9,6 @@
   color: var(--color-text-muted);
 }
 
-.heat-legend-text {
-  margin-right: 4px;
-}
-
 .heat-legend-item {
   display: inline-flex;
   align-items: center;
@@ -83,4 +79,10 @@
   .heat-cell {
     height: 18px;
   }
+}
+/* The title and its info button */
+.heat-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
 }

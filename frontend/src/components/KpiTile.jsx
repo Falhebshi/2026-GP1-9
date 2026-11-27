@@ -1,3 +1,4 @@
+import InfoTip from './InfoTip'
 import { STATUS_LABELS } from '../utils/kpi'
 import './KpiTile.css'
 
@@ -11,7 +12,7 @@ import './KpiTile.css'
 //   decimals     digits after the decimal point for a number (optional)
 //   status       'unavailable' or 'not_applicable': which word to show when
 //                there is no value ('unavailable' unless you say otherwise)
-//   reason       why there is no value, shown in small text under the word
+//   reason       why there is no value, behind an info button next to the word
 //   detail       a small grey line under the value, e.g. "LOS C" (optional)
 //   warning      a quiet note when the value is over a standard limit,
 //                e.g. "over capacity" (optional, kpiTileProps fills it)
@@ -68,9 +69,6 @@ function KpiTile({
   if (change > 0) arrow = '▲'
   if (change < 0) arrow = '▼'
 
-  // The colored edge shows at a glance whether the value got better or worse
-  const toneClass = hasChange && changeTone !== 'neutral' ? `kpi-tile-${changeTone}` : ''
-
   let changeLine = null
   if (isUnavailable) {
     // Unavailable tiles show a dash where the change would be
@@ -88,7 +86,7 @@ function KpiTile({
   }
 
   return (
-    <div className={`kpi-tile kpi-tile-${layout} ${toneClass} ${className}`}>
+    <div className={`kpi-tile kpi-tile-${layout} ${className}`}>
       <div className="kpi-head">
         <p className="kpi-label">{label}</p>
         {tag && <span className="kpi-tag">{tag}</span>}
@@ -97,6 +95,7 @@ function KpiTile({
       {isUnavailable ? (
         <p className="kpi-value kpi-value-unavailable">
           {STATUS_LABELS[status] ?? STATUS_LABELS.unavailable}
+          {reason && <InfoTip label="Why there is no value">{reason}</InfoTip>}
         </p>
       ) : (
         <p className="kpi-value">
@@ -107,14 +106,13 @@ function KpiTile({
 
       {layout === 'inline' && changeLine}
 
-      {/* The detail line, the warning, and why there is no value. In a stacked tile this
-          box is always there, even when empty, so tiles in a kpi-row keep
-          the same rows. */}
-      {(layout === 'stacked' || detail || warning || (isUnavailable && reason)) && (
+      {/* The detail line and the warning (why there is no value sits behind the info button
+          next to "Unavailable"). In a stacked tile this box is always there, even when empty,
+          so tiles in a kpi-row keep the same rows. */}
+      {(layout === 'stacked' || detail || warning) && (
         <div className="kpi-info">
           {detail && <p className="kpi-detail">{detail}</p>}
           {warning && !isUnavailable && <p className="kpi-warning">{warning}</p>}
-          {isUnavailable && reason && <p className="kpi-reason">{reason}</p>}
         </div>
       )}
 

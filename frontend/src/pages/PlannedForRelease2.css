@@ -1,0 +1,10 @@
+/* A Release 2 page: its title and one message */
+.planned {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.planned-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+}

@@ -16,19 +16,16 @@ const SECTIONS = [
     type: 'current',
     title: 'Current Alerts',
     button: 'Current',
-    description: 'Abnormal conditions detected right now.',
   },
   {
     type: 'forecast',
     title: 'Forecast Alerts',
     button: 'Forecast',
-    description: 'Potential problems expected soon.',
   },
   {
     type: 'pattern',
     title: 'Pattern Alerts',
     button: 'Patterns',
-    description: 'Problems that repeat at similar times.',
   },
 ]
 
@@ -116,7 +113,7 @@ function Alerts() {
 
 // One section: its heading, then a grid of cards (or the empty message).
 // A long section shows its first few cards and a button to show the rest.
-function AlertSection({ type, title, description, alerts }) {
+function AlertSection({ type, title, alerts }) {
   const [expanded, setExpanded] = useState(false)
 
   const hasMore = alerts.length > COLLAPSED_COUNT
@@ -129,7 +126,6 @@ function AlertSection({ type, title, description, alerts }) {
         <h2 className="alerts-section-title">{title}</h2>
         <Badge variant="count">{alerts.length}</Badge>
       </header>
-      <p className="alerts-section-description">{description}</p>
 
       {alerts.length === 0 ? (
         <EmptyState>No alerts are currently available.</EmptyState>

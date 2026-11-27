@@ -20,6 +20,7 @@
   /* ---- 1. PALETTE (straight from the palette sheet) ---------------------- */
   --navy: #171c4a;      /* Midnight Navy */
   --indigo: #35206f;    /* Jaadah Indigo */
+  --indigo-deep: #2e2365; /* the wireframes' indigo: login panel */
   --blue: #2864a8;      /* Road Blue */
   --teal: #2f9db5;      /* Signal Teal */
   --lavender: #e9e4f5;  /* Soft Lavender */
@@ -31,26 +32,26 @@
   /* ---- 2. ROLES (use these in components) -------------------------------- */
 
   /* Backgrounds */
-  --color-bg: var(--cloud);              /* the page behind everything */
+  --color-bg: #f5f6f8;                   /* the page behind everything, a neutral grey */
   --color-surface: var(--white);         /* cards, nav bar, panels, inputs */
-  --color-surface-muted: var(--lavender);/* inner detail boxes, chart tracks */
-  --color-border: #dddfec;               /* card and input outlines, dividers */
-  --color-border-strong: #c5c8dc; 
+  --color-surface-muted: #eef0f3;        /* inner detail boxes, chart tracks */
+  --color-border: #e5e6eb;               /* card and input outlines, dividers */
+  --color-border-strong: #cfd1d8;
 
   /* Text */
-  --color-text: var(--navy);             /* headings, values, body text */
-  --color-text-muted: #5b6185;           /* labels, captions, "vs previous" */
+  --color-text: #171a22;                 /* headings, values, body text */
+  --color-text-muted: #5a5f69;           /* labels, captions, "vs previous" */
   --color-text-on-dark: var(--white);    /* text on a filled button or badge */
 
   /* Actions: things you click */
-  --color-action: var(--blue);           /* links, primary buttons */
-  --color-action-hover: #1f518b;
+  --color-action: #2e2365;               /* links and focus rings, in Jaadah indigo */
+  --color-action-hover: #1d1645;
 
   /* Selected: the thing that is currently active */
-  --color-selected: var(--indigo);       /* active tab underline, active
+  --color-selected: #2e2365;             /* active tab underline, active
                                             segmented button, selected card
                                             border, count badge */
-  --color-selected-bg: #f4f1fa;          /* background of a selected card */
+  --color-selected-bg: #f3f2fa;          /* background of a selected card or tab */
 
   /* Status */
   --color-success: var(--green);
@@ -70,11 +71,11 @@
   --congestion-none: #c9ccda;            /* no data / unclassified */
 
   /* Charts */
-  --chart-1: var(--blue);                /* main series (trend line, bars) */
-  --chart-2: var(--teal);                /* second series (e.g. weekends) */
-  --chart-fill: #eef0fa;                 /* area under a line */
-  --chart-track: #dce6f2;                /* empty part of a progress bar */
-  --chart-grid: #e6e8f2;                 /* grid lines */
+  --chart-1: #2e2365;                    /* main series (trend line, bars), deep indigo */
+  --chart-2: #8f84cc;                    /* second series (e.g. weekends), soft purple, 3.3:1 on white */
+  --chart-fill: #efedf8;                 /* area under a line */
+  --chart-track: #e8e9ed;                /* empty part of a progress bar */
+  --chart-grid: #e8e9ed;                 /* grid lines */
 
   /* Low-to-high scale (Congestion by Hour and Day heatmap) */
   --scale-1: #dce6f2;
@@ -94,13 +95,16 @@
   --alert-pattern-bg: var(--lavender);
   --alert-pattern-text: var(--indigo);
 
-  /* Level of Service A to F, light to dark */
-  --los-a: var(--lavender);
-  --los-b: #c9c1ea;
-  --los-c: #7fc3d6;
-  --los-d: var(--teal);
-  --los-e: var(--blue);
-  --los-f: var(--navy);
+  /* Level of Service A to F, as traffic colors: green (free flow) to dark red (breakdown) */
+  --los-a: #367f64;
+  --los-b: #8dc05b;
+  --los-c: #e8c94a;
+  --los-d: #e27a2a;
+  --los-e: #c54739;
+  --los-f: #7d1f1f;
+
+  /* Soft lilac, for the third signal phase on Recommendation Details */
+  --phase-3: #c9c1ea;
 
   /* 3D intersection scene (TrafficScene3D): the sky behind the roads, only seen when the camera
      tilts. Day is a hazy desert sky; night fades in over it as it gets dark. */
@@ -169,6 +173,9 @@ body {
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   margin: 0;
+  /* The page never scrolls sideways: wide content (tables, charts) scrolls inside its own card.
+     clip, not hidden, so the sticky nav bar keeps working */
+  overflow-x: clip;
 }
 
 h1,

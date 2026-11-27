@@ -6,10 +6,10 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import InfoList from '../components/InfoList'
+import InfoTip from '../components/InfoTip'
 import KpiTile from '../components/KpiTile'
 import LosBadge from '../components/LosBadge'
 import MethodTag from '../components/MethodTag'
-import Notice from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import useElementWidth from '../hooks/useElementWidth'
 import { getAlertDetails } from '../services/alertDetailsService'
@@ -134,11 +134,21 @@ function AlertDetails() {
         title={problem ? `${problem.title} on the ${problem.location.toLowerCase()}` : 'Alert details'}
         subtitle={problem?.intersection_name}
         actions={
-          data?.recommendations.length > 0 && (
-            <Button variant="secondary" onClick={scrollToOptions}>
-              View interventions ({data.recommendations.length})
-            </Button>
-          )
+          <>
+            {data?.isSample && (
+              <span className="alert-details-sample">
+                <Badge variant="warning">Sample data</Badge>
+                <InfoTip label="About the sample data" align="end">
+                  Sample data for layout only. These are not real simulation results.
+                </InfoTip>
+              </span>
+            )}
+            {data?.recommendations.length > 0 && (
+              <Button variant="secondary" onClick={scrollToOptions}>
+                View interventions ({data.recommendations.length})
+              </Button>
+            )}
+          </>
         }
       />
     </>
@@ -171,11 +181,6 @@ function AlertDetails() {
     <>
       {header}
 
-      {data.isSample && (
-        <Notice variant="warning" className="alert-details-notice">
-          Sample data for layout only. These are not real simulation results.
-        </Notice>
-      )}
 
       {/* ---- Alert details, and how the problem developed ---- */}
       <div className="alert-details-overview">
@@ -239,13 +244,11 @@ function AlertDetails() {
           <Badge variant="count">{ranked.length}</Badge>
         </header>
         <p className="alert-details-options-text">
-          Ranked by how well each is expected to solve this problem. Select one for details.
+          Ranked by expected effect on this problem.
         </p>
 
         {ranked.length === 0 ? (
-          <EmptyState title="No recommendation available">
-            No recommendation is currently available for this problem.
-          </EmptyState>
+          <EmptyState title="No recommendation available" />
         ) : (
           <ol className="alert-details-list">
             {ranked.map((option) => (
@@ -353,7 +356,7 @@ function CompareTable({ options, baseline, problem, problemId }) {
                         {unit && <span className="alert-details-unit"> ({unit})</span>}
                         {base?.method === 'hcm' && <MethodTag method="hcm" />}
                       </span>
-                      {row.hint && <span className="alert-details-row-hint">{row.hint}</span>}
+                      {row.hint && <InfoTip label={`About ${row.label.toLowerCase()}`}>{row.hint}</InfoTip>}
                     </th>
                     <td className="alert-details-col-base">
                       <TableValue result={base} />
