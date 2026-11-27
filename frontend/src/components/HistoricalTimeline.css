@@ -235,6 +235,9 @@
   align-items: center;
   gap: 6px;
   color: var(--color-text-muted);
+  /* a long note (why a bar has no value) wraps inside the card */
+  white-space: normal;
+  text-align: center;
 }
 
 /* The line under the plot: what is being shown, and the Latest button */

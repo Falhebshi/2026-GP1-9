@@ -11,6 +11,7 @@ import Select from '../components/Select'
 import {
   getAvailableDays,
   getNetwork,
+  getNetworkSource,
   getNetworkTimeline,
   getOpeningTime,
   getSegments,
@@ -35,6 +36,11 @@ const PEAKS = [
 const DAY = 24 * 60 * 60 * 1000
 const pad = (n) => String(n).padStart(2, '0')
 const hourLabel = (h) => `${pad(h)}:00`
+// "17:15" of a moment, in Riyadh time
+const timeLabel = (ms) => {
+  const { hour, minute } = riyadhParts(ms)
+  return `${pad(hour)}:${pad(minute)}`
+}
 
 // "Sat 14 Nov" of a Riyadh day (YYYY-MM-DD)
 const dayLabel = (day) =>
@@ -64,6 +70,30 @@ function dayOptions(now, availableDays) {
   return options
 }
 
+// What the map colors mean. Roads and areas without data are left as the basemap shows them.
+const LEGEND_ROWS = [
+  { level: 'low', label: 'Low' },
+  { level: 'moderate', label: 'Moderate' },
+  { level: 'high', label: 'High' },
+  { level: 'none', label: 'No data' },
+]
+
+function CongestionLegend() {
+  return (
+    <div className="network-legend">
+      <span className="network-legend-title">Congestion</span>
+      <ul>
+        {LEGEND_ROWS.map((row) => (
+          <li key={row.level}>
+            <span className={`network-legend-swatch network-legend-${row.level}`} />
+            <span className="network-legend-label">{row.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // ours first, then the ones without a simulation yet (shown greyed out)
 function intersectionOptions(intersections) {
   return [...intersections]
@@ -88,6 +118,7 @@ function NetworkOverview() {
   const [segments, setSegments] = useState(null)
   // days with network data: [] while the server fills its first interval, null when it is not running
   const [availableDays, setAvailableDays] = useState([])
+  const [source, setSource] = useState(null) // 'rcrc' or 'synthetic', from the network server
   const [timelineOpen, setTimelineOpen] = useState(false) // closed, so the map gets the room
   const timelineRef = useRef(null)
   const sideRef = useRef(null)
@@ -129,6 +160,9 @@ function NetworkOverview() {
     let cancelled = false
     getAvailableDays().then((days) => {
       if (!cancelled) setAvailableDays(days)
+    })
+    getNetworkSource().then((name) => {
+      if (!cancelled) setSource(name)
     })
     return () => {
       cancelled = true
@@ -246,13 +280,23 @@ function NetworkOverview() {
           <h1>Network Traffic Overview</h1>
         </Card>
 
+        {segments && !segments.hasSpeeds && (
+          <Notice variant="info">
+            {time
+              ? `No congestion data for ${dayLabel(riyadhParts(shown.getTime()).day)}, ${timeLabel(shown.getTime())}.`
+              : 'No congestion data has been stored yet.'}
+          </Notice>
+        )}
+
         {network.isSample && (
           <Notice variant="warning">
             {availableDays === null
               ? 'Road congestion is not available: the network map server is not running.'
-              : availableDays.length
-                ? 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'
-                : 'Loading road congestion: the network map server is preparing the last 7 days.'}
+              : !availableDays.length
+                ? 'Loading road congestion: the network map server is preparing the last 7 days.'
+                : source === 'rcrc'
+                  ? "Modelled data: road congestion comes from a city trip model and TomTom's typical week, adjusted each day by the traffic counted at one intersection. It is not measured on these roads."
+                  : 'Synthetic data: road congestion is generated from real daily traffic patterns, not measured on these roads.'}
           </Notice>
         )}
 
@@ -279,6 +323,11 @@ function NetworkOverview() {
           value={view}
           onChange={setView}
         />
+        {segments && (
+          <Card floating className="network-overview-legend">
+            <CongestionLegend />
+          </Card>
+        )}
       </div>
 
       <div

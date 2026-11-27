@@ -256,6 +256,10 @@ Known limits:
 - `raw/fcd.xml` is large: about 1.1 GB for a 5400 s run with 100 vehicles per
   detector per interval. `simulation/outputs/baseline*/` is ignored by Git.
 
+## Live Update Loop
+
+`simulation/scripts/run_live.py` keeps the Current Traffic page up to date. Instead of one bounded run, it simulates each new 15-minute interval as one short segment that continues from the SUMO state the previous segment saved (Issue #48, option A2), and publishes the KPIs and playback of the newest intervals to `frontend/public/data/INT_001/live/`. It uses the same demand transformation, demand writer, demand checks, KPI engine and playback builder as a baseline run. See [Live update loop](live_update_loop.md).
+
 ## Simulation Output Processing Integration
 
 Each fresh run directory contains `raw/fcd.xml`, `raw/tripinfo.xml` and

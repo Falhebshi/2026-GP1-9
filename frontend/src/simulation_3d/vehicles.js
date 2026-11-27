@@ -42,20 +42,28 @@ const GLOSS = { ambient: 0.35, diffuse: 0.45, shininess: 120, specularColor: [21
 const MATTE = { ambient: 0.45, diffuse: 0.5, shininess: 12, specularColor: [24, 24, 24] }
 
 const LANE_CHANGE_S = 2 // how long a lane change takes on screen, in seconds
-const JUMP_M = 2.5 // a sideways step this big between two samples is a lane change…
-const STRAIGHT_DEG = 5 // …when the car keeps its heading
+const JUMP_M = 0.8 // a sideways step this big between two samples is a lane change or a seam…
+const TURN_DEG = 20 // …unless the car also turns more than this (then it is a bend in the road)
 
-// SUMO moves a car to the next lane in one step (instant lane changes keep the KPIs right). On
-// screen that looks like a jump, so the sideways move is spread over LANE_CHANGE_S, half before
-// and half after the step. Only the drawing changes; the files keep SUMO's positions.
+// SUMO moves a car to the next lane in one step (instant lane changes keep the KPIs right), and
+// where two pieces of road meet, their lanes don't always line up, so a car steps about 1 m to
+// the side there (a seam). On screen both look like a jump, so the sideways move is spread over
+// LANE_CHANGE_S, half before and half after the step. Only the drawing changes; the files keep
+// SUMO's positions.
+// The samples that were moved are marked in `shifted`: spread over 2 s, the jump becomes small
+// sideways steps that the heading code (sample) can't tell from driving, so it checks the marks.
 function smoothLaneChanges(trip) {
   const path = trip.path.map((p) => [...p])
+  const angles = steadyAngles(trip.angles)
+  const shifted = path.map(() => false)
   const ts = trip.timestamps
   for (let k = 1; k < path.length; k++) {
-    const turn = Math.abs(((trip.angles[k] - trip.angles[k - 1] + 540) % 360) - 180)
-    if (turn >= STRAIGHT_DEG) continue
+    const turn = ((angles[k] - angles[k - 1] + 540) % 360) - 180
+    if (Math.abs(turn) >= TURN_DEG) continue
     const [dx, dy] = toM(trip.path[k], trip.path[k - 1])
-    const h = (trip.angles[k - 1] * Math.PI) / 180
+    // measured against the average of the two headings, so a lane change on a gentle bend is
+    // found too, while the bend itself adds nothing sideways
+    const h = ((angles[k - 1] + turn / 2) * Math.PI) / 180
     const side = dx * Math.cos(h) - dy * Math.sin(h) // metres to the right of the heading
     if (Math.abs(side) < JUMP_M) continue
     const shift = [Math.cos(h) * side, -Math.sin(h) * side] // the sideways part of the step
@@ -64,9 +72,25 @@ function smoothLaneChanges(trip) {
       if (w <= 0 || w >= 1) continue
       const part = i < k ? w : w - 1 // before the step: start moving over; after it: still catching up
       path[i] = fromM([shift[0] * part, shift[1] * part], path[i])
+      shifted[i] = true
     }
   }
-  return { ...trip, path }
+  return { ...trip, path, angles, shifted }
+}
+
+// At a seam SUMO's heading can swing for a single sample and come straight back, which swung the
+// car right and left. A heading that differs from both neighbours, while they agree, takes their
+// average.
+function steadyAngles(angles) {
+  const out = [...angles]
+  for (let k = 1; k < angles.length - 1; k++) {
+    const a = ((angles[k] - angles[k - 1] + 540) % 360) - 180
+    const b = ((angles[k + 1] - angles[k] + 540) % 360) - 180
+    const across = ((angles[k + 1] - angles[k - 1] + 540) % 360) - 180
+    if (Math.abs(a) > 8 && Math.abs(b) > 8 && a * b < 0 && Math.abs(across) < 3)
+      out[k] = angles[k - 1] + across / 2
+  }
+  return out
 }
 
 // Prepare the trips once. Each frame then finds the right sample with a binary search.
@@ -121,7 +145,14 @@ function sample(trip, t) {
     prev = front,
     rear = null,
     jump = false
+  // A smoothed lane change made while standing keeps SUMO's heading, since its small sideways
+  // steps would turn the car into the one beside it. That holds while the car stands and while it
+  // pulls away with the step still behind it. A lane change made while moving keeps following its
+  // path: switching its heading in and out of the change made it swing right and left.
+  const standing = (trip.speeds?.at(lo) ?? 0) <= 1.5
+  if (standing && trip.shifted.at(hi)) jump = true
   for (let i = lo; i >= 0 && need > 0; i--) {
+    if (trip.shifted.at(i) && (standing || (trip.speeds?.at(i) ?? 0) <= 1.5)) jump = true
     const p = trip.path.at(i)
     const [ex, ey] = toM(p, prev)
     const d = Math.hypot(ex, ey)
@@ -255,28 +286,43 @@ export function vehicleLayers(states, t, { visible = true } = {}) {
 // the playback does not stop at the boundary.
 //   run        run.json
 //   loadFile   loads one vehicle file by its name, e.g. getVehicleInterval from the service
-export function vehicleIntervals(run, loadFile) {
+//   reuse      files already loaded for the same run, { file: vehicles }, from kept() of the
+//              earlier vehicleIntervals (optional)
+// ready(t) loads the interval that contains t and resolves once it is loaded. kept(files) gives
+// the loaded files among the names in files, for the next vehicleIntervals of the same run.
+export function vehicleIntervals(run, loadFile, reuse = {}) {
   const intervals = run.intervals
   const first = intervals.findIndex((interval) => interval.start_s >= run.analysis_start_s)
   const last = intervals.findLastIndex((interval) => interval.end_s <= run.analysis_end_s)
-  const loaded = {}
-  const requested = new Set()
+  const loaded = { ...reuse }
+  const requests = {}
 
   const request = (interval) => {
-    if (requested.has(interval.file)) return
-    requested.add(interval.file)
-    loadFile(interval.file)
+    if (interval.file in loaded) return Promise.resolve()
+    requests[interval.file] ??= loadFile(interval.file)
       .then((data) => (loaded[interval.file] = prepareVehicles(data)))
       .catch(() => (loaded[interval.file] = null)) // a missing file shows no cars for that interval
+    return requests[interval.file]
+  }
+  const indexAt = (t) => {
+    const found = intervals.findIndex((interval) => t < interval.end_s)
+    return found === -1 ? intervals.length - 1 : found
   }
 
   return {
     at(t) {
-      const found = intervals.findIndex((interval) => t < interval.end_s)
-      const i = found === -1 ? intervals.length - 1 : found
+      const i = indexAt(t)
       request(intervals[i])
       request(intervals[i >= last ? first : i + 1])
       return loaded[intervals[i].file] ?? null
+    },
+    ready(t) {
+      return request(intervals[indexAt(t)])
+    },
+    kept(files) {
+      return Object.fromEntries(
+        Object.entries(loaded).filter(([file, vehicles]) => vehicles && files.has(file)),
+      )
     },
   }
 }

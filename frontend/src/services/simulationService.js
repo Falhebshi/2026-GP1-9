@@ -10,8 +10,9 @@
 
 const BASE = '/data'
 
+// Files under live/ are rewritten under the same names at every update: never from a cache
 async function getJson(url) {
-  const response = await fetch(url)
+  const response = await fetch(url, url.includes('/live/') ? { cache: 'no-store' } : undefined)
   if (!response.ok) throw new Error(`Could not load ${url}`)
   return response.json()
 }
@@ -62,6 +63,24 @@ export async function getIntersectionScene(intersectionId, scenario = 'baseline'
     run,
     signals,
   }
+}
+
+// Only the run of a scenario, for a scene that is already loaded: { run, signals }, both null when
+// there is no run. The live page uses it to take in a new interval without loading the roads,
+// buildings and trees again.
+export async function getRun(intersectionId, scenario = 'baseline') {
+  const runDir = `${BASE}/${intersectionId}/${scenario}`
+  // no-store: run.json and signals.json are rewritten in place by the live update loop
+  const run = await fetch(`${runDir}/run.json`, { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null)
+  const signals = run
+    ? await fetch(`${runDir}/${run.signals_file}`, { cache: 'no-store' }).then((response) => {
+        if (!response.ok) throw new Error(`Could not load ${run.signals_file}`)
+        return response.json()
+      })
+    : null
+  return { run, signals }
 }
 
 // The vehicles of one 15-minute interval of a run: file is one of the names listed in run.json.

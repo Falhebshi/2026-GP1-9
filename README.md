@@ -129,6 +129,16 @@ To run from the synthetic source instead, start it and add `--source synthetic`.
 
 Replace `YYYY-MM-DD` with a date the source has released. Keep the Riyadh `+03:00` offset. The run adds 15 minutes before and after the analysis period. The RCRC report covers **13 July to 13 October 2026**; with the default 13-week replay clock, the feed has released dates up to 13 weeks before today. For a later date in the report, restart the feed with `$env:JAADAH_REPLAY_OFFSET_WEEKS = "0"`, which releases the whole report. The runner says which of these applies when a date cannot be used. A new synthetic source has only seven days of history. Each run needs a new output directory under `simulation/outputs/baseline_runs/` by default. It writes generated demand, `raw/fcd.xml`, `raw/tripinfo.xml`, and `summary.json`. FCD files can be large, and raw outputs are not automatically shown as dashboard KPIs.
 
+### Live update loop
+
+Keeps the Current Traffic page up to date: each time the source delivers a 15-minute interval, the loop simulates it, continuing from the last saved SUMO state, and publishes its KPIs and playback ([live update loop](docs/live_update_loop.md)). With the RCRC replay source running:
+
+```powershell
+python simulation/scripts/run_live.py --source rcrc
+```
+
+Stop it with Ctrl+C. The page reads `frontend/public/data/INT_001/live/`, and shows the committed sample run, labelled as a sample, when that folder has no run. The chain's working files go to `simulation/outputs/live/`; both folders are ignored by git.
+
 More runner options and output details are in [simulation integration](docs/simulation_integration.md). The separate [3D scene guide](simulation/scene_3d/README.md) explains how to rebuild the frontend's scene files.
 
 ## Configuration and data limits
@@ -152,7 +162,7 @@ The synthetic source expects processed RCRC-derived profiles in a sibling folder
 
 The RCRC sample and derived profiles are restricted and are not published. The source requires the format described in [synthetic traffic source](docs/synthetic_traffic_source.md). Without the profiles, you can still use the frontend, SUMO smoke run, and tests with artificial data.
 
-The baseline runner currently supports baseline scenarios only. Intervention execution, full raw-output processing, live dashboard KPIs, and real forecasting are future integration work.
+The baseline runner currently supports baseline scenarios only. Intervention execution and real forecasting are future integration work.
 
 ## Tests
 

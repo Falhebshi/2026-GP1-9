@@ -13,16 +13,16 @@ from jaadah.network_congestion.parameters import (
 from jaadah.network_congestion.synthetic import (
     SampleMeasures,
     city_delay,
+    bearing,
     corridor_factor,
-    corridor_key,
     corridor_ranks,
     corridor_variation,
     evening_share,
-    heading,
     measure_sample,
     peak_vc_range,
     read_directions,
     read_persistence,
+    segment_corridors,
     segments_geojson,
     slot_speed,
     variation_sd,
@@ -166,12 +166,94 @@ def test_segments_of_one_road_and_direction_share_a_corridor():
     second = segment("SEG_00002", name_en="King Fahd Rd", geometry=north)
     back = segment("SEG_00003", name_en="King Fahd Rd", geometry=south)
     unnamed = segment("SEG_00004", geometry=north)
+    unnamed_2 = segment("SEG_00005", geometry=[(46.7, 24.70), (46.7, 24.71)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 2, "SEG_00003": 1,
+               "SEG_00004": 7, "SEG_00005": 8}
 
-    assert heading(first) == "N"
-    assert heading(back) == "S"
-    assert corridor_key(first, 1) == corridor_key(second, 2)
-    assert corridor_key(first, 1) != corridor_key(back, 1)
-    assert corridor_key(unnamed, 7) != corridor_key(unnamed, 8)
+    corridors = segment_corridors([first, second, back, unnamed, unnamed_2], way_ids)
+
+    assert bearing(first) == pytest.approx(0)
+    assert bearing(back) == pytest.approx(180)
+    assert corridors["SEG_00001"] == corridors["SEG_00002"]
+    assert corridors["SEG_00001"] != corridors["SEG_00003"]
+    assert corridors["SEG_00005"] != corridors["SEG_00004"]
+
+
+def test_a_diagonal_road_stays_one_corridor_each_way():
+    # pieces at 40 and 50 degrees: a compass split at 45 would part them
+    first = segment("SEG_00001", name_en="Diagonal Rd",
+                    geometry=[(46.600, 24.700), (46.600 + 0.00643, 24.700 + 0.00694)])
+    second = segment("SEG_00002", name_en="Diagonal Rd",
+                     geometry=[(46.700, 24.700), (46.700 + 0.00843, 24.700 + 0.00643)])
+    back = segment("SEG_00003", name_en="Diagonal Rd",
+                   geometry=[(46.800, 24.710), (46.795, 24.705)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 1, "SEG_00003": 1}
+
+    corridors = segment_corridors([first, second, back], way_ids)
+
+    assert 40 < bearing(first) < 45 < bearing(second) < 50
+    assert corridors["SEG_00001"] == corridors["SEG_00002"]
+    assert corridors["SEG_00003"] != corridors["SEG_00001"]
+
+
+def test_an_unnamed_piece_prefers_the_road_going_its_way():
+    middle = (46.61, 24.70)
+    diagonal = segment("SEG_00001", name_en="Diagonal Rd",
+                       geometry=[(46.60, 24.69), middle])
+    cross = segment("SEG_00002", name_en="Cross Rd",
+                    geometry=[(46.60, 24.70), middle])
+    piece = segment("SEG_00003", geometry=[middle, (46.62, 24.71)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 2, "SEG_00003": 3}
+
+    corridors = segment_corridors([diagonal, cross, piece], way_ids)
+
+    assert corridors["SEG_00003"] == corridors["SEG_00001"]
+
+
+def test_an_unnamed_piece_joins_the_named_road_it_continues():
+    a, b, c, d = (46.60, 24.70), (46.61, 24.70), (46.62, 24.70), (46.63, 24.70)
+    first = segment("SEG_00001", name_en="King Fahd Rd", geometry=[a, b])
+    gap = segment("SEG_00002", geometry=[b, c])
+    gap_2 = segment("SEG_00003", geometry=[c, d])
+    side = segment("SEG_00004", road_class="secondary",
+                   geometry=[b, (46.61, 24.71)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 2, "SEG_00003": 3, "SEG_00004": 4}
+
+    corridors = segment_corridors([first, gap, gap_2, side], way_ids)
+
+    assert corridors["SEG_00002"] == corridors["SEG_00001"]
+    # a run of unnamed pieces takes the name along
+    assert corridors["SEG_00003"] == corridors["SEG_00001"]
+    # another class is another road
+    assert corridors["SEG_00004"].startswith("way 4|secondary|")
+
+
+def test_a_u_turn_joins_the_road_its_traffic_comes_from():
+    east = segment("SEG_00001", name_en="King Fahd Rd",
+                   geometry=[(46.60, 24.70), (46.61, 24.70)])
+    west = segment("SEG_00002", name_en="King Fahd Rd",
+                   geometry=[(46.61, 24.6995), (46.60, 24.6995)])
+    u_turn = segment("SEG_00003",
+                     geometry=[(46.61, 24.70), (46.61, 24.6995)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 2, "SEG_00003": 3}
+
+    corridors = segment_corridors([east, west, u_turn], way_ids)
+
+    assert corridors["SEG_00003"] == corridors["SEG_00001"]
+
+
+def test_a_piece_between_two_roads_keeps_its_own_way():
+    middle = (46.61, 24.70)
+    one = segment("SEG_00001", name_en="Road One",
+                  geometry=[(46.60, 24.70), middle])
+    two = segment("SEG_00002", name_en="Road Two",
+                  geometry=[(46.62, 24.70), middle])
+    piece = segment("SEG_00003", geometry=[middle, (46.61, 24.71)])
+    way_ids = {"SEG_00001": 1, "SEG_00002": 2, "SEG_00003": 3}
+
+    corridors = segment_corridors([one, two, piece], way_ids)
+
+    assert corridors["SEG_00003"].startswith("way 3|")
 
 
 def test_busier_corridors_get_more_of_the_city_delay():
@@ -180,7 +262,7 @@ def test_busier_corridors_get_more_of_the_city_delay():
         segment("SEG_00002", name_en="Main Rd"),
         segment("SEG_00003", name_en="Middle Rd"),
     ]
-    corridors = {road.segment_id: corridor_key(road, 1) for road in roads}
+    corridors = segment_corridors(roads, {road.segment_id: 1 for road in roads})
     ranks = corridor_ranks(
         roads, corridors, {"SEG_00001": 0.01, "SEG_00002": 1.0,
                            "SEG_00003": 0.3},
