@@ -671,6 +671,7 @@ function TrafficScene3D({
   useEffect(() => {
     if (!jumpTo || !sceneRef.current) return
     tRef.current = startRef.current + jumpTo.time
+    endedRef.current = false // a jump leaves the end, so the next end calls onEnd again
     redraw(false)
   }, [jumpTo]) // eslint-disable-line react-hooks/exhaustive-deps
 

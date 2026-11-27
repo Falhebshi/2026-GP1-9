@@ -52,6 +52,11 @@ function CurrentTraffic() {
   const floatingRef = useRef(null)
   // while the slider's knob is dragged: whether the playback was playing before (scrubStart)
   const scrubRef = useRef(false)
+  // the scene stopped at the end of its run (sceneEnd); any jump moves it away from the end
+  const atEndRef = useRef(false)
+  useEffect(() => {
+    atEndRef.current = false
+  }, [jumpTo])
   const [openedAt] = useState(() => Date.now()) // the time shown when there is no run
   // what is shown now, for the minute check below (it runs outside a render)
   const viewRef = useRef(null)
@@ -475,12 +480,27 @@ function CurrentTraffic() {
   // The scene reached the end of its run: go on in the next run, or pause there
   function sceneEnd() {
     const shownEnd = intervals.length * (run?.intervalSeconds ?? 900)
-    if (!goOnInNextRun(shownEnd)) setPaused(true)
+    if (goOnInNextRun(shownEnd)) return
+    atEndRef.current = true
+    setPaused(true)
   }
 
   // Pause holds the moment shown (while live, this leaves the live clock: the view becomes
   // historical); Play continues from it at normal speed
   function togglePlay() {
+    if (paused && atEndRef.current) {
+      // at the end of the run: a live page goes back to the live clock, a simulated run plays
+      // again from its start
+      atEndRef.current = false
+      if (live) {
+        selectBar(null)
+        return
+      }
+      setTime(0)
+      setJumpTo({ time: 0 })
+      setPaused(false)
+      return
+    }
     if (paused) {
       setPaused(false)
       return
