@@ -27,6 +27,9 @@ import './HistoricalTimeline.css'
 //   following        true while the page follows the live time although the selected bar is
 //                    not the newest (a live scene plays a little behind the newest bar): the
 //                    badge still says Live and the "Back to live" button stays hidden (optional)
+//   latest           true or false to say yourself whether the view is live (Live badge, no
+//                    "Back to live" button), e.g. false while paused on the newest bar. Leave it
+//                    out to decide from the selected bar and following (optional)
 //   live             false for a simulated run: the bars are not "the last 24 hours", so the
 //                    Live / Historical badge and the "Back to live" button are left out (true unless
 //                    you say otherwise)
@@ -54,6 +57,7 @@ function HistoricalTimeline({
   error,
   live = true,
   following = false,
+  latest,
   emptyMessage = 'No traffic data is available for the last 24 hours.',
   className = '',
   children,
@@ -68,7 +72,7 @@ function HistoricalTimeline({
 
   const selectedIndex = findSelectedIndex(points, value)
   const selected = points[selectedIndex]
-  const isLatest = selectedIndex === lastIndex || following
+  const isLatest = latest ?? (selectedIndex === lastIndex || following)
   const hovered = hoverIndex === null ? null : points[hoverIndex]
 
   function select(index) {

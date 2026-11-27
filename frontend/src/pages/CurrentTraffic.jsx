@@ -311,10 +311,10 @@ function CurrentTraffic() {
   // of an earlier run switches the scene to that run; the newest bar follows the live clock. A
   // "Not simulated" bar is in no run: nothing happens.
   function selectBar(barTime) {
-    // a click on the bar already selected opens its interval as a time slider (the newest bar
-    // also goes back to following the live clock)
-    const clicked = barTime ?? timeline[timeline.length - 1]?.time // null: the newest bar shown
-    const again = clicked !== undefined && clicked === interval?.start
+    // a click on the bar already selected opens its interval as a time slider. The newest bar
+    // (null) counts as already selected only while following the live clock: paused on it,
+    // the click (or "Back to live") goes back to live first, without opening the slider
+    const again = barTime === null ? following : barTime === interval?.start
     if (again) setZoomed(true)
     if (again && barTime !== null) return
     const owner =
@@ -558,6 +558,7 @@ function CurrentTraffic() {
         onChange={selectBar}
         live={live}
         following={following}
+        latest={live && !runProblem ? following : undefined}
         emptyMessage={runProblem}
         className={floating ? 'card-floating' : ''}
       >
