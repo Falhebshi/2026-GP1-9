@@ -6,17 +6,20 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import ForecastSimulation from '../components/ForecastSimulation'
+import InfoTip from '../components/InfoTip'
 import KpiSummary from '../components/KpiSummary'
-import Notice from '../components/Notice'
 import useFullScreen from '../hooks/useFullScreen'
 import usePlayback from '../hooks/usePlayback'
 import { getForecast } from '../services/forecastService'
+import { summaryNotes } from '../utils/kpiNotes'
 import './TrafficForecast.css'
 
 // Traffic Forecast page, laid out like Current Traffic: the predicted KPIs, the forecast alerts
 // and the selected approach on the left, the predicted traffic in 3D with the 15 / 30 / 45 /
-// 60 min play bar on the right. The KPIs and the approach show the horizon being played. The
-// scene can be shown full screen; the selected approach then sits next to it.
+// 60 min play bar on the right. The KPIs and the approach show the horizon being played; a
+// selected approach shows in place of the KPIs. The scene can be shown full screen; the selected
+// approach then sits next to it. While the forecast is sample data, a "Sample data" badge says
+// so next to the time, with the explanation behind an info button.
 function TrafficForecast() {
   const [data, setData] = useState(null) // the forecast, once it arrives
   const [error, setError] = useState(null) // the error message, if loading failed
@@ -62,6 +65,7 @@ function TrafficForecast() {
   const approaches = data.approaches?.[minutes] ?? []
   const openApproach = approaches.find((a) => a.approach_id === openApproachId)
   const shown = new Date(startTime.getTime() + playback.time * 1000)
+  const notes = kpis.length ? summaryNotes(kpis, 'now') : []
 
   const details = openApproach && (
     <ApproachDetails approach={openApproach} onClose={() => setOpenApproachId(null)} />
@@ -74,6 +78,15 @@ function TrafficForecast() {
       <span className="traffic-forecast-time-value">{formatLabel(shown)}</span>
       <span className="traffic-forecast-ahead">+{Math.floor(playback.time / 60)} min</span>
       <Badge variant="count">Forecast</Badge>
+      {data.isSample && (
+        <>
+          <Badge variant="warning">Sample data</Badge>
+          <InfoTip label="About the sample data" align="end">
+            Sample data for layout only: the predicted KPIs and alerts on this page are
+            illustrative, not forecast results, and the vehicles come from a test run.
+          </InfoTip>
+        </>
+      )}
       <Button size="sm" variant="secondary" onClick={toggleFullScreen}>
         {fullScreen ? 'Exit full screen' : 'Full screen'}
       </Button>
@@ -82,25 +95,30 @@ function TrafficForecast() {
 
   return (
     <div className="traffic-forecast">
-      {data.isSample && (
-        <Notice variant="warning">
-          Sample data for layout only: the predicted KPIs and alerts on this page are illustrative,
-          not forecast results, and the vehicles come from a test run.
-        </Notice>
-      )}
       {!fullScreen && timeBar}
 
       <div className="traffic-forecast-layout">
         <aside className="traffic-forecast-side">
-          {!fullScreen && details}
-
-          <Card title={`Predicted KPIs · in ${minutes} min`}>
-            {kpis.length ? (
-              <KpiSummary kpis={kpis} compared="now" />
-            ) : (
-              <EmptyState>No predicted KPIs are available for this horizon.</EmptyState>
-            )}
-          </Card>
+          {!fullScreen && details ? (
+            details
+          ) : (
+            <Card
+              title={`Predicted KPIs · in ${minutes} min`}
+              action={
+                notes.length > 0 && (
+                  <InfoTip label="About these KPIs" align="end">
+                    {notes.join('. ')}.
+                  </InfoTip>
+                )
+              }
+            >
+              {kpis.length ? (
+                <KpiSummary kpis={kpis} compared="now" showNotes={false} />
+              ) : (
+                <EmptyState>No predicted KPIs are available for this horizon.</EmptyState>
+              )}
+            </Card>
+          )}
 
           <AlertList
             title="Forecast Alerts"

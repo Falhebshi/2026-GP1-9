@@ -6,6 +6,7 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import HistoricalTimeline from '../components/HistoricalTimeline'
+import InfoTip from '../components/InfoTip'
 import IntervalSlider from '../components/IntervalSlider'
 import KpiSummary from '../components/KpiSummary'
 import LocationSummary from '../components/LocationSummary'
@@ -16,6 +17,7 @@ import TrafficScene3D from '../components/TrafficScene3D'
 import useFullScreen from '../hooks/useFullScreen'
 import { getCurrentTraffic, withGaps } from '../services/currentTrafficService'
 import { darkness } from '../utils/daylight'
+import { summaryNotes } from '../utils/kpiNotes'
 import { RIYADH_TIME_ZONE } from '../utils/riyadhTime'
 import './CurrentTraffic.css'
 
@@ -26,8 +28,11 @@ import './CurrentTraffic.css'
 // approaches and the timeline follow the 15 minutes being played. Clicking a bar jumps there.
 // A live run is checked for a new interval every minute; while the newest bar is selected, the
 // page follows each new interval. Intervals without detector data (estimated traffic) show "No
-// detector data" instead of KPIs and cars, and the newest interval is marked as provisional. The
-// scene can be shown full screen; the selected approach then sits next to it.
+// detector data" instead of KPIs and cars, and the newest interval is marked as provisional.
+// Selecting an approach shows its details in place of the intersection's KPIs, so the scene
+// keeps its size. The scene can be shown full screen; the selected approach then sits next to it.
+// Explanations, such as what the sample run is, sit behind small info buttons; warnings about
+// the live run stay on the page.
 function CurrentTraffic() {
   const [data, setData] = useState(null) // the page data, once it arrives
   const [error, setError] = useState(null) // the error message, if loading failed
@@ -305,9 +310,27 @@ function CurrentTraffic() {
   )
   const night = darkness(shownTime, intersection.center)
   const openApproach = approaches.find((a) => a.approach_id === openApproachId)
-  const kpiInterval = interval
-    ? `${intervalLabel(interval)}${interval.provisional ? ' (provisional)' : ''}`
-    : null
+  const kpiInterval = interval ? intervalLabel(interval) : null
+  // the interval, and what the KPIs are compared with and how they were measured
+  const kpiNotesText = summaryNotes(kpis, COMPARED)
+  const kpiAction = (
+    <span className="current-traffic-kpi-action">
+      {kpiInterval}
+      {interval?.provisional && (
+        <>
+          {' (provisional)'}
+          <InfoTip label="About provisional values" align="end">
+            The newest interval may still change at the next update.
+          </InfoTip>
+        </>
+      )}
+      {!kpiProblem && !interval?.noSensorData && kpiNotesText.length > 0 && (
+        <InfoTip label="About these KPIs" align="end">
+          {kpiNotesText.join('. ')}.
+        </InfoTip>
+      )}
+    </span>
+  )
   // Live: where the scene must not draw cars, in seconds from the run start
   const hiddenRanges = intervals.flatMap((item, i) =>
     item.noSensorData
@@ -533,6 +556,11 @@ function CurrentTraffic() {
     <div className="current-traffic-time">
       <span className="current-traffic-time-value">{formatLabel(shownTime)}</span>
       {timeBadge({ live, liveInfo, following })}
+      {isSample && (
+        <InfoTip label="About the sample run" align="end">
+          Sample run: no live run is available, so a recorded sample simulation is shown.
+        </InfoTip>
+      )}
       <Button size="sm" variant="secondary" onClick={toggleFullScreen}>
         {fullScreen ? 'Exit full screen' : 'Full screen'}
       </Button>
@@ -598,60 +626,51 @@ function CurrentTraffic() {
           baseline simulation. The alerts are samples.
         </Notice>
       )}
-      {isSample && (
-        <Notice variant="info">
-          Sample run: no live run has been published, so the page shows the committed sample of a
-          simulated run. Start the live update loop (simulation/scripts/run_live.py) to see live
-          traffic.
-        </Notice>
-      )}
       {live && liveInfo.state === 'paused' && <Notice variant="warning">{liveInfo.message}</Notice>}
       {live && liveInfo.state === 'waiting' && (
         <Notice variant="warning">
-          {liveInfo.message} The results up to {formatTime(liveInfo.dataUntil)} (data time) are
-          shown.
+          {liveInfo.message} Showing results up to {formatTime(liveInfo.dataUntil)} (data time).
         </Notice>
       )}
       {live && liveInfo.state === 'starting' && (
         <Notice variant="info">
-          {liveInfo.message} Until then, the previous run up to {formatTime(liveInfo.dataUntil)} is
-          shown.
+          {liveInfo.message} Showing the previous run up to {formatTime(liveInfo.dataUntil)}.
         </Notice>
       )}
       {live && liveInfo.state === 'stopped' && (
         <Notice variant="warning">
-          Live updates have stopped. The results up to {formatTime(liveInfo.dataUntil)} are shown.
+          Live updates have stopped. Showing results up to {formatTime(liveInfo.dataUntil)}.
         </Notice>
       )}
       {live && liveInfo.state !== 'stopped' && liveInfo.stale && (
         <Notice variant="warning">
-          Live updates are not arriving: the live update loop last reported at{' '}
-          {formatTime(liveInfo.updatedAt)}. The results up to {formatTime(liveInfo.dataUntil)} (data
-          time) are shown.
+          Live updates are not arriving (last {formatTime(liveInfo.updatedAt)}). Showing results up
+          to {formatTime(liveInfo.dataUntil)} (data time).
         </Notice>
       )}
       {!fullScreen && timeBar}
 
       <div className="current-traffic-layout">
         <aside className="current-traffic-side">
-          {!fullScreen && details}
-
-          <Card title="Current KPIs" action={kpiInterval}>
-            {kpiProblem && <EmptyState>{kpiProblem}</EmptyState>}
-            {!kpiProblem && interval?.noSensorData && (
-              <EmptyState title="No detector data">
-                The detectors sent no data for these 15 minutes, so the traffic was estimated from
-                earlier days. Results from estimated traffic are not shown.
-              </EmptyState>
-            )}
-            {!kpiProblem &&
-              !interval?.noSensorData &&
-              (kpis.length ? (
-                <KpiSummary kpis={kpis} compared="the 15 minutes before" />
-              ) : (
-                <EmptyState>No KPIs are available for this interval.</EmptyState>
-              ))}
-          </Card>
+          {!fullScreen && details ? (
+            details
+          ) : (
+            <Card title="Current KPIs" action={kpiAction}>
+              {kpiProblem && <EmptyState>{kpiProblem}</EmptyState>}
+              {!kpiProblem && interval?.noSensorData && (
+                <EmptyState title="No detector data">
+                  The traffic for these 15 minutes was estimated, so no KPIs are shown.
+                </EmptyState>
+              )}
+              {!kpiProblem &&
+                !interval?.noSensorData &&
+                (kpis.length ? (
+                  <KpiSummary kpis={kpis} compared={COMPARED} showNotes={false} />
+                ) : (
+                  <EmptyState>No KPIs are available for this interval.</EmptyState>
+                ))}
+            </Card>
+          )}
 
           <AlertList title="Active Alerts" alerts={alerts} />
         </aside>
@@ -737,6 +756,8 @@ function CurrentTraffic() {
   )
 }
 
+// What the KPI changes are compared with
+const COMPARED = 'the 15 minutes before'
 // How often a live run is checked for a new interval
 const POLL_MS = 60 * 1000
 // Checks in a row without a live run before a page showing live falls back to the sample run
@@ -796,7 +817,7 @@ function liveTarget(page) {
   )
   return { inPrevious, seconds: clockIn(inPrevious ? previous : null, page) }
 }
-const LIVE_TITLE =
+const LIVE_NOTE =
   'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
   'takes for the detector data to arrive and be simulated. The time shown is the time of the traffic.'
 
@@ -808,9 +829,12 @@ function timeBadge({ live, liveInfo, following }) {
   if (liveInfo.state === 'stopped' || liveInfo.state === 'waiting' || liveInfo.stale)
     return <Badge variant="warning">Not updating</Badge>
   return following ? (
-    <span title={LIVE_TITLE}>
+    <>
       <Badge variant="success">Live</Badge>
-    </span>
+      <InfoTip label="About live data" align="end">
+        {LIVE_NOTE}
+      </InfoTip>
+    </>
   ) : (
     <Badge variant="warning">Historical</Badge>
   )

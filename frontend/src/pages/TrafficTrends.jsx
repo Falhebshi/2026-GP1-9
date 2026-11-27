@@ -3,10 +3,10 @@ import AlertList from '../components/AlertList'
 import Badge from '../components/Badge'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
+import InfoTip from '../components/InfoTip'
 import KpiGroup from '../components/KpiGroup'
 import KpiTile from '../components/KpiTile'
 import LocationInfoCard from '../components/LocationInfoCard'
-import PageHeader from '../components/PageHeader'
 import SegmentedControl from '../components/SegmentedControl'
 import Select from '../components/Select'
 import { EmptyPeriodError, getTrends } from '../services/trendsService'
@@ -33,7 +33,20 @@ const DAY_TYPE_OPTIONS = [
   { value: 'weekends', label: 'Weekends (Fri–Sat)' },
 ]
 
+// How a problem is judged recurring, behind the info button of the recurring alerts
+const RECURRING_RULE =
+  'A problem counts as recurring when its rule is exceeded in the same time window on at ' +
+  'least half the days in the period.'
+
+// The three tabs of the page, as in the sitemap
+const TABS = [
+  { value: 'summary', label: 'Summary', hint: 'KPIs and trends' },
+  { value: 'patterns', label: 'Patterns', hint: 'When congestion happens' },
+  { value: 'breakdown', label: 'Breakdown', hint: 'By approach and movement' },
+]
+
 function TrafficTrends() {
+  const [tab, setTab] = useState('summary')
   // The filters. Changing any of them loads the data again.
   // The page opens on 30 days: a 30-day view still has data when a day is
   // missing, a 7-day view does not (docs/kpi_engine.md, sections 17.6 and 17.8)
@@ -73,34 +86,56 @@ function TrafficTrends() {
     ...(data?.approaches ?? []).map((a) => ({ value: a.approach_id, label: a.label })),
   ]
 
+  // The tabs and the filters, the same on every tab. The filters apply to all three tabs.
   const header = (
-    <PageHeader
-      title="Traffic Patterns & Trends"
-      // The period of the data on screen: none while an error is shown instead
-      subtitle={data && !error ? describePeriod(data.period) : undefined}
-      actions={
-        <>
+    <>
+      <h1 className="trends-visually-hidden">Traffic Patterns &amp; Trends</h1>
+      <div className="trends-tabs" role="tablist" aria-label="Traffic Patterns & Trends">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            id={`trends-tab-${t.value}`}
+            aria-selected={tab === t.value}
+            aria-controls="trends-panel"
+            className={`trends-tab${tab === t.value ? ' trends-tab-active' : ''}`}
+            onClick={() => setTab(t.value)}
+          >
+            <span className="trends-tab-label">{t.label}</span>
+            <span className="trends-tab-hint">{t.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="trends-filters">
+        <span className="trends-period-field">
           <Select
             label="Time period"
             options={PERIOD_OPTIONS}
             value={String(periodDays)}
             onChange={(value) => setPeriodDays(Number(value))}
           />
-          <SegmentedControl
-            ariaLabel="Day type"
-            options={DAY_TYPE_OPTIONS}
-            value={dayType}
-            onChange={setDayType}
-          />
-          <Select
-            label="Approach"
-            options={approachOptions}
-            value={approachId}
-            onChange={setApproachId}
-          />
-        </>
-      }
-    />
+          {/* The days the data on screen covers: none while an error is shown instead */}
+          {data && !error && (
+            <InfoTip label="About the data in this period">{describePeriod(data.period)}</InfoTip>
+          )}
+        </span>
+        <Select
+          label="Approach"
+          options={approachOptions}
+          value={approachId}
+          onChange={setApproachId}
+        />
+        <SegmentedControl
+          ariaLabel="Day type"
+          className="trends-day-type"
+          options={DAY_TYPE_OPTIONS}
+          value={dayType}
+          onChange={setDayType}
+        />
+      </div>
+    </>
   )
 
   // Nothing to show yet: the very first load
@@ -134,51 +169,59 @@ function TrafficTrends() {
       {header}
 
       {/* While new data loads, the old data stays on screen, faded */}
-      <div className={`trends-layout ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
-        <aside className="trends-side">
-          <LocationInfoCard intersection={data.intersection} />
+      <div
+        id="trends-panel"
+        role="tabpanel"
+        aria-labelledby={`trends-tab-${tab}`}
+        className={`trends-panel ${loading ? 'is-loading' : ''}`}
+        aria-busy={loading}
+      >
+        {tab === 'summary' && (
+          <>
+            <KpiRow summary={data.summary} dayType={dayType} approachId={approachId} />
 
-          {data.recurringAlerts ? (
-            <div>
-              <AlertList
-                title="Recurring problem alerts"
-                alerts={data.recurringAlerts.map(toAlertListItem)}
-                emptyMessage="No recurring traffic problems are currently identified."
-              />
-              <p className="trends-side-note">
-                A problem counts as recurring when its rule is exceeded in the same time
-                window on at least half the days in the period.
-              </p>
+            <div className="trends-summary">
+              <div className="trends-side">
+                <LocationInfoCard intersection={data.intersection} />
+
+                {data.recurringAlerts ? (
+                  <AlertList
+                    title="Recurring problem alerts"
+                    alerts={data.recurringAlerts.map(toAlertListItem)}
+                    emptyMessage="No recurring traffic problems are currently identified."
+                    info={RECURRING_RULE}
+                  />
+                ) : (
+                  <NotAvailableYet title="Recurring problem alerts" />
+                )}
+              </div>
+
+              <TrendChart trend={data.trend} />
+              <WeekdayWeekendChart pairs={data.weekdayWeekend} />
             </div>
-          ) : (
-            <NotAvailableYet title="Recurring problem alerts" />
-          )}
-        </aside>
+          </>
+        )}
 
-        <div className="trends-main">
-          <KpiRow summary={data.summary} dayType={dayType} approachId={approachId} />
-
-          <div className="trends-row trends-row-wide-left">
-            <TrendChart trend={data.trend} />
-            <WeekdayWeekendChart pairs={data.weekdayWeekend} />
-          </div>
-
-          <CongestionHeatmap cells={data.heatmap} />
-
-          <div className="trends-row trends-row-wide-left">
-            {data.thresholds ? (
-              <ThresholdChart thresholds={data.thresholds} />
-            ) : (
-              <NotAvailableYet title="Threshold exceedance by time window" />
-            )}
+        {tab === 'patterns' && (
+          <div className="trends-patterns">
+            <div className="trends-patterns-main">
+              <CongestionHeatmap cells={data.heatmap} />
+              {data.thresholds ? (
+                <ThresholdChart thresholds={data.thresholds} />
+              ) : (
+                <NotAvailableYet title="Threshold exceedance by time window" />
+              )}
+            </div>
             <LosDistribution rows={data.losDistribution} />
           </div>
+        )}
 
+        {tab === 'breakdown' && (
           <BreakdownTable
             filters={{ periodDays, dayType, approachId }}
             windows={data.breakdownWindows}
           />
-        </div>
+        )}
       </div>
     </>
   )
@@ -262,7 +305,7 @@ function NotAvailableYet({ title }) {
   return (
     <Card title={title}>
       <EmptyState title="Not available yet">
-        Recurring-problem detection is a later feature (backlog items 24 and 25).
+        Coming in a later release.
       </EmptyState>
     </Card>
   )
@@ -287,7 +330,6 @@ function toAlertListItem(alert) {
         value: alert.status === 'active' ? <Badge variant="warning">Active</Badge> : undefined,
       },
     ],
-    detailsTo: alert.problemId ? `/alerts/${alert.problemId}` : undefined,
   }
 }
 
