@@ -185,15 +185,23 @@ def source_of(measurements: RunMeasurements) -> str:
 
 def stored_source(folder: str | Path = HISTORY_DIR) -> str | None:
     """
-    The demand source of the days stored in the folder, read from its
-    latest day without loading the whole day; None when no day is stored.
+    The demand source of the days stored in the folder, read from the
+    demand of its latest day without validating the day's records; None
+    when no day is stored.
     """
 
     days = stored_days(folder)
-    if not days:
-        return None
+    return stored_source_of_day(days[-1], folder) if days else None
 
-    path = day_file(days[-1], folder)
+
+def stored_source_of_day(day: date, folder: str | Path = HISTORY_DIR) -> str:
+    """
+    One stored day's demand source, read from its demand without
+    validating the day's records. Raises HistoryError when the day has
+    no demand or mixes sources.
+    """
+
+    path = day_file(day, folder)
     with gzip.open(path, "rt", encoding="utf-8") as file:
         payload = json.load(file)
 

@@ -16,6 +16,7 @@ from backend.analytics.history import (
     source_of,
     stored_days,
     stored_source,
+    stored_source_of_day,
     whole_day_of,
 )
 from backend.analytics.service import DEFAULT_MAPPING_PATH, RunMeasurements, calculate_kpis
@@ -240,3 +241,10 @@ def test_a_day_whose_demand_mixes_sources_is_refused():
 
     with pytest.raises(HistoryError, match="one demand source, not \\['rcrc', 'synthetic'\\]"):
         source_of(day._replace(demands=[*day.demands, rcrc]))
+
+
+def test_a_stored_day_without_demand_has_no_source(tmp_path):
+    save_day(measurements()._replace(demands=[]), tmp_path)
+
+    with pytest.raises(HistoryError, match="should have one demand source, not none"):
+        stored_source_of_day(date(2026, 10, 22), tmp_path)

@@ -100,8 +100,9 @@ class DayParts(NamedTuple):
     The calculation keeps the day's set-up (lanes, movements, demand,
     signal program, intervals) but not its raw vehicle passages: without
     them a prepared day takes 51 MB instead of 210 MB (19 Aug 2026, RCRC
-    demand), and everything taken from them is already in parts. So calculation.results() and parts() are not
-    called on a prepared day.
+    demand), and everything taken from them is already in parts. Its
+    passages are replaced by ReleasedPassages, so calling results() or
+    parts() on a prepared day fails with a clear message.
     """
 
     day: date
@@ -111,6 +112,16 @@ class DayParts(NamedTuple):
     approach_cycles: dict
     volume_to_capacity: dict
     measured_los: dict
+
+
+class ReleasedPassages:
+    """Stands in for a prepared day's raw passages (see DayParts)."""
+
+    def __getattr__(self, name):
+        raise AttributeError(
+            "a prepared day has released its raw vehicle passages; "
+            "use DayParts.parts, or prepare_calculation on the stored day"
+        )
 
 
 class PeriodValue(NamedTuple):
@@ -180,7 +191,7 @@ def prepare_day(
     )
 
     # Release the raw passages (see DayParts): a long history then fits in memory
-    calculation.passages = None
+    calculation.passages = ReleasedPassages()
     return prepared
 
 

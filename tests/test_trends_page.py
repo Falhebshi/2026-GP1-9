@@ -408,6 +408,22 @@ def test_days_from_two_sources_are_refused(tmp_path):
         load_stored_days(tmp_path)
 
 
+def test_a_middle_day_of_another_source_is_refused_too(tmp_path):
+    """22 and 24 Oct synthetic, 23 Oct RCRC: the first and last days agree, the day check finds 23 Oct."""
+
+    for day in (date(2026, 10, 22), date(2026, 10, 24)):
+        save_day(one_day_measurements(whole_day_window(day)), tmp_path)
+    middle = one_day_measurements(whole_day_window(date(2026, 10, 23)))
+    rcrc = [
+        SimulationDemand.model_validate({**d.model_dump(exclude=DEMAND_COMPUTED_FIELDS), "source": "rcrc"})
+        for d in middle.demands
+    ]
+    save_day(middle._replace(demands=rcrc), tmp_path)
+
+    with pytest.raises(HistoryError, match=r"2026-10-22 is synthetic, 2026-10-23 is rcrc"):
+        load_stored_days(tmp_path)
+
+
 def test_the_command_stops_when_no_day_is_stored(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["trends_page", "--history-dir", str(tmp_path), "--out", str(tmp_path)])
 
