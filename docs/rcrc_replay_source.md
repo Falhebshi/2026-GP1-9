@@ -110,7 +110,7 @@ JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn traffic_source.rcrc_replay.server
   "site_id": "1444",
   "latest_available_timestamp": "2026-08-27T08:15:00+03:00",
   "replay_time": "2026-08-27T08:21:40+03:00",
-  "data_start": "2026-07-13T00:00:00+03:00",
+  "data_start": "2026-07-12T23:45:00+03:00",
   "data_end": "2026-10-13T00:00:00+03:00"
 }
 ```
