@@ -418,9 +418,14 @@ function CurrentTraffic() {
     let place = spans.find((span) => span.begin <= ms && ms < span.end)
     let moment = ms
     if (!place) {
-      if (direction > 0) {
-        place = spans.find((span) => span.begin > ms) ?? spans[0]
-        moment = place.begin
+      const later = direction > 0 ? spans.find((span) => span.begin > ms) : null
+      if (later) {
+        place = later
+        moment = later.begin
+      } else if (direction > 0) {
+        // past the end of the last run (a simulated run): stay on its last second
+        place = newest
+        moment = newest.end - 1000
       } else {
         place = [...spans].reverse().find((span) => span.end <= ms) ?? spans[0]
         moment = Math.min(Math.max(ms, place.begin), place.end - 1000)
