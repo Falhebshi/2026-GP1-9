@@ -839,7 +839,7 @@ Commands, from the repository root:
 
 ```bash
 uvicorn traffic_source.rcrc_replay.server:app --port 8002     # the source, in one terminal
-python simulation/scripts/run_history.py --first-day 2026-07-13  # the days, in another
+python simulation/scripts/run_history.py --first-day 2026-07-14  # the days, in another
 python -m backend.analytics.trends_page                       # the 9 page files
 ```
 
@@ -849,10 +849,10 @@ Each night the same two commands store the day that has just finished and rebuil
 
 - **Whole days**, 00:00–24:00 Riyadh time, each as one continuous run with 15 minutes of warm-up before and clearance after (23:45 to 00:15 the next day). A period and a day type are made of calendar days, and the heatmap needs every hour.
 - **One fixed seed for every day** (42). Like current and forecast simulations, historical ones use one fixed seed; several matched seeds are used only to compare scenarios (section 12). A stored day can therefore always be rebuilt identically.
-- **Every day the source has released, and no later day.** The history starts on the RCRC report's first day (13 Jul 2026) and ends on the last day whose whole run window, to 00:15 the next day, the source has delivered. The replay source runs 13 weeks behind the real clock, so this is the day before the demo's current day; the current day and later ones are never run, and a later day asked for is reported as not released, not as a failure. The history then grows by one day each night (17.11).
+- **Every day the source has released, and no later day.** The history starts on 14 Jul 2026, the first day whose warm-up (from 23:45 the day before) is inside the RCRC report, and ends on the last day whose whole run window, to 00:15 the next day, the source has delivered. For the RCRC source, "delivered" is also capped at the demo clock, the real time minus the replay offset (`ReplayConfig`, 13 weeks), so the last day is the day before the demo's current day even when the replay server was started with another offset, as for calibration; the runner then says so in its output. The current day and later ones are never run, and a later day asked for is reported as not released, not as a failure. The history then grows by one day each night (17.11).
 - **One demand source per history.** The history uses the RCRC source and never mixes sources: a trend that switched from synthetic to observed days would show a change caused by the data, not by the traffic. The runner refuses to add days of another source to the folder, and the page builder refuses stored days from more than one source (`source_of` in `history.py`).
-- **Missing counts are estimated with the demand transformation's existing rules** ([Traffic demand transformation](traffic_demand_transformation.md)): from a neighbouring detector, else from the same time slot and day type on earlier days, adjusted to the hour before the gap. An outage longer than 75 minutes is estimated with the plain time-slot average, as in the live update loop (`LIVE_FALLBACK_GAP_INTERVALS`), so that it does not stop the day. Results built on estimated demand are labelled *modelled assumption* (section 12.5). A day with a count that these rules cannot estimate, such as a time slot with fewer than 3 earlier values of its day type (the report's first weeks, and the Friday and Saturday afternoons when the site's detectors are often silent), fails and is reported; no other rule is added for it.
-- **Cost of one day**, measured on 19 Aug 2026 (RCRC demand, 102,401 vehicles): 37.7 minutes for the SUMO run and reading its FCD. The 44 days from 13 Jul to 26 Aug take about 28 hours; a batch can be stopped and started again (below).
+- **Missing counts are estimated with the demand transformation's existing rules** ([Traffic demand transformation](traffic_demand_transformation.md)): from a neighbouring detector, else from the same time slot and day type on earlier days, adjusted to the hour before the gap, for gaps up to 75 minutes (`MAX_GAP_INTERVALS`), the limit of every run other than the live loop. Results built on estimated demand are labelled *modelled assumption* (section 12.5). A day these rules cannot complete fails and is reported: a gap longer than 75 minutes, or a time slot with fewer than 3 earlier values of its day type (the report's first weeks, and the Friday and Saturday afternoons when the site's detectors are often silent). The live loop's estimate of longer gaps is not used: the live page shows those intervals as "No detector data" and uses the estimate only to keep its queues right after an outage, while the Trends page would show them as traffic.
+- **Cost of one day**, measured on 19 Aug 2026 (RCRC demand, 102,401 vehicles): 37.7 minutes for the SUMO run and reading its FCD. The 44 days from 14 Jul to 26 Aug take about 28 hours; a batch can be stopped and started again (below).
 - A day already stored is skipped, so a batch can be restarted with the same dates; a finished run whose day was not stored is read again instead of simulated again; a day that fails is reported and the batch continues, and nothing partial is stored.
 
 ## 17.2 Measurements first, KPIs later
@@ -948,7 +948,7 @@ For an approach that is never congested, delay is almost the same in every slot:
 - **No comparison with a previous period.** The network and signal timing do not change between periods, so a change would only reflect demand, which the daily trend already shows day by day; and a 30-day comparison would need 60 days of history.
 - **The LOS distribution shows unavailable intervals as their own share** rather than leaving them out. On 22 Oct the intersection had 5 unavailable intervals of 96: leaving them out would scale up the known grades, although the missing ones were almost certainly F. Intervals with no vehicles have no grade and are not counted.
 - **Not produced here:** recurring alerts and threshold windows (recurring-problem detection, backlog items 24–25, which can run on the stored measurements) and anomaly days (`anomalies` is empty).
-- **The page opens on 7 days**, the longest period with enough stored days today; the 30- and 90-day views show the backend's "not enough data" reason until enough days are stored. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
+- **The page opens on 30 days.** A 30-day view still has data when a day is missing: it needs at least 24 of its 30 days, with every weekday present at least once (17.6). A 7-day view needs all 7, so a single day that could not be estimated (a Friday, say) makes it unavailable. Until 24 days are stored the page opens on the 30-day view's "not enough data" reason; the 90-day view needs at least 72 stored days. The recurring-alert and threshold panels say "Not available yet" rather than showing sample values.
 
 ## 17.9 Results that combine days
 
@@ -971,8 +971,8 @@ trends_90d_all.json   trends_90d_weekdays.json   trends_90d_weekends.json
 
 A period without enough days still gets its file, holding `available: false` and the reason.
 
-- **The files are not in git.** They are built from RCRC data, which stays outside the repository like every RCRC-derived result (`calibration.md`), so each computer that runs the history builds them; `.gitignore` excludes `frontend/public/data/*/history/`. A computer without them shows "No traffic history has been built on this computer yet."
-- **Memory.** Building the files keeps every prepared day in memory. A prepared day keeps its per-interval parts but releases its raw vehicle passages, which nothing needs afterwards: 51 MB a day instead of 210 MB (19 Aug 2026), so 45 days take about 2.3 GB and 90 days about 4.6 GB.
+- **The files are not in git.** They are built from RCRC data, which is never committed, so each computer that runs the history builds them; they stay in the working tree, ignored by git (`.gitignore` excludes `frontend/public/data/*/history/`, as it does `data/history/`). A site without them shows "No traffic history has been built yet." `vite build` copies `frontend/public/` into `dist/`, so a build made on the history computer contains these RCRC-derived files: `dist/` is ignored by git too, but a build that is shared or deployed carries them.
+- **Memory.** Building the files keeps every prepared day in memory. A prepared day keeps its per-interval parts but releases its raw vehicle passages, which nothing needs afterwards: 51 MB a day instead of 210 MB (19 Aug 2026), so 44 days take about 2.2 GB and 90 days about 4.6 GB.
 
 **The files are compact**, so their size does not grow with the number of days. The fields every result shares (`scenario_id`, `run_combination`, and `run_ids`, the runs of every day the period used) are written once, as `resultDefaults`; in each result, a field is left out when it is `null` or equal to its default. A result is unpacked by starting from `resultDefaults` and laying its own fields on top; a field still missing is `null` (`expand_result`). Results with other runs keep their own `run_ids`: a trend point (its day), a heatmap cell (its weekday's days) and HCM results (none, `[]`). For a 7-day period this halves the file, from 3.4 MB to 1.7 MB (the real 7-day files of 3–9 Nov 2026 are 1.6–1.8 MB); without it, each result would repeat the list of every day's run, about 2,500 characters in a 90-day file.
 
@@ -984,13 +984,13 @@ Each night, the day that has just finished is simulated and stored exactly like 
 - **A whole-day run, not the live loop's day.** The live update loop restarts and warms up after an outage and keeps only its newest output, so its day is not one continuous run. Simulating each stored day the same way keeps a trend from mixing two methods.
 - **Run at 03:00.** The day's clearance ends at 00:15 and is released then; 03:00 leaves a margin and is when the live loop starts its day. A day takes about 40 minutes to simulate (37.7 minutes for 19 Aug 2026 with RCRC demand), then the page files are rebuilt.
 - **The page files are rebuilt even when a day failed.** A day whose counts cannot be estimated fails every night until the estimate changes; the days that were stored still appear.
-- **Nothing is silently skipped.** The task wakes the computer, runs as soon as possible after a missed start (the computer was off), and runs on battery. If the RCRC replay source is not answering (after a restart), the script starts it. Windows does not start a second copy of the task while one is running, so a long run and a nightly run never overlap.
+- **Nothing is silently skipped.** The task wakes the computer, runs as soon as possible after a missed start (the computer was off), and runs on battery. It runs while the user is logged on (a locked screen is enough); running it logged off would need the user's password stored with the task. If the RCRC replay source does not answer with status `ok` (after a restart, or without a report loaded), the script starts it and checks again for up to 60 seconds, and writes a line to the log if it never answers. Windows does not start a second copy of the task while one is running, so a long run and a nightly run never overlap.
 - Output, with a line per day, is added to `data/history/nightly.log` (ignored by git).
 
 `simulation/scripts/nightly_history.cmd` runs both steps. To schedule it on Windows, once (PowerShell, from the repository root):
 
 ```powershell
-$action   = New-ScheduledTaskAction -Execute "$PWD\simulation\scripts\nightly_history.cmd"
+$action   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$PWD\simulation\scripts\nightly_history.cmd`""
 $trigger  = New-ScheduledTaskTrigger -Daily -At 3am
 $settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -AllowStartIfOnBatteries `
             -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Days 3)
@@ -1001,10 +1001,10 @@ Get-Content data\history\nightly.log -Tail 20 -Wait           # follow its outpu
 Unregister-ScheduledTask -TaskName "Jaadah trends history"   # to remove it
 ```
 
-Waking for the task needs the power plan's *Allow wake timers* to be enabled (Control Panel → Power Options → Change plan settings → Change advanced power settings → Sleep). The 3-day time limit lets a first run of many days finish.
+Waking for the task needs the power plan's *Allow wake timers* to be enabled (Control Panel → Power Options → Change plan settings → Change advanced power settings → Sleep). The 3-day time limit lets a first run of many days finish. The script is started through `cmd.exe` with its path in quotes, so a repository path that contains a space works.
 
 On macOS or Linux, the same two steps as a cron line (`crontab -e`):
 
 ```text
-0 3 * * * cd /path/to/2026-GP1-9 && (.venv/bin/python simulation/scripts/run_history.py --first-day 2026-07-13; .venv/bin/python -m backend.analytics.trends_page) >> data/history/nightly.log 2>&1
+0 3 * * * cd /path/to/2026-GP1-9 && (.venv/bin/python simulation/scripts/run_history.py --first-day 2026-07-14; .venv/bin/python -m backend.analytics.trends_page) >> data/history/nightly.log 2>&1
 ```

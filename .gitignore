@@ -32,7 +32,7 @@ Thumbs.db
 # Fast run of the live loop (simulation/scripts/tests/run_live_fast.py)
 /simulation/outputs/tests/live_fast/
 
-# Stored days of the historical analysis (rebuilt by run_history.py; about 2.5 MB a day)
+# Stored days of the historical analysis (rebuilt by run_history.py; about 4 MB a day with RCRC demand)
 /data/history/
 # Trends page files: built from private RCRC data by backend/analytics/trends_page.py
 # on the computer that runs the history; never committed (docs/kpi_engine.md, section 17)
