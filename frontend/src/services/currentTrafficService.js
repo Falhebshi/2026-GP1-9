@@ -57,7 +57,7 @@
 //     }],
 //     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay;
 //                                        no bar (no value) for an interval without detector data
-//     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
+//     alerts: [{ id, title, details: [{ label, value }] }]  (no detail page until Release 2)
 //   }
 //
 // Every KPI value is a KpiResult, exactly as the backend's KPI engine sends it (data_models.md,
@@ -117,7 +117,6 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'North approach' },
       { label: 'Detected', value: '2 min ago' },
     ],
-    detailsTo: '/alerts/1',
   },
   {
     id: 'a2',
@@ -126,7 +125,6 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'East approach' },
       { label: 'Detected', value: '7 min ago' },
     ],
-    detailsTo: '/alerts/2',
   },
   {
     id: 'a3',

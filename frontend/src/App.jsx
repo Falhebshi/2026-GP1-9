@@ -5,12 +5,9 @@ import Welcome from './pages/Welcome'
 import Login from './pages/Login'
 import NetworkOverview from './pages/NetworkOverview'
 import CurrentTraffic from './pages/CurrentTraffic'
-import TrafficForecast from './pages/TrafficForecast'
 import TrafficTrends from './pages/TrafficTrends'
 import ComponentPreview from './pages/ComponentPreview'
-import Alerts from './pages/Alerts'
-import AlertDetails from './pages/AlertDetails'
-import RecommendationDetails from './pages/RecommendationDetails'
+import PlannedForRelease2 from './pages/PlannedForRelease2'
 import AdminDashboard from './pages/AdminDashboard'
 
 
@@ -29,13 +26,13 @@ function App() {
           <Route element={<AppLayout />}>
             <Route path="/overview" element={<NetworkOverview />} />
             <Route path="/current" element={<CurrentTraffic />} />
-            <Route path="/forecast" element={<TrafficForecast />} />
+            {/* Traffic Forecast and Alerts come in Release 2: their tabs stay, their pages say so.
+                The Release 2 pages are in pages/TrafficForecast.jsx, Alerts.jsx, AlertDetails.jsx
+                and RecommendationDetails.jsx */}
+            <Route path="/forecast" element={<PlannedForRelease2 title="Traffic Forecast" />} />
             <Route path="/trends" element={<TrafficTrends />} />
-            <Route path="/alerts" element={<Alerts />} />
-            {/* Opened from an alert card */}
-            <Route path="/alerts/:problemId" element={<AlertDetails />} />
-            {/* Opened from a recommended intervention on Alert Details */}
-            <Route path="/alerts/:problemId/recommendations/:recommendationId" element={<RecommendationDetails />} />
+            <Route path="/alerts" element={<PlannedForRelease2 title="Alerts" />} />
+            <Route path="/alerts/*" element={<Navigate to="/alerts" replace />} />
           </Route>
         </Route>
 
