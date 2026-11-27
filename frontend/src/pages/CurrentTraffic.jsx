@@ -129,6 +129,19 @@ function CurrentTraffic() {
             result.source !== current?.source
           if (!changed) return
           setData(result)
+          // Live -> sample (the loop stopped) or sample -> live (it publishes again): a moment or
+          // a pause in the other source means nothing here, so start over on the new one, playing:
+          // the live clock, or the sample run's start. The slider stays open if it was
+          if (result.source !== current?.source) {
+            setPaused(false)
+            setFollowLatest(true)
+            const target = result.live && result.run?.status !== 'failed' ? liveTarget(result) : null
+            const seconds = target ? target.seconds : 0
+            setShownId(target ? targetId(result, target) : null)
+            setTime(seconds)
+            setJumpTo({ time: seconds })
+            return
+          }
           // Following: the clock's moment may now be in the previous run (a new chain that
           // starts after it, at 03:00), so pick the run in the same update
           if (view.followLatest && result.live && result.run?.status !== 'failed') {
