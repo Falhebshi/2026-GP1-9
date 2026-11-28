@@ -41,7 +41,7 @@ The dashboard reads its files from `frontend/public/data/INT_001/`:
 
 - Python and `pip` (used with Python 3.13, as in CI). Python dependencies are pinned in `requirements.txt`.
 - Node.js 22 and npm (the frontend CI uses Node.js 22).
-- SUMO with `sumo` on your `PATH` for simulation runs. The Python packages in `requirements.txt` do not install the SUMO executable.
+- SUMO with `sumo` on your `PATH` for simulation runs. `pip install -r requirements.txt` installs every Python package, including TraCI and sumolib, but not the SUMO program itself. The launcher runs without SUMO and skips only the live update loop; baseline runs, calibration, and the Trends history need it.
 - The private data folder (`jaadah-private-data/`, next to the repository) for anything that reads RCRC data (see [Without the private data](#without-the-private-data)).
 
 Run the following commands from the repository root unless a step says to change directories. These examples use PowerShell on Windows.
@@ -66,59 +66,43 @@ cd ..
 
 ## Run the project
 
-Each service runs in its own terminal. Each Python service answers a health check at `http://127.0.0.1:<port>/health`.
+Start everything with one command, the launcher, from the repository root with the Python environment active:
 
-| Service | Port | Needs |
-| --- | --- | --- |
-| Website | 5173 | Accounts server to log in |
-| Accounts server | 8003 | An administrator created once |
-| RCRC traffic feed | 8002 | Private RCRC report, loaded once |
-| Network map server | 8001 | RCRC traffic feed |
-| Synthetic source (optional, earlier source) | 8000 | Private RCRC sample profiles |
+```powershell
+python -m backend.start
+```
 
-Vite forwards `/api/auth` and `/api/admin` to port 8003 and `/api/network` to port 8001 (`frontend/vite.config.js`), so these ports must not change.
+The launcher first checks the one-time setup and lists everything that is missing, each with its fix; it offers to run `npm ci` and to create the administrator account for you, and loads the RCRC report if it was never loaded. It then starts the RCRC traffic feed, the network map server, the accounts server, the website, and the live update loop, each once the service it depends on answers, and opens `http://localhost:5173` when everything is up. Their output appears in the same terminal, labelled by service. Ctrl+C stops everything.
 
-For the full demonstration, start them in this order: accounts server, RCRC traffic feed, network map server, live update loop, then the website.
+- `--no-live` starts everything except the live update loop, `--no-browser` does not open the website, and `--verbose` also shows every request the servers answer.
+- Without SUMO, it skips the live update loop and starts everything else.
+- The network map server takes about a minute to start. When the live update loop starts a new chain (its first start, or after it was stopped for more than two hours), its first results take a few minutes while it warms up; until then Current Traffic shows the previous live run, or the sample run if there is none.
+- If an RCRC traffic feed is already running on port 8002 (the nightly history run starts one, see [Traffic history for the Trends page](#traffic-history-for-the-trends-page)), the launcher uses it and leaves it running when it stops.
+- It leaves out `JAADAH_REPLAY_OFFSET_WEEKS`, so its feed always runs on the 13-week demonstration clock. For calibration, start the feed with offset 0 yourself (see [Calibration and validation](#calibration-and-validation)); if that feed is still running when you start the launcher, the launcher warns that Current Traffic will show the wrong date.
 
-### Accounts server
+The launcher needs the private data folder. Without it, start the accounts server and the website on their own (see [Run the services one by one](#run-the-services-one-by-one) and [Without the private data](#without-the-private-data)).
 
-Every page except Login needs an account, and there is no default login. Create an administrator once (it asks for the password twice without showing it):
+### One-time setup
+
+**Administrator account.** Every page except Login needs an account, and there is no default login. The launcher offers to create one; to do it yourself (it asks for the password twice without showing it):
 
 ```powershell
 python -m backend.accounts.create_admin --name "Your Name" --email you.admin@ksu.edu.sa --engineer-email you@ksu.edu.sa
 ```
 
-`--engineer-email` is optional: it also creates your traffic engineer account with the same password, so you can log in either way. Accounts are stored on each laptop, so every teammate does this once on their own machine.
+`--engineer-email` is optional: administrators only manage accounts, so it also creates your traffic engineer account, with the same password, for the traffic pages. Accounts are stored on each laptop in `data/accounts/accounts.db` (never committed), so every teammate does this once. Roles and password rules are in [Accounts and Login](docs/accounts.md).
 
-Then start the accounts server and keep it running while you use the website:
-
-```powershell
-python -m uvicorn backend.accounts.server:app --port 8003
-```
-
-Accounts are stored in `data/accounts/accounts.db`, which holds password hashes and is never committed. Password rules, sessions, and roles are described in [Accounts and Login](docs/accounts.md).
-
-### Frontend
-
-```powershell
-cd frontend
-npm run dev
-```
-
-Open `http://localhost:5173` and log in. Engineers land on Network Traffic Overview and administrators on the Admin Dashboard.
-
-### RCRC traffic feed
-
-Plays back the private RCRC report for the study intersection as a live feed ([RCRC traffic feed](docs/rcrc_replay_source.md)). Load the report once from the private folder, then start the service:
+**RCRC report.** The launcher loads it into the RCRC traffic feed when it finds exactly one report in the private folder. To load it yourself:
 
 ```powershell
 python -m traffic_source.rcrc_replay.load ../jaadah-private-data/raw/rcrc/site_1444/<report>.csv
-python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
 ```
 
-The report covers 13 July to 13 October 2026. The feed runs 13 weeks behind the real clock (16 November shows 17 August), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. So by default it has only released dates up to 13 weeks before today.
+### RCRC traffic feed
 
-To release the whole report at once, which calibration and later baseline dates need, start it with offset 0:
+The feed plays back the private RCRC report for the study intersection as if it were live ([RCRC traffic feed](docs/rcrc_replay_source.md)). The report covers 13 July to 13 October 2026. The feed runs 13 weeks behind the real clock (16 November shows 17 August), keeping the real time of day and weekday, and releases one 15-minute interval every 15 minutes. So by default it has only released dates up to 13 weeks before today.
+
+To release the whole report at once, which calibration and later baseline dates need, start the feed yourself with offset 0:
 
 ```powershell
 $env:JAADAH_REPLAY_OFFSET_WEEKS = "0"
@@ -127,15 +111,22 @@ python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
 
 The report and the replay database stay in `jaadah-private-data/`, never in the repository.
 
-### Network map server
+### Run the services one by one
 
-Colours the main roads on Network Traffic Overview every 15 minutes ([network congestion map](docs/network_congestion.md)). The colours are modelled from a trip model, the TomTom Traffic Index, and the site 1444 counts, not measured on those roads. With the RCRC traffic feed running:
+To run or debug one service, start it in its own terminal instead of using the launcher. Each Python service answers a health check at `http://127.0.0.1:<port>/health`; its document has the details.
 
-```powershell
-python -m uvicorn jaadah.network_congestion.server:app --port 8001
-```
+| Service | Port | Start it with | Needs |
+| --- | --- | --- | --- |
+| Accounts server | 8003 | `python -m uvicorn backend.accounts.server:app --port 8003` | An administrator ([Accounts and Login](docs/accounts.md)) |
+| RCRC traffic feed | 8002 | `python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002` | The report, loaded once ([RCRC traffic feed](docs/rcrc_replay_source.md)) |
+| Network map server | 8001 | `python -m uvicorn jaadah.network_congestion.server:app --port 8001` | RCRC traffic feed ([network congestion map](docs/network_congestion.md)) |
+| Live update loop | none | `python simulation/scripts/run_live.py` | RCRC traffic feed and SUMO ([live update loop](docs/live_update_loop.md)) |
+| Website | 5173 | `cd frontend; npm run dev` | Accounts server, to log in |
+| Synthetic source (optional, earlier source) | 8000 | `python -m uvicorn traffic_source.synthetic.server:app` | Private RCRC sample profiles ([synthetic traffic source](docs/synthetic_traffic_source.md)) |
 
-On its first start it fills the last 7 days, then adds each completed 15 minutes. The speeds are stored in `data/network_congestion/network_speeds.db`, which is not committed. The committed files in `data/processed/network/` are enough to run it; rebuilding them is described in the same document.
+Started by hand, the full demonstration needs them in this order: accounts server, RCRC traffic feed, network map server, live update loop, then the website. Vite forwards `/api/auth` and `/api/admin` to port 8003 and `/api/network` to port 8001 (`frontend/vite.config.js`), so these ports must not change. Open `http://localhost:5173` and log in: engineers land on Network Traffic Overview and administrators on the Admin Dashboard.
+
+The live update loop and the baseline runner take `--source synthetic` to use the synthetic source; the launcher always uses the RCRC traffic feed.
 
 ### Simulation
 
@@ -171,16 +162,6 @@ python -m backend.outputs.signal_program
 
 More runner options and output details are in [simulation integration](docs/simulation_integration.md).
 
-### Live update loop
-
-Keeps the Current Traffic page up to date: each time the source delivers a 15-minute interval, the loop simulates it, continuing from the last saved SUMO state, and publishes its KPIs and playback ([live update loop](docs/live_update_loop.md)). With the RCRC traffic feed running:
-
-```powershell
-python simulation/scripts/run_live.py
-```
-
-Add `--source synthetic` to use the synthetic source. Stop it with Ctrl+C; the next start continues the chain if it is less than two hours behind. The page reads `frontend/public/data/INT_001/live/` and shows the committed sample run, labelled as a sample, when that folder has no run. The chain's working files go to `simulation/outputs/live/`. Neither folder is committed.
-
 ### Calibration and validation
 
 Scores the simulation against the RCRC stop-bar counts with GEH, for the test hours of a range of days ([calibration](docs/calibration.md)). Start the RCRC traffic feed with offset 0 first (see [RCRC traffic feed](#rcrc-traffic-feed)), then in another terminal:
@@ -208,22 +189,14 @@ python -m backend.analytics.trends_page
 
 To store each new day automatically, schedule `simulation/scripts/nightly_history.cmd` as a Windows task at 03:00. It starts the RCRC traffic feed if it is not answering, runs both commands, and appends its output to `data/history/nightly.log`. The setup commands, and a cron line for macOS or Linux, are in the [KPI engine](docs/kpi_engine.md), section 17.11.
 
-### Synthetic traffic source
-
-The earlier traffic source, used before the RCRC report for the study intersection arrived and kept for comparison. It generates synthetic detector observations from processed profiles of an RCRC sample from another intersection (site 1028), so it needs those private profiles (see [Configuration](#configuration)):
-
-```powershell
-python -m uvicorn traffic_source.synthetic.server:app
-```
-
-Observations are stored in a local SQLite database under `data/synthetic_traffic/`. A new source starts with only seven days of history.
+Don't stop the launcher between 03:00 and the end of the nightly run if the launcher started the RCRC traffic feed: the history run may be using it. A feed that the history run started itself keeps running, and the launcher uses it without stopping it.
 
 ## Without the private data
 
 The RCRC report and everything derived from it are restricted and are not published. Without the private data folder, you can still:
 
 - run the website with the accounts server, log in, and manage accounts;
-- view Current Traffic with the committed sample run, and the sample pages (Forecast, Alerts, Recommendations). Network Traffic Overview shows the plain basemap without road congestion, and Trends shows "No traffic history has been built yet.";
+- view Current Traffic with the committed sample run. Network Traffic Overview shows the plain basemap without road congestion, and Traffic Patterns & Trends shows "No traffic history has been built yet." Traffic Forecast and Alerts are planned for Release 2;
 - run the SUMO smoke run and rebuild the 3D scene files ([3D scene guide](simulation/scene_3d/README.md));
 - run the Python tests and the frontend checks below.
 
@@ -236,7 +209,7 @@ No `.env` file is needed. If SUMO is not on `PATH`, the simulation scripts accep
 | Variable | Used by | Effect |
 | --- | --- | --- |
 | `JAADAH_SECURE_COOKIE` | Accounts server | `true` sends the session cookie over HTTPS only; set it when Jaadah is reached over HTTPS |
-| `JAADAH_REPLAY_OFFSET_WEEKS` | RCRC traffic feed | Weeks the replay runs behind the real clock (default 13; `0` releases the whole report) |
+| `JAADAH_REPLAY_OFFSET_WEEKS` | RCRC traffic feed | Weeks the replay runs behind the real clock (default 13; `0` releases the whole report). The launcher leaves it out |
 | `JAADAH_NETWORK_SOURCE` | Network map server | `synthetic` uses the older synthetic speeds instead of the RCRC counts |
 | `JAADAH_RCRC_URL` | Network map server | Address of the RCRC traffic feed (default `http://127.0.0.1:8002`) |
 
