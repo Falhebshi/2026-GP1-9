@@ -44,7 +44,7 @@ The dashboard reads its files from `frontend/public/data/INT_001/`:
 - SUMO with `sumo` on your `PATH` for simulation runs. `pip install -r requirements.txt` installs every Python package, including TraCI and sumolib, but not the SUMO program itself. The launcher runs without SUMO and skips only the live update loop; baseline runs, calibration, and the Trends history need it.
 - The private data folder (`jaadah-private-data/`, next to the repository) for anything that reads RCRC data (see [Without the private data](#without-the-private-data)).
 
-Run the following commands from the repository root unless a step says to change directories. These examples use PowerShell on Windows.
+Run the following commands from the repository root unless a step says to change directories. These examples use PowerShell on Windows. On macOS or Linux, two things differ: activate the environment with `source .venv/bin/activate`, and set a variable on the same line as the command (`JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn …`) instead of with `$env:`.
 
 ### Install Python dependencies
 
@@ -76,6 +76,7 @@ The launcher first checks the one-time setup and lists everything that is missin
 
 - `--no-live` starts everything except the live update loop, `--no-browser` does not open the website, and `--verbose` also shows every request the servers answer.
 - Without SUMO, it skips the live update loop and starts everything else.
+- Keep the computer awake while it runs: a sleeping computer pauses the live update loop. After waking, the loop continues if it is less than two hours behind; otherwise it starts a new chain, which warms up first. On Windows, set sleep to Never while plugged in, in the power settings. On macOS, start it with `caffeinate -dis python -m backend.start`, plugged in with the lid open.
 - The network map server takes about a minute to start. When the live update loop starts a new chain (its first start, or after it was stopped for more than two hours), its first results take a few minutes while it warms up; until then Current Traffic shows the previous live run, or the sample run if there is none.
 - If an RCRC traffic feed is already running on port 8002 (the nightly history run starts one, see [Traffic history for the Trends page](#traffic-history-for-the-trends-page)), the launcher uses it and leaves it running when it stops.
 - It leaves out `JAADAH_REPLAY_OFFSET_WEEKS`, so its feed always runs on the 13-week demonstration clock. For calibration, start the feed with offset 0 yourself (see [Calibration and validation](#calibration-and-validation)); if that feed is still running when you start the launcher, the launcher warns that Current Traffic will show the wrong date.
@@ -108,6 +109,8 @@ To release the whole report at once, which calibration and later baseline dates 
 $env:JAADAH_REPLAY_OFFSET_WEEKS = "0"
 python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002
 ```
+
+On macOS or Linux: `JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn traffic_source.rcrc_replay.server:app --port 8002`.
 
 The report and the replay database stay in `jaadah-private-data/`, never in the repository.
 
@@ -167,11 +170,12 @@ More runner options and output details are in [simulation integration](docs/simu
 Scores the simulation against the RCRC stop-bar counts with GEH, for the test hours of a range of days ([calibration](docs/calibration.md)). Start the RCRC traffic feed with offset 0 first (see [RCRC traffic feed](#rcrc-traffic-feed)), then in another terminal:
 
 ```powershell
-python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12
+python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12 --seeds 42 43 44 45 --label calibration_final
+python simulation/scripts/run_calibration.py --days 2026-09-27..2026-10-03 --seeds 42 43 44 45 --label validation_final
 python analysis/calibration/calibration_charts.py
 ```
 
-Results hold RCRC-derived numbers, so they are written to `jaadah-private-data/processed/calibration/`, never to the repository.
+These reproduce the official runs: the calibration weeks (30 Aug – 12 Sep 2026) and the validation week (27 Sep – 3 Oct 2026), each with 4 seeds and SUMO's default driver settings. The charts read the two `--label` names, so keep them. Without `--seeds`, a run uses seed 42 only; without `--label`, its files are named by date and time. `--jobs N` runs N SUMO simulations at once. Results hold RCRC-derived numbers, so they are written to `jaadah-private-data/processed/calibration/`, never to the repository.
 
 ### Traffic history for the Trends page
 
