@@ -2,7 +2,7 @@
 
 Jaadah (جادّة) is a graduation project developed by students at King Saud University. The project aims to develop a web-based traffic digital twin platform that helps traffic engineers and urban planners better understand and analyze traffic conditions in Riyadh. By combining traffic data, microscopic traffic simulation, and traffic engineering methods, Jaadah provides an interactive environment for examining congestion, identifying potential traffic problems, and evaluating possible solutions.
 
-The system provides both a broader overview of traffic conditions across the road network and a detailed simulation of a selected intersection in Riyadh. Using SUMO (Simulation of Urban MObility), Jaadah simulates vehicle movements and evaluates traffic performance through indicators such as delay, queue length, throughput, and level of service. The project also aims to incorporate artificial intelligence for traffic forecasting and anomaly detection, alongside recommendations for potential improvements. These improvements can then be tested and compared against the original traffic conditions through simulation, helping engineers make more informed decisions before implementing changes on real roads.
+The system provides both a broader overview of traffic conditions across the road network and a detailed simulation of a selected intersection in Riyadh. Using SUMO (Simulation of Urban MObility), Jaadah simulates vehicle movements and evaluates traffic performance through indicators such as delay, queue length, throughput, and level of service. Release 1 delivers the simulation side: a SUMO simulation of the study intersection, calibrated and validated against the RCRC counts; its KPIs for every 15 minutes, live on Current Traffic and over past days on Traffic Patterns & Trends; and the congestion of the main roads on Network Traffic Overview. Release 2 adds artificial intelligence for traffic forecasting and anomaly detection (Traffic Forecast and Alerts), alongside recommendations for potential improvements. These improvements can then be tested and compared against the original traffic conditions through simulation, helping engineers make more informed decisions before implementing changes on real roads.
 
 The study intersection is `INT_001`, Prince Turki Al-Awwal Rd × Imam Saud Rd. Its traffic comes from the RCRC detector report for that intersection, which the RCRC traffic feed plays back as if it were live. The report is restricted, so it is kept outside this repository (see [Without the private data](#without-the-private-data)).
 
@@ -72,7 +72,7 @@ Start everything with one command, the launcher, from the repository root with t
 python -m backend.start
 ```
 
-The launcher first checks the one-time setup and lists everything that is missing, each with its fix; it offers to run `npm ci` and to create the administrator account for you, and loads the RCRC report if it was never loaded. It then starts the RCRC traffic feed, the network map server, the accounts server, the website, and the live update loop, each once the service it depends on answers, and opens `http://localhost:5173` when everything is up. Their output appears in the same terminal, labelled by service. Ctrl+C stops everything.
+The launcher first checks the one-time setup and lists everything that is missing, each with its fix; it offers to run `npm ci` and to create the administrator account for you, and loads the RCRC report if it was never loaded. It then starts the RCRC traffic feed, the network map server, the accounts server, the website, and the live update loop, each once the service it depends on answers, and opens `http://localhost:5173` when everything is up. Their output appears in the same terminal, labeled by service. Ctrl+C stops everything.
 
 - `--no-live` starts everything except the live update loop, `--no-browser` does not open the website, and `--verbose` also shows every request the servers answer.
 - Without SUMO, it skips the live update loop and starts everything else.
@@ -154,7 +154,7 @@ python -m backend.analytics.service simulation/outputs/baseline_runs/<run-id>
 
 This writes the KPI files to `frontend/public/data/INT_001/baseline/` ([KPI engine](docs/kpi_engine.md), section 16). The vehicles and signals for the 3D view are built from the same run folder with `simulation/scene_3d/build_playback.py` ([3D scene guide](simulation/scene_3d/README.md)).
 
-`signal_program.json` is the signal plan the network runs, written from the network file. Rebuild it after any change to the signal plan (a test checks that it matches):
+Every run uses the network's signal plan: one fixed 225-second plan, all day, derived from the site 1444 counts with Webster's method. The real controller is actuated, so the plan is a modeled assumption; [SUMO network](docs/sumo_network.md) explains how it was derived and its limits. `signal_program.json` is this plan, written from the network file. Rebuild it after any change to the signal plan (a test checks that it matches):
 
 ```powershell
 python -m backend.outputs.signal_program
