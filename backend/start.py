@@ -388,8 +388,12 @@ LABEL_COLOURS = {"rcrc": "36", "network": "34", "accounts": "35", "website": "32
 # uvicorn's level prefixes, dropped from the line and shown as a colour instead
 UVICORN_LEVELS = (("INFO:", None), ("WARNING:", "33"), ("ERROR:", "31"), ("CRITICAL:", "31"))
 
-# One request in a server's access log, e.g. '127.0.0.1:5 - "GET /speeds HTTP/1.1" 200 OK'
-ACCESS_LOG = re.compile(r'"(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \S+ HTTP/[\d.]+" (\d{3})')
+# One request: in a server's access log, e.g. '127.0.0.1:5 - "GET /speeds HTTP/1.1" 200 OK',
+# or made by the live loop (httpx), e.g. 'HTTP Request: GET http://127.0.0.1:8002/health "HTTP/1.1 200 OK"'
+ACCESS_LOG = re.compile(
+    r'"(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \S+ HTTP/[\d.]+" (\d{3})'
+    r'|HTTP Request: [A-Z]+ \S+ "HTTP/[\d.]+ (\d{3})'
+)
 
 # The last line of a Python traceback, e.g. "ValueError: ... Delete it and start again."
 EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception): ")
@@ -441,7 +445,7 @@ def tidy_line(line: str, verbose: bool = False) -> tuple[str | None, str | None]
         return None, None
 
     request = ACCESS_LOG.search(text)
-    if request and int(request.group(1)) >= 500:
+    if request and int(request.group(1) or request.group(2)) >= 500:
         return text.removeprefix("INFO:").strip(), "31"
     if request and not verbose:
         return None, None

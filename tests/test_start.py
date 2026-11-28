@@ -323,3 +323,13 @@ def test_ctrl_c_during_setup_cancels_cleanly(monkeypatch, capsys):
 
     assert start.main(["--no-browser"]) == 130
     assert "Cancelled; nothing was started." in capsys.readouterr().out
+
+
+def test_live_loop_requests_are_hidden_too():
+    request = '2026-11-28 15:11:44,201 INFO HTTP Request: GET http://127.0.0.1:8002/health "HTTP/1.1 200 OK"'
+    failed = '2026-11-28 15:11:44,201 INFO HTTP Request: GET http://127.0.0.1:8002/observations "HTTP/1.1 503 Service Unavailable"'
+
+    assert tidy_line(request) == (None, None)
+    assert tidy_line(request, verbose=True)[0] == request
+    assert tidy_line(failed)[1] == "31"
+    assert tidy_line("2026-11-28 15:15:06,760 INFO new chain RUN_LIVE_20260829T0245_R1445_S42")[0] is not None
