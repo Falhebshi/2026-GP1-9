@@ -52,11 +52,10 @@
   right: var(--space-md);
 }
 
+/* The wordmark (Logo component, dark version) */
 .login-brand-name {
-  font-size: 48px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  margin: 0;
+  --logo-size: 56px;
 }
 
 .login-brand-tagline {
@@ -212,7 +211,7 @@
   }
 
   .login-brand-name {
-    font-size: var(--text-2xl);
+    --logo-size: 40px;
   }
 
   .login-panel {

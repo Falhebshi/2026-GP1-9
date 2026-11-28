@@ -12,7 +12,7 @@
    ========================================================================== */
 
 /* Font. The designs look like Inter. Delete this line if you pick another. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@800&display=swap");
 
 :root {
   color-scheme: light;
@@ -118,7 +118,6 @@
   --scene-sky-night-4: #232a33;
 
   /* Brand */
-  --gradient-brand: linear-gradient(135deg, var(--teal), var(--indigo)); /* the logo square (BrandMark) */
 
   /* ---- 3. SIZES ---------------------------------------------------------- */
 

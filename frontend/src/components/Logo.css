@@ -1,0 +1,27 @@
+.logo {
+  display: inline-block;
+  font-family: 'Plus Jakarta Sans', var(--font);
+  font-size: var(--logo-size, 26px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+/* Light mode: the indigo-to-purple fade of the Arabic logo */
+.logo-auto {
+  background: linear-gradient(90deg, #27358a, #46246f);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Night mode: plain light text */
+:root[data-theme='dark'] .logo-auto {
+  background: none;
+  color: var(--color-text);
+}
+
+/* Always light, for dark backgrounds */
+.logo-dark {
+  color: var(--white);
+}

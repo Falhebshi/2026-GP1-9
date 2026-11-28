@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import Logo from './Logo'
 import Notice from './Notice'
 import ThemeToggle from './ThemeToggle'
 import { HOME_BY_ROLE, logOut } from '../services/authService'
@@ -48,7 +49,7 @@ function NavBar() {
     <>
       <header className="nav-bar">
         <Link to={isAdmin ? HOME_BY_ROLE.admin : HOME_BY_ROLE.engineer} className="nav-brand">
-          Jaadah
+          <Logo />
         </Link>
 
         <nav className="nav-links">
