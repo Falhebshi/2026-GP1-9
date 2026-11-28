@@ -242,6 +242,7 @@ def test_name_spaces_are_trimmed_and_email_is_lowercased(admin):
         ({"email": ""}, "email", EMAIL_INVALID),
         ({"email": "omar.ksu.edu.sa"}, "email", EMAIL_INVALID),
         ({"email": "omar@ksu"}, "email", EMAIL_INVALID),
+        ({"email": "omar@ksu.edu,sa"}, "email", EMAIL_INVALID),
         ({"email": "a" * 245 + "@ksu.edu.sa"}, "email", EMAIL_INVALID),      # 256
         ({"password": "short one"}, "password",
          "Use at least 15 characters. A short phrase works well."),

@@ -19,8 +19,9 @@ import useCopy, { COPY_FAILED } from './useCopy'
 //   onCreated(engineer)  called with the new account
 //   onCancel()           called when the admin closes the form
 
-// The same simple check as the Login page and the server
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// The same check as the Login page and the server: letters, digits and . _ % + - before the @,
+// then letters, digits and - in parts joined by dots. No spaces or commas
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
 
 const EMPTY = { name: '', email: '', password: '', confirmation: '' }
 

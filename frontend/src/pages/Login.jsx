@@ -16,7 +16,7 @@ import './Login.css'
 
 // A simple check that something looks like an email address. The backend
 // still decides whether the account exists.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
 
 function Login() {
   const navigate = useNavigate()
