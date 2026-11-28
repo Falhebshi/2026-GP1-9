@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import RequireRole from './components/RequireRole'
-import Welcome from './pages/Welcome'
 import Login from './pages/Login'
 import NetworkOverview from './pages/NetworkOverview'
 import CurrentTraffic from './pages/CurrentTraffic'
@@ -17,7 +16,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         {/* Pages WITHOUT the nav bar */}
-        <Route path="/" element={<Welcome />} />
+        {/* The site opens on Login, which sends someone already logged in to their first page */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
 
         {/* Traffic pages: logged-in traffic engineers only (RequireRole).
@@ -48,8 +48,8 @@ function App() {
           <Route path="/preview" element={<ComponentPreview />} />
         </Route>
 
-        {/* Any other URL goes back to the welcome page */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Any other URL goes to Login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   )
