@@ -22,8 +22,10 @@ An RCRC traffic feed already running on port 8002 (the nightly history
 run starts one and leaves it running) is used as it is and left running
 on Ctrl+C, so a history run using it is not cut off. The calibration
 setting JAADAH_REPLAY_OFFSET_WEEKS is left out of what the launcher
-starts, so the feed always runs on the 13-week demonstration clock. Colours and the redrawing panel
-need a terminal; NO_COLOR=1 turns them off.
+starts, so the feed always runs on the 13-week demonstration clock.
+
+Colours and the redrawing panel need a terminal; NO_COLOR=1 turns them
+off.
 
 The live update loop needs SUMO. Without it, the launcher says so and
 runs everything else; Current Traffic then shows no live results.
@@ -80,8 +82,11 @@ ACCOUNTS_PORT = 8003
 WEBSITE_PORT = 5173
 WEBSITE_URL = f"http://localhost:{WEBSITE_PORT}"
 
-# Imported by the servers; a missing one means the requirements are not installed
-REQUIRED_PACKAGES = ("fastapi", "uvicorn", "pydantic", "pandas", "shapely", "argon2", "traci")
+# Imported by the servers (httpx2 by the ingestion client, numpy and scipy by the
+# network map); a missing one means the requirements are not installed
+REQUIRED_PACKAGES = ("fastapi", "uvicorn", "pydantic", "httpx2", "numpy", "scipy", "argon2")
+# Imported by the live update loop's playback builder (simulation/scene_3d/build_playback.py)
+LIVE_PACKAGES = ("sumolib", "shapely")
 
 ADDRESS_IN_USE = {errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", errno.EADDRINUSE)}
 
@@ -200,7 +205,9 @@ def running_feed(url: str = f"http://127.0.0.1:{RCRC_PORT}/health") -> dict | No
     """The /health answer of an RCRC traffic feed already running on its port, or None."""
 
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(url, timeout=2) as response:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+            url, timeout=2
+        ) as response:
             health = json.loads(response.read())
     except (urllib.error.URLError, OSError, ValueError):
         return None
@@ -238,7 +245,8 @@ def check_setup(
     """Check everything the services need, and collect every problem at once."""
 
     check = SetupCheck()
-    packages = missing_packages() if packages is None else packages
+    if packages is None:
+        packages = missing_packages(REQUIRED_PACKAGES + (LIVE_PACKAGES if with_live else ()))
     node = shutil.which("node") if node == "auto" else node
 
     if packages:
@@ -249,7 +257,9 @@ def check_setup(
         )
 
     if node is None:
-        check.problems.append("Node.js is not on PATH. Install Node.js 22, then open a new terminal.")
+        check.problems.append(
+            "Node.js is not on PATH. Install Node.js 22, then open a new terminal."
+        )
 
     if not vite_script.is_file():
         check.problems.append("The website's packages are not installed. Run: cd frontend; npm ci")
@@ -277,7 +287,8 @@ def check_setup(
     if not active_admin_exists(accounts_database):
         check.problems.append(
             "There is no administrator account, so nobody can log in. Create one once: "
-            'python -m backend.accounts.create_admin --name "Your Name" --email you.admin@ksu.edu.sa'
+            "python -m backend.accounts.create_admin "
+            '--name "Your Name" --email you.admin@ksu.edu.sa'
         )
         check.fixable.add("admin")
 
@@ -285,8 +296,9 @@ def check_setup(
     offset = environ.get(OFFSET_WEEKS_VARIABLE)
     if offset is not None and offset.strip():
         check.notes.append(
-            f"{OFFSET_WEEKS_VARIABLE}={offset.strip()} is set in this terminal (it is for calibration). "
-            f"The launcher leaves it out, so the feed uses the {DEMO_OFFSET_WEEKS}-week demonstration clock."
+            f"{OFFSET_WEEKS_VARIABLE}={offset.strip()} is set in this terminal "
+            "(it is for calibration). The launcher leaves it out, so the feed uses the "
+            f"{DEMO_OFFSET_WEEKS}-week demonstration clock."
         )
 
     for port in ports:
@@ -298,16 +310,17 @@ def check_setup(
             if health is not None:
                 check.reuse_feed = True
                 check.notes.append(
-                    f"An RCRC traffic feed is already running on port {RCRC_PORT} (the nightly history "
-                    "run starts one, and may be using it). The launcher uses it and leaves it running "
-                    "when you stop."
+                    f"An RCRC traffic feed is already running on port {RCRC_PORT} "
+                    "(the nightly history run starts one, and may be using it). "
+                    "The launcher uses it and leaves it running when you stop."
                 )
                 weeks = feed_offset_weeks(health)
                 if weeks is not None and weeks != DEMO_OFFSET_WEEKS:
                     check.notes.append(
-                        f"That feed runs {weeks} weeks behind real time, not {DEMO_OFFSET_WEEKS}, so Current "
-                        f"Traffic will show {health['replay_time'][:10]}. To fix it, close that feed's window "
-                        f"and start again."
+                        f"That feed runs {weeks} weeks behind real time, "
+                        f"not {DEMO_OFFSET_WEEKS}, so Current Traffic will show "
+                        f"{health['replay_time'][:10]}. "
+                        "To fix it, close that feed's window and start again."
                     )
                 continue
 
@@ -336,7 +349,9 @@ def check_setup(
     return check
 
 
-def build_services(python: str, node: str, sumo_bin: str | None, reuse_feed: bool = False) -> list[list[Service]]:
+def build_services(
+    python: str, node: str, sumo_bin: str | None, reuse_feed: bool = False
+) -> list[list[Service]]:
     """
     The services in start order: each group starts once the group
     before it is ready. The network map server reads the RCRC feed while
@@ -400,7 +415,14 @@ def build_services(python: str, node: str, sumo_bin: str | None, reuse_feed: boo
                 Service(
                     "live",
                     "Live update loop",
-                    (python, "simulation/scripts/run_live.py", "--source", "rcrc", "--sumo-bin", sumo_bin),
+                    (
+                        python,
+                        "simulation/scripts/run_live.py",
+                        "--source",
+                        "rcrc",
+                        "--sumo-bin",
+                        sumo_bin,
+                    ),
                     (),
                     5,
                     required=False,
@@ -454,14 +476,26 @@ BANNER = (
 BANNER_SHADES = ("38;5;51", "38;5;45", "38;5;39", "38;5;33", "38;5;63", "38;5;99")
 
 FANCY = {
-    "ok": "✓", "fail": "✗", "note": "!", "ask": "?", "bar": "│",
-    "full": "█", "empty": "░", "dot": "·",
+    "ok": "✓",
+    "fail": "✗",
+    "note": "!",
+    "ask": "?",
+    "bar": "│",
+    "full": "█",
+    "empty": "░",
+    "dot": "·",
     "spinner": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏",
     "box": "╭╮╰╯─│",
 }
 PLAIN = {
-    "ok": "+", "fail": "x", "note": "!", "ask": "?", "bar": "|",
-    "full": "#", "empty": ".", "dot": "-",
+    "ok": "+",
+    "fail": "x",
+    "note": "!",
+    "ask": "?",
+    "bar": "|",
+    "full": "#",
+    "empty": ".",
+    "dot": "-",
     "spinner": "|/-\\",
     "box": "++++-|",
 }
@@ -471,8 +505,10 @@ LABEL_COLOURS = {"rcrc": "36", "network": "34", "accounts": "35", "website": "32
 # uvicorn's level prefixes, dropped from the line and shown as a colour instead
 UVICORN_LEVELS = (("INFO:", None), ("WARNING:", "33"), ("ERROR:", "31"), ("CRITICAL:", "31"))
 
-# One request: in a server's access log, e.g. '127.0.0.1:5 - "GET /speeds HTTP/1.1" 200 OK',
-# or made by the live loop (httpx), e.g. 'HTTP Request: GET http://127.0.0.1:8002/health "HTTP/1.1 200 OK"'
+# One request: in a server's access log, e.g.
+#   127.0.0.1:5 - "GET /speeds HTTP/1.1" 200 OK
+# or made by the live loop (httpx), e.g.
+#   HTTP Request: GET http://127.0.0.1:8002/health "HTTP/1.1 200 OK"
 ACCESS_LOG = re.compile(
     r'"(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \S+ HTTP/[\d.]+" (\d{3})'
     r'|HTTP Request: [A-Z]+ \S+ "HTTP/[\d.]+ (\d{3})'
@@ -483,7 +519,10 @@ EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception): ")
 
 
 def colour_supported(stream, environ: dict[str, str] | None = None) -> bool:
-    """Colours only on a real terminal, unless NO_COLOR is set; switched on in older Windows consoles."""
+    """
+    Colours only on a real terminal, unless NO_COLOR is set; switched on
+    in older Windows consoles.
+    """
 
     environ = os.environ if environ is None else environ
     if "NO_COLOR" in environ or not hasattr(stream, "isatty") or not stream.isatty():
@@ -535,7 +574,7 @@ def tidy_line(line: str, verbose: bool = False) -> tuple[str | None, str | None]
 
     for prefix, colour in UVICORN_LEVELS:
         if text.startswith(prefix):
-            return text[len(prefix):].strip(), colour
+            return text[len(prefix) :].strip(), colour
 
     return text, None
 
@@ -546,7 +585,10 @@ def progress_bar(done: int, total: int, width: int, full: str, empty: str) -> st
 
 
 class Console:
-    """Everything the launcher prints. live is True on a colour terminal, where the panel redraws in place."""
+    """
+    Everything the launcher prints. live is True on a colour terminal,
+    where the status line redraws in place.
+    """
 
     def __init__(self, colour: bool | None = None, stream=None) -> None:
         stream = sys.stdout if stream is None else stream
@@ -612,7 +654,9 @@ class Console:
 
         hint = "Y/n" if default else "y/N"
         try:
-            answer = input(f"  {self.paint(self.symbols['ask'], '1;36')} {question} {self.paint(hint, '2')} ")
+            answer = input(
+                f"  {self.paint(self.symbols['ask'], '1;36')} {question} {self.paint(hint, '2')} "
+            )
         except EOFError:
             return False
 
@@ -766,7 +810,10 @@ class StatusPanel:
             forms.append(f"  {dot} {len(names)} starting {oldest}")
             tail = next((form for form in forms if display_width(head + form) <= room), "")
 
-        return f"    {paint(spinner, '36')} {paint(bar, '38;5;45')}  {done}/{len(states)} ready" + paint(tail, "2")
+        return (
+            f"    {paint(spinner, '36')} {paint(bar, '38;5;45')}  {done}/{len(states)} ready"
+            + paint(tail, "2")
+        )
 
 
 # Running the services --------------------------------------------------------
@@ -821,7 +868,9 @@ class Launcher:
     def show_last_lines(self, service: Service, count: int = 12) -> None:
         """The end of a failed service's output, which stayed hidden behind the panel."""
 
-        lines = [line for line in self.recent.get(service.label, ()) if tidy_line(line)[0] is not None]
+        lines = [
+            line for line in self.recent.get(service.label, ()) if tidy_line(line)[0] is not None
+        ]
         if not lines:
             return
 
@@ -830,10 +879,17 @@ class Launcher:
         for line in lines[-count:]:
             self.console.service_line(service.label, line, verbose=True)
 
-    def wait_ready(self, group: list[tuple[Service, subprocess.Popen]]) -> tuple[Service, str] | None:
-        """Wait until every service in the group is ready; return (failed service, message), or None."""
+    def wait_ready(
+        self, group: list[tuple[Service, subprocess.Popen]]
+    ) -> tuple[Service, str] | None:
+        """
+        Wait until every service in the group is ready; return
+        (failed service, message), or None.
+        """
 
-        deadline = {service.label: time.monotonic() + service.ready_timeout_s for service, _ in group}
+        deadline = {
+            service.label: time.monotonic() + service.ready_timeout_s for service, _ in group
+        }
         waiting = list(group)
 
         while waiting:
@@ -920,7 +976,8 @@ class Launcher:
                     # With its children: terminate() would leave the live loop's SUMO run going
                     subprocess.run(
                         ("taskkill", "/PID", str(process.pid), "/T", "/F"),
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                     )
                 else:
                     # The live loop's SUMO run stops with it: subprocess.run kills its child
@@ -966,13 +1023,25 @@ def offer_fixes(console: Console, check: SetupCheck, python: str) -> bool:
         while True:
             name = console.prompt("Full name")
             email = console.prompt("Administrator email")
-            console.write(console.paint(
-                "    Administrators only manage accounts. To use the traffic pages, also create an\n"
-                "    engineer account with the same password (a different email), or press Enter to skip.",
-                "2",
-            ))
+            console.write(
+                console.paint(
+                    "    Administrators only manage accounts. To use the traffic pages, "
+                    "also create an\n"
+                    "    engineer account with the same password (a different email), "
+                    "or press Enter to skip.",
+                    "2",
+                )
+            )
             engineer = console.prompt("Engineer email")
-            command = [python, "-m", "backend.accounts.create_admin", "--name", name, "--email", email]
+            command = [
+                python,
+                "-m",
+                "backend.accounts.create_admin",
+                "--name",
+                name,
+                "--email",
+                email,
+            ]
             if engineer:
                 command += ["--engineer-email", engineer]
             if subprocess.run(command, cwd=REPO_ROOT).returncode == 0:
@@ -994,12 +1063,18 @@ def show_problems(console: Console, problems: list[str]) -> None:
 
 def load_report(console: Console, python: str, report: Path) -> bool:
     console.note(f"The RCRC report is not loaded yet; loading {report.name} (only needed once).")
-    result = subprocess.run((python, "-m", "traffic_source.rcrc_replay.load", str(report)), cwd=REPO_ROOT)
+    result = subprocess.run(
+        (python, "-m", "traffic_source.rcrc_replay.load", str(report)), cwd=REPO_ROOT
+    )
     return result.returncode == 0
 
 
 def summary_rows(services: list[Service], reuse_feed: bool = False) -> list[tuple[str, str]]:
-    rows = [("RCRC traffic feed", f"http://127.0.0.1:{RCRC_PORT} (already running)")] if reuse_feed else []
+    rows = (
+        [("RCRC traffic feed", f"http://127.0.0.1:{RCRC_PORT} (already running)")]
+        if reuse_feed
+        else []
+    )
     for service in services:
         if service.label == "website":
             rows.insert(0, (service.name, WEBSITE_URL))
@@ -1013,8 +1088,12 @@ def summary_rows(services: list[Service], reuse_feed: bool = False) -> list[tupl
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start every Jaadah service in one terminal.")
     parser.add_argument("--no-live", action="store_true", help="Do not start the live update loop.")
-    parser.add_argument("--no-browser", action="store_true", help="Do not open the website when it is ready.")
-    parser.add_argument("--verbose", action="store_true", help="Also show every request the servers answer.")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="Do not open the website when it is ready."
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Also show every request the servers answer."
+    )
     return parser.parse_args(argv)
 
 
@@ -1063,7 +1142,10 @@ def main(argv: list[str] | None = None) -> int:
 
     launcher = Launcher(console, verbose=args.verbose)
     groups = build_services(
-        python, shutil.which("node"), None if args.no_live else check.sumo_bin, reuse_feed=check.reuse_feed
+        python,
+        shutil.which("node"),
+        None if args.no_live else check.sumo_bin,
+        reuse_feed=check.reuse_feed,
     )
     services = [service for group in groups for service in group]
 

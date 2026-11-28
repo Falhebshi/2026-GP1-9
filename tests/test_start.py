@@ -136,7 +136,9 @@ def test_missing_sumo_only_skips_the_live_loop(setup_paths):
     assert check.problems == []
     assert "live update loop" in check.notes[0]
     assert all(
-        service.label != "live" for group in build_services("python", "node", check.sumo_bin) for service in group
+        service.label != "live"
+        for group in build_services("python", "node", check.sumo_bin)
+        for service in group
     )
 
 
@@ -175,7 +177,9 @@ def test_only_an_active_admin_counts(tmp_path):
     assert active_admin_exists(database) is True
 
     with sqlite3.connect(database) as connection:
-        connection.execute("UPDATE accounts SET status = ? WHERE id = ?", (STATUS_INACTIVE, admin.id))
+        connection.execute(
+            "UPDATE accounts SET status = ? WHERE id = ?", (STATUS_INACTIVE, admin.id)
+        )
     connection.close()
     assert active_admin_exists(database) is False
 
@@ -216,8 +220,14 @@ def test_tidy_line_hides_request_logs_and_blank_lines():
     assert tidy_line(request) == (None, None)
     assert tidy_line(request, verbose=True)[0].endswith("200 OK")
     assert tidy_line("   ") == (None, None)
-    assert tidy_line("INFO:     Application startup complete.") == ("Application startup complete.", None)
-    assert tidy_line("ERROR:    Application startup failed. Exiting.") == ("Application startup failed. Exiting.", "31")
+    assert tidy_line("INFO:     Application startup complete.") == (
+        "Application startup complete.",
+        None,
+    )
+    assert tidy_line("ERROR:    Application startup failed. Exiting.") == (
+        "Application startup failed. Exiting.",
+        "31",
+    )
     assert tidy_line("  VITE v8.3.3  ready in 721 ms") == ("  VITE v8.3.3  ready in 721 ms", None)
 
 
@@ -236,15 +246,22 @@ def test_summary_puts_the_website_first():
 
 
 def test_website_is_checked_on_ipv4_and_ipv6():
-    website = next(s for g in build_services("python", "node", None) for s in g if s.label == "website")
+    website = next(
+        s for g in build_services("python", "node", None) for s in g if s.label == "website"
+    )
 
     assert website.health_urls == ("http://127.0.0.1:5173/", "http://[::1]:5173/")
 
 
 def test_website_runs_in_the_frontend_folder():
-    """Vite serves the folder it starts in: from the repository root it finds no index.html and no config."""
+    """
+    Vite serves the folder it starts in: from the repository root it
+    finds no index.html and no config.
+    """
 
-    website = next(s for g in build_services("python", "node", None) for s in g if s.label == "website")
+    website = next(
+        s for g in build_services("python", "node", None) for s in g if s.label == "website"
+    )
 
     assert website.cwd.name == "frontend"
     assert (website.cwd / "index.html").is_file()
@@ -257,7 +274,9 @@ def test_display_width_counts_block_characters_as_two():
 
 
 def test_status_line_names_every_service_still_starting(monkeypatch):
-    monkeypatch.setattr(start.shutil, "get_terminal_size", lambda fallback: start.os.terminal_size((120, 30)))
+    monkeypatch.setattr(
+        start.shutil, "get_terminal_size", lambda fallback: start.os.terminal_size((120, 30))
+    )
     services = [service for group in build_services("python", "node", None) for service in group]
     panel = StatusPanel(Console(colour=False), services)
     for label in ("rcrc", "network", "accounts", "website"):
@@ -271,7 +290,9 @@ def test_status_line_names_every_service_still_starting(monkeypatch):
 
 
 def test_status_line_shortens_the_list_on_a_narrow_terminal(monkeypatch):
-    monkeypatch.setattr(start.shutil, "get_terminal_size", lambda fallback: start.os.terminal_size((80, 30)))
+    monkeypatch.setattr(
+        start.shutil, "get_terminal_size", lambda fallback: start.os.terminal_size((80, 30))
+    )
     services = [service for group in build_services("python", "node", None) for service in group]
     panel = StatusPanel(Console(colour=False), services)
     for label in ("network", "accounts", "website"):
@@ -284,15 +305,17 @@ def test_status_line_shortens_the_list_on_a_narrow_terminal(monkeypatch):
 
 def test_refused_administrator_can_be_tried_again(monkeypatch):
     console = Console(colour=False)
-    answers = iter([True, True])          # create it now? yes; try again? yes
+    answers = iter([True, True])  # create it now? yes; try again? yes
     typed = iter(["Noura", "bad-email", "", "Noura", "noura.admin@ksu.edu.sa", ""])
-    results = iter([1, 0])                # first attempt refused, second created
+    results = iter([1, 0])  # first attempt refused, second created
     commands = []
     monkeypatch.setattr(console, "ask", lambda question, default=True: next(answers))
     monkeypatch.setattr(console, "prompt", lambda question: next(typed))
     monkeypatch.setattr(
-        start.subprocess, "run",
-        lambda command, cwd: commands.append(command) or start.subprocess.CompletedProcess(command, next(results)),
+        start.subprocess,
+        "run",
+        lambda command, cwd: commands.append(command)
+        or start.subprocess.CompletedProcess(command, next(results)),
     )
 
     assert offer_fixes(console, SetupCheck(fixable={"admin"}), "python") is True
@@ -312,7 +335,9 @@ def test_server_errors_stay_visible_without_verbose():
 def test_declined_fix_prints_the_problems_once(monkeypatch):
     stream = io.StringIO()
     console = Console(colour=False, stream=stream)
-    monkeypatch.setattr(start, "check_setup", lambda with_live: SetupCheck(problems=["No admin"], fixable={"admin"}))
+    monkeypatch.setattr(
+        start, "check_setup", lambda with_live: SetupCheck(problems=["No admin"], fixable={"admin"})
+    )
     monkeypatch.setattr(start, "offer_fixes", lambda console, check, python: False)
 
     assert start.prepare(console, argparse.Namespace(no_live=True), "python") is None
@@ -330,13 +355,17 @@ def test_ctrl_c_during_setup_cancels_cleanly(monkeypatch, capsys):
 
 
 def test_live_loop_requests_are_hidden_too():
-    request = '2026-11-28 15:11:44,201 INFO HTTP Request: GET http://127.0.0.1:8002/health "HTTP/1.1 200 OK"'
-    failed = '2026-11-28 15:11:44,201 INFO HTTP Request: GET http://127.0.0.1:8002/observations "HTTP/1.1 503 Service Unavailable"'
+    prefix = "2026-11-28 15:11:44,201 INFO HTTP Request: GET http://127.0.0.1:8002"
+    request = f'{prefix}/health "HTTP/1.1 200 OK"'
+    failed = f'{prefix}/observations "HTTP/1.1 503 Service Unavailable"'
 
     assert tidy_line(request) == (None, None)
     assert tidy_line(request, verbose=True)[0] == request
     assert tidy_line(failed)[1] == "31"
-    assert tidy_line("2026-11-28 15:15:06,760 INFO new chain RUN_LIVE_20260829T0245_R1445_S42")[0] is not None
+    assert (
+        tidy_line("2026-11-28 15:15:06,760 INFO new chain RUN_LIVE_20260829T0245_R1445_S42")[0]
+        is not None
+    )
 
 
 def test_calibration_offset_is_left_out(setup_paths, monkeypatch):
@@ -349,7 +378,9 @@ def test_calibration_offset_is_left_out(setup_paths, monkeypatch):
 
     captured = {}
     monkeypatch.setenv("JAADAH_REPLAY_OFFSET_WEEKS", "0")
-    monkeypatch.setattr(start.subprocess, "Popen", lambda command, **kwargs: captured.update(kwargs) or _Done())
+    monkeypatch.setattr(
+        start.subprocess, "Popen", lambda command, **kwargs: captured.update(kwargs) or _Done()
+    )
     monkeypatch.setattr(start.threading, "Thread", lambda **kwargs: _Done())
     start.Launcher(Console(colour=False, stream=io.StringIO())).start(
         build_services("python", "node", None)[0][0]
@@ -418,3 +449,15 @@ def test_missing_trends_history_is_a_note(setup_paths):
 
     assert check.problems == []
     assert "No traffic history has been built yet" in check.notes[0]
+
+
+def test_package_check_needs_the_live_loop_packages_only_with_it(setup_paths, monkeypatch):
+    asked = []
+    monkeypatch.setattr(start, "missing_packages", lambda packages: asked.append(packages) or [])
+    setup_paths["packages"] = None
+
+    check_setup(with_live=False, **setup_paths)
+    check_setup(with_live=True, **setup_paths)
+
+    assert "traci" not in asked[0] and "sumolib" not in asked[0]
+    assert {"sumolib", "shapely"} <= set(asked[1])
