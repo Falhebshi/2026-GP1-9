@@ -313,20 +313,22 @@ function CurrentTraffic() {
   const kpiInterval = interval ? intervalLabel(interval) : null
   // the interval, and what the KPIs are compared with and how they were measured
   const kpiNotesText = summaryNotes(kpis, COMPARED)
+  // one info button for the card: the provisional note, then the comparison and the method
+  const kpiTip = [
+    ...(interval?.provisional ? ['The newest interval may still change at the next update.'] : []),
+    ...(!kpiProblem && !interval?.noSensorData ? kpiNotesText.map((note) => `${note}.`) : []),
+  ]
   const kpiAction = (
     <span className="current-traffic-kpi-action">
       {kpiInterval}
-      {interval?.provisional && (
-        <>
-          {' (provisional)'}
-          <InfoTip label="About provisional values" align="end">
-            The newest interval may still change at the next update.
-          </InfoTip>
-        </>
-      )}
-      {!kpiProblem && !interval?.noSensorData && kpiNotesText.length > 0 && (
+      {interval?.provisional && ' (provisional)'}
+      {kpiTip.length > 0 && (
         <InfoTip label="About these KPIs" align="end">
-          {kpiNotesText.join('. ')}.
+          {kpiTip.map((point) => (
+            <span key={point} className="info-tip-point">
+              {point}
+            </span>
+          ))}
         </InfoTip>
       )}
     </span>

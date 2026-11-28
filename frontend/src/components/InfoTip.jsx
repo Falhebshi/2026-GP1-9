@@ -12,8 +12,10 @@ import './InfoTip.css'
 //   align     "start"  the text box lines up with the button's left edge
 //             "end"    with its right edge, for buttons near the right of the screen
 //
-// The text between <InfoTip> and </InfoTip> is the explanation. Warnings and errors the user
-// must see at once stay in a Notice; this is for explanations a user may want to read.
+// The text between <InfoTip> and </InfoTip> is the explanation; several separate points go in
+// <span className="info-tip-point"> each, which shows them as a short bulleted list. Warnings
+// and errors the user must see at once stay in a Notice; this is for explanations a user may
+// want to read.
 function InfoTip({ label = 'More information', open: mode = 'hover', align = 'start', children }) {
   const [shown, setShown] = useState(false)
   const [shift, setShift] = useState(0) // px the box moves sideways to stay inside the window

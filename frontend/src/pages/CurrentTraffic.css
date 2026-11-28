@@ -155,9 +155,54 @@
   min-width: 90px;
 }
 
-/* The KPI card's interval and its info button */
+/* The KPI card's interval and its info button, on one line next to the title */
 .current-traffic-kpi-action {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
+  white-space: nowrap;
+}
+
+.current-traffic-side .card-title {
+  white-space: nowrap;
+}
+
+/* On a desktop screen the page fits the window: the scene takes the height the timeline and the
+   time bar leave, and the left column scrolls inside itself when its cards are taller. The scene
+   never gets shorter than 320px; below that the page scrolls as before. */
+@media (min-width: 1001px) {
+  .current-traffic {
+    height: calc(100vh - var(--nav-height) - 2 * var(--page-padding));
+    min-height: 620px;
+  }
+
+  .current-traffic-layout {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .current-traffic-side {
+    overflow-y: auto;
+  }
+
+  .current-traffic-main,
+  .current-traffic-scene:not(:fullscreen),
+  .current-traffic-scene:not(:fullscreen) .current-traffic-stage,
+  .current-traffic-scene:not(:fullscreen) .current-traffic-viewport {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .current-traffic-scene:not(:fullscreen),
+  .current-traffic-scene:not(:fullscreen) .current-traffic-stage,
+  .current-traffic-scene:not(:fullscreen) .current-traffic-viewport {
+    flex: 1;
+  }
+
+  .current-traffic-scene:not(:fullscreen) .viewport-stage {
+    flex: 1;
+    min-height: 320px;
+    height: auto !important; /* the page's fixed height is only for narrow screens */
+  }
 }
