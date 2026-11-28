@@ -14,13 +14,13 @@
 
 .nav-brand {
   font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--color-text);
+  font-weight: 700;
+  color: var(--color-selected);
   text-decoration: none;
 }
 
 .nav-brand:hover {
-  color: var(--color-text);
+  color: var(--color-selected);
 }
 
 .nav-links {
@@ -55,6 +55,7 @@
 /* React Router adds the "active" class to the link of the current page */
 .nav-link.active {
   font-weight: 600;
+  color: var(--color-selected);
   border-bottom-color: var(--color-selected);
 }
 

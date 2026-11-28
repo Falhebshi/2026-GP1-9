@@ -55,10 +55,10 @@
   --color-danger-bg: #3d1619;
   --color-danger-text: #ff9090;
 
-  /* Chart backgrounds only (the series colors stay as in light mode): faint
-     grid lines, the shaded window under a line, the empty part of a bar.
-     Kept on purpose: --chart-1 (blue) is 2.9:1 on a dark card, just under
-     the 3:1 asked for lines and bars (WCAG 1.4.11). */
+  /* Charts: the deep indigo series would vanish on a dark card (1.3:1), so night mode
+     uses a lighter purple (5.4:1); the soft purple second series stays as it is. Faint grid
+     lines, the shaded window under a line and the empty part of a bar get dark colors. */
+  --chart-1: #8e83e0;
   --chart-grid: #262b38;
   --chart-fill: #212540;
   --chart-track: #262b38;
@@ -105,21 +105,23 @@
 
 /* Text in the "selected" indigo: right on white, too dark on a dark card
    (2.8:1). Night mode uses the link color instead (5.1:1). */
-:root[data-theme='dark'] :is(.network-map-hover-status-active, .approach-movement-more) {
+:root[data-theme='dark']
+  :is(.network-map-hover-status-active, .nav-brand, .nav-brand:hover, .nav-link.active,
+      .trends-tab-active) {
   color: var(--color-action);
 }
 
-/* Pale fills (LOS A-D, two recommendation phases) take --color-text, which
+/* Pale fills (LOS B-D, two recommendation phases) take --color-text, which
    is now light: keep their letters dark, as in light mode */
 :root[data-theme='dark']
-  :is(.los-badge-a, .los-badge-b, .los-badge-c, .los-badge-d,
-      .losd-los-a, .losd-los-b, .losd-los-c, .losd-los-d,
-      .recommendation-phase-3, .recommendation-phase-4) {
+  :is(.los-badge-b, .los-badge-c, .los-badge-d,
+      .losd-los-b, .losd-los-c, .losd-los-d,
+      .recommendation-phase-2, .recommendation-phase-3, .recommendation-phase-4) {
   color: var(--color-text-on-light);
 }
 
-/* LOS F is navy, the same as a dark card and an empty "no data" square
-   (1.1:1). Same color, plus a thin edge so it reads as filled. */
+/* LOS F is dark red, close to a dark card and an empty "no data" square.
+   Same color, plus a thin edge so it reads as filled. */
 :root[data-theme='dark'] :is(.los-badge-f, .losd-los-f, .heat-los-f) {
   box-shadow: inset 0 0 0 1px var(--outline-on-dark);
 }

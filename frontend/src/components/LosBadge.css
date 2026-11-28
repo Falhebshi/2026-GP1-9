@@ -11,7 +11,7 @@
 }
 
 /* Light grades get dark text, dark grades get white text */
-.los-badge-a { background: var(--los-a); color: var(--color-text); }
+.los-badge-a { background: var(--los-a); color: var(--color-text-on-dark); }
 .los-badge-b { background: var(--los-b); color: var(--color-text); }
 .los-badge-c { background: var(--los-c); color: var(--color-text); }
 .los-badge-d { background: var(--los-d); color: var(--color-text); }

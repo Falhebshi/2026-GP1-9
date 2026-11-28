@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Card from '../../components/Card'
+import InfoTip from '../../components/InfoTip'
 import EmptyState from '../../components/EmptyState'
 import { GRADES } from '../../components/LosBadge'
 import { displayUnit, formatKpiValue, hasValue } from '../../utils/kpi'
@@ -20,9 +21,16 @@ function CongestionHeatmap({ cells }) {
 
   const byKey = new Map(cells.map((c) => [`${c.day}-${c.hour}`, c]))
 
+  // The title, with what the colors show behind an info button next to it
+  const title = (
+    <span className="heat-title">
+      Congestion by hour and day
+      <InfoTip label="What the colors show">Average control delay as LOS, per hour.</InfoTip>
+    </span>
+  )
+
   const legend = (
     <div className="heat-legend" aria-label="Level of service, A to F">
-      <span className="heat-legend-text">Average control delay as LOS, per hour</span>
       {GRADES.map((grade) => (
         <span key={grade} className="heat-legend-item">
           <span className={`heat-swatch heat-los-${grade.toLowerCase()}`} />
@@ -34,14 +42,14 @@ function CongestionHeatmap({ cells }) {
 
   if (!cells.some((c) => hasValue(c.result))) {
     return (
-      <Card title="Congestion by hour and day" action={legend}>
+      <Card title={title} action={legend}>
         <EmptyState>No performance data available for this period.</EmptyState>
       </Card>
     )
   }
 
   return (
-    <Card title="Congestion by hour and day" action={legend}>
+    <Card title={title} action={legend}>
       <div className="heat" onPointerLeave={() => setHovered(null)}>
         {/* Hour labels across the top: every 3 hours */}
         <span />
@@ -63,8 +71,9 @@ function CongestionHeatmap({ cells }) {
         ))}
       </div>
 
+      {/* The hovered square's grade and delay; the line keeps its height when empty */}
       <p className="heat-readout" aria-live="polite">
-        {hovered ? describe(hovered) : 'Hover a square to see its level of service and delay.'}
+        {hovered ? describe(hovered) : null}
       </p>
     </Card>
   )

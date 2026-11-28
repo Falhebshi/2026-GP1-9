@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Card from '../../components/Card'
 import EmptyState from '../../components/EmptyState'
+import InfoTip from '../../components/InfoTip'
 import { GRADES } from '../../components/LosBadge'
 import useElementWidth from '../../hooks/useElementWidth'
 import './LosDistribution.css'
@@ -33,7 +34,12 @@ function LosDistribution({ rows }) {
     <Card title="Level of service distribution" className="losd-card">
       <div className="losd-head">
         <span>Share of 15-minute intervals</span>
-        <span>At E or F</span>
+        <span className="losd-poor-head">
+          At E or F
+          <InfoTip label="About this column" align="end">
+            Share of intervals at LOS E or F (heavy congestion).
+          </InfoTip>
+        </span>
       </div>
 
       <ul className="losd-rows" onPointerLeave={() => setHovered(null)}>

@@ -20,9 +20,22 @@
   max-width: 340px;
 }
 
+.network-overview-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
 .network-overview-title h1 {
   margin: 0;
   font-size: var(--text-lg);
+}
+
+/* the other way to choose, under the list */
+.network-overview-hint {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 .network-overview-picker .card-title {

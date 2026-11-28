@@ -61,6 +61,11 @@ import './TrafficScene3D.css'
 //                    swaps it in once the cars at the time shown are loaded: the roads, buildings,
 //                    trees and camera stay, with no loading screen. Without it, a new scenario
 //                    loads the whole scene again (optional)
+//   paused           true holds the looping scene still at its time; a jump (jumpTo) still moves
+//                    it, so the page can step through a paused moment (optional)
+//   stopAtEnd        true stops the looping scene at the end of the run and calls onEnd, instead
+//                    of starting the run again (optional)
+//   onEnd            called when a scene with stopAtEnd reaches the end of the run
 //   onReady          called with { duration } once the data is loaded
 //   onError          called with a message if loading fails
 // Cars and signal indications come from the SUMO run (run.json, its 15-minute vehicle files and
@@ -158,6 +163,9 @@ function TrafficScene3D({
   startAt,
   clock,
   runVersion,
+  paused = false,
+  stopAtEnd = false,
+  onEnd,
   hiddenRanges,
   onReady,
   onError,
@@ -292,6 +300,13 @@ function TrafficScene3D({
   callbacksRef.current = { onReady, onError, onTimeChange }
   const clockRef = useRef(clock)
   clockRef.current = clock
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
+  const stopAtEndRef = useRef(stopAtEnd)
+  stopAtEndRef.current = stopAtEnd
+  const endedRef = useRef(false) // onEnd already called for this stop
+  const onEndRef = useRef(onEnd)
+  onEndRef.current = onEnd
 
   const base = (mode) => ({
     longitude: center[0],
@@ -502,13 +517,28 @@ function TrafficScene3D({
             // the run can be swapped while it plays (runVersion), so its period is read each frame
             const start = startRef.current,
               end = endRef.current
+            // paused (and not following a clock): keep the time, but keep drawing (the selected
+            // approach pulses)
+            if (pausedRef.current && !clockRef.current) {
+              redraw(false)
+              raf = requestAnimationFrame(tick)
+              return
+            }
             if (holdRef.current) {
               raf = requestAnimationFrame(tick)
               return
             }
             let nt = tRef.current + dt
             if (clockRef.current) nt = Math.min(start + clockRef.current(), end)
-            else if (nt > end) nt = start
+            else if (nt > end) {
+              if (stopAtEndRef.current) {
+                nt = end
+                if (!endedRef.current) {
+                  endedRef.current = true
+                  onEndRef.current?.()
+                }
+              } else nt = start
+            } else endedRef.current = false
             // tell the page once a second, when the whole second changes
             if (Math.floor(nt - start) !== Math.floor(tRef.current - start)) {
               callbacksRef.current.onTimeChange?.(Math.floor(nt - start))
@@ -641,6 +671,7 @@ function TrafficScene3D({
   useEffect(() => {
     if (!jumpTo || !sceneRef.current) return
     tRef.current = startRef.current + jumpTo.time
+    endedRef.current = false // a jump leaves the end, so the next end calls onEnd again
     redraw(false)
   }, [jumpTo]) // eslint-disable-line react-hooks/exhaustive-deps
 

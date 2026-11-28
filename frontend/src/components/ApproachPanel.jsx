@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import InfoTip from './InfoTip'
 import LosBadge from './LosBadge'
 import { displayUnit, formatKpiValue, hasValue, isOverLimit, OVER_LIMIT } from '../utils/kpi'
 import './ApproachPanel.css'
@@ -6,10 +7,11 @@ import './ApproachPanel.css'
 // The approaches of the intersection, in two parts:
 //   ApproachChips     one small chip per approach with its LOS and delay, along the bottom of the
 //                     3D scene. Clicking a chip (or the approach's lanes) selects it.
-//   ApproachDetails   the selected approach, shown next to the scene (not on it, so it never
-//                     covers the junction): a one-line summary of the whole approach, then one
-//                     row per movement with a direction arrow and three numbers. "More" shows
-//                     the movement's other KPIs.
+//   ApproachDetails   the selected approach, shown in the side column in place of the
+//                     intersection's KPIs (not on the scene, so it never covers the junction):
+//                     four numbers for the whole approach, then one card per movement with a
+//                     direction arrow, its LOS, its delay and queue. Opening a movement's card
+//                     shows all its KPIs; the first one is open to begin with.
 //
 //   approaches   list of { approach_id, arm, road, kpis, movements: [{ movement_id, label, kpis }] }
 //                where kpis maps a KPI name to its KpiResult, e.g. kpis.control_delay
@@ -22,13 +24,14 @@ import './ApproachPanel.css'
 const SUMMARY = [
   { kpi: 'control_delay', label: 'Delay' },
   { kpi: 'queue_length', label: 'Queue' },
-  { kpi: 'volume_to_capacity_ratio', label: 'Demand / capacity' },
+  { kpi: 'volume_to_capacity_ratio', label: 'D / C', title: 'Demand / capacity' },
   { kpi: 'throughput', label: 'Flow' },
 ]
 
-// the other KPIs of a movement, under "More". Queue storage ratio is not shown: the backend
-// leaves it out of kpis.json (kpi_engine.md, section 6.5).
+// a movement's KPIs when its card is open, under its control delay. Queue storage ratio is not
+// shown: the backend leaves it out of kpis.json (kpi_engine.md, section 6.5).
 const DETAILS = [
+  { kpi: 'queue_length', label: 'Queue' },
   { kpi: 'volume_to_capacity_ratio', label: 'Demand / capacity' },
   { kpi: 'throughput', label: 'Flow' },
   { kpi: 'capacity', label: 'Capacity' },
@@ -91,7 +94,7 @@ export function ApproachDetails({ approach, onClose }) {
 
       <dl className="approach-summary">
         {SUMMARY.map((s) => (
-          <div key={s.kpi}>
+          <div key={s.kpi} title={s.title}>
             <dt>{s.label}</dt>
             <dd>
               <KpiValue result={approach.kpis[s.kpi]} withUnit />
@@ -100,59 +103,82 @@ export function ApproachDetails({ approach, onClose }) {
         ))}
       </dl>
 
-      <h3 className="approach-movements-title">By movement</h3>
+      <h3 className="approach-movements-title">
+        By movement
+        {shared && (
+          <InfoTip label="About the shared lane" align="end">
+            {shared}
+          </InfoTip>
+        )}
+      </h3>
       <ul className="approach-movements">
-        {approach.movements.map((m) => (
-          <MovementItem key={m.movement_id} movement={m} />
+        {approach.movements.map((m, i) => (
+          <MovementItem key={m.movement_id} movement={m} startOpen={i === 0} />
         ))}
       </ul>
-
-      {shared && <p className="approach-note">{shared}</p>}
     </section>
   )
 }
 
-// One movement: arrow, name, LOS, delay and queue; "More" shows the rest
-function MovementItem({ movement }) {
-  const [expanded, setExpanded] = useState(false)
+// One movement as a card: arrow, name and LOS, with its delay and queue. Opening it shows its
+// control delay large and its other KPIs under it.
+function MovementItem({ movement, startOpen }) {
+  const [expanded, setExpanded] = useState(startOpen)
   const { arrow, name } = direction(movement.label)
+  const detailsId = `movement-${movement.movement_id}`
 
   return (
-    <li className="approach-movement">
+    <li className={`approach-movement${expanded ? ' approach-movement-open' : ''}`}>
       <div className="approach-movement-main">
         <span className="approach-movement-arrow" aria-hidden="true">
           {arrow}
         </span>
         <span className="approach-movement-name">{name}</span>
         <KpiValue result={movement.kpis.level_of_service} />
-      </div>
-      <div className="approach-movement-numbers">
-        <span>
-          Delay <KpiValue result={movement.kpis.control_delay} withUnit />
-        </span>
-        <span>
-          Queue <KpiValue result={movement.kpis.queue_length} withUnit />
-        </span>
         <button
           type="button"
-          className="approach-movement-more"
+          className="approach-movement-toggle"
           aria-expanded={expanded}
+          aria-controls={detailsId}
+          aria-label={`${expanded ? 'Hide' : 'Show'} all KPIs of ${name}`}
           onClick={() => setExpanded((e) => !e)}
         >
-          {expanded ? 'Less' : 'More'}
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
         </button>
       </div>
+
+      {!expanded && (
+        <div className="approach-movement-numbers">
+          <span>
+            Delay <KpiValue result={movement.kpis.control_delay} withUnit />
+          </span>
+          <span>
+            Queue <KpiValue result={movement.kpis.queue_length} withUnit />
+          </span>
+        </div>
+      )}
+
       {expanded && (
-        <dl className="approach-movement-details">
-          {DETAILS.map((d) => (
-            <div key={d.kpi}>
-              <dt>{d.label}</dt>
-              <dd>
-                <KpiValue result={movement.kpis[d.kpi]} withUnit />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div id={detailsId} className="approach-movement-details">
+          <div className="approach-movement-delay">
+            <span>Control delay</span>
+            <strong>
+              <KpiValue result={movement.kpis.control_delay} withUnit />
+            </strong>
+          </div>
+          <dl className="approach-movement-grid">
+            {DETAILS.map((d) => (
+              <div key={d.kpi}>
+                <dt>{d.label}</dt>
+                <dd>
+                  <KpiValue result={movement.kpis[d.kpi]} withUnit />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
     </li>
   )
@@ -170,7 +196,8 @@ function ApproachPanel({ approaches, openId, onToggle }) {
   )
 }
 
-// One sentence under the movements when they share a lane and so show the same queue,
+// One sentence for the info button next to "By movement" when movements share a lane and so
+// show the same queue,
 // e.g. "Straight on and Left turn share a lane, so they show the same queue."
 function sharedLaneNote(movements) {
   const names = movements

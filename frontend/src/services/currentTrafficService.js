@@ -57,7 +57,7 @@
 //     }],
 //     timeline: [{ time, value, level }],      one bar per interval, from the intersection's delay;
 //                                        no bar (no value) for an interval without detector data
-//     alerts: [{ id, title, details: [{ label, value }], detailsTo }],
+//     alerts: [{ id, title, details: [{ label, value }] }]  (no detail page until Release 2)
 //   }
 //
 // Every KPI value is a KpiResult, exactly as the backend's KPI engine sends it (data_models.md,
@@ -65,6 +65,7 @@
 
 import { notApplicableResult, sampleResult } from './sampleKpiResults'
 import { roadName } from '../utils/roadName'
+import { getSignalProgram, signalTypeLabel } from './signalProgramService'
 
 // The study intersection. Its name, area and centre come from its record in
 // public/data/intersections.json, the same file the backend loads (backend/outputs/intersections.py).
@@ -116,7 +117,6 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'North approach' },
       { label: 'Detected', value: '2 min ago' },
     ],
-    detailsTo: '/alerts/1',
   },
   {
     id: 'a2',
@@ -125,7 +125,6 @@ const SAMPLE_ALERTS = [
       { label: 'Location', value: 'East approach' },
       { label: 'Detected', value: '7 min ago' },
     ],
-    detailsTo: '/alerts/2',
   },
   {
     id: 'a3',
@@ -237,7 +236,8 @@ export async function getIntersection() {
     name: roadName(record.name_en),
     area: record.area_label,
     approaches: 4,
-    signalType: 'Fixed-time (Webster), 225 s cycle', // same signal program as in SUMO
+    // Read from the plan SUMO runs (signalProgramService.js); "Unavailable" if it cannot be loaded
+    signalType: signalTypeLabel(await getSignalProgram().catch(() => null)),
   }
 }
 

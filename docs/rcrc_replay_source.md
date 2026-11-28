@@ -50,12 +50,14 @@ uvicorn traffic_source.rcrc_replay.server:app --port 8002
 
 The load command prints the report period and, for each detector, how many intervals are missing and the longest gap. Loading the same file again changes nothing. Loading a different report replaces the stored one.
 
-A baseline simulation can then pull from it:
+A baseline simulation pulls from it by default:
 
 ```bash
-python simulation/scripts/run_baseline.py --source rcrc \
+python simulation/scripts/run_baseline.py \
   --analysis-start 2026-08-10T08:00+03:00 --analysis-end 2026-08-10T09:00+03:00
 ```
+
+The baseline runner stops before any work when the window is outside the report, naming the report's dates, and when the window is inside the report but the replay clock has not released it yet, naming the clock.
 
 ---
 
@@ -108,11 +110,12 @@ JAADAH_REPLAY_OFFSET_WEEKS=0 python -m uvicorn traffic_source.rcrc_replay.server
   "site_id": "1444",
   "latest_available_timestamp": "2026-08-27T08:15:00+03:00",
   "replay_time": "2026-08-27T08:21:40+03:00",
+  "data_start": "2026-07-12T23:45:00+03:00",
   "data_end": "2026-10-13T00:00:00+03:00"
 }
 ```
 
-`latest_available_timestamp` is the end of the latest interval released, and `replay_time` the data time shown as "now". An interval ending by then without rows is **missing**, not still to come; this is what lets Jaadah fill the newest interval during an outage. `status` is `no_report` and the timestamp `null` when no report is loaded.
+`latest_available_timestamp` is the end of the latest interval released, and `replay_time` the data time shown as "now". An interval ending by then without rows is **missing**, not still to come; this is what lets Jaadah fill the newest interval during an outage. `data_start` and `data_end` are the start of the report's first interval and the end of its last; they do not move with the clock, so a window outside them will never be delivered. `status` is `no_report`, and the timestamp and both dates are `null`, when no report is loaded.
 
 ### `GET /detectors`
 

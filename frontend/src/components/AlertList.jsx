@@ -4,6 +4,7 @@ import Badge from './Badge'
 import Card from './Card'
 import EmptyState from './EmptyState'
 import InfoList from './InfoList'
+import InfoTip from './InfoTip'
 import './AlertList.css'
 
 // A card listing alerts: Active Alerts, Forecast Alerts or Recurring
@@ -20,11 +21,13 @@ import './AlertList.css'
 //                                     present, a "View details" link is shown.
 //   emptyMessage   text shown when the list is empty
 //   error          text shown instead of the list when alerts failed to load
+//   info           a short explanation behind an info button next to the title (optional)
 function AlertList({
   title,
   alerts = [],
   emptyMessage = 'No alerts are currently available.',
   error,
+  info,
   className = '',
 }) {
   // Which alert is open. Only one at a time; null means none.
@@ -37,7 +40,22 @@ function AlertList({
     ) : null
 
   return (
-    <Card title={title} action={countBadge} className={className}>
+    <Card
+      title={title}
+      action={
+        info || countBadge ? (
+          <span className="alert-list-action">
+            {info && (
+              <InfoTip label={`About ${title.toLowerCase()}`} align="end">
+                {info}
+              </InfoTip>
+            )}
+            {countBadge}
+          </span>
+        ) : null
+      }
+      className={className}
+    >
       {error && (
         <EmptyState variant="error" title="Alerts unavailable">
           {error}

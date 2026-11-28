@@ -130,3 +130,9 @@
     transition: none;
   }
 }
+/* The info button and the count next to the title */
+.alert-list-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}

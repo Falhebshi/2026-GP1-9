@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import Badge from '../components/Badge'
 import Breadcrumbs from '../components/Breadcrumbs'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import InfoList from '../components/InfoList'
+import InfoTip from '../components/InfoTip'
 import KpiTile from '../components/KpiTile'
 import LosBadge from '../components/LosBadge'
 import Notice from '../components/Notice'
@@ -142,7 +144,19 @@ function RecommendationDetails() {
           { label: option?.title ?? 'Recommendation details' },
         ]}
       />
-      <PageHeader title={option?.title ?? 'Recommendation details'} />
+      <PageHeader
+        title={option?.title ?? 'Recommendation details'}
+        actions={
+          data?.isSample && (
+            <span className="recommendation-sample">
+              <Badge variant="warning">Sample data</Badge>
+              <InfoTip label="About the sample data" align="end">
+                Sample data for layout only. These are not real simulation results.
+              </InfoTip>
+            </span>
+          )
+        }
+      />
     </>
   )
 
@@ -178,11 +192,6 @@ function RecommendationDetails() {
         <OptionSwitcher options={data.options} current={option.recommendation_id} problemId={problemId} />
       )}
 
-      {data.isSample && (
-        <Notice variant="warning" className="recommendation-notice">
-          Sample data for layout only. These are not real simulation results.
-        </Notice>
-      )}
 
       {/* ---- PBI 29: the details ---- */}
       <section className="recommendation-about" aria-labelledby="recommendation-about-title">
@@ -445,6 +454,10 @@ function ComparisonTable({ data }) {
               <tr>
                 <th scope="col">
                   <span className="recommendation-visually-hidden">KPI</span>
+                  <InfoTip label="About the ± values">
+                    ± is the spread across the {comparison.replications} runs of each scenario (for a
+                    change, across the {comparison.replications} matched pairs).
+                  </InfoTip>
                 </th>
                 <th scope="col" className="recommendation-col-base">
                   <span className="recommendation-col-head">
@@ -492,7 +505,11 @@ function ComparisonTable({ data }) {
                           {unit && <span className="recommendation-unit"> ({unit})</span>}
                           {before?.method === 'hcm' && <MethodTag method="hcm" />}
                         </span>
-                        {row.hint && <span className="recommendation-row-hint">{row.hint}</span>}
+                        {row.hint && (
+                          <InfoTip label={`About ${(row.label ?? KPI_DEFINITIONS[row.kpi].label).toLowerCase()}`}>
+                            {row.hint}
+                          </InfoTip>
+                        )}
                       </th>
                       <td className="recommendation-col-base">
                         <KpiValue result={before} />
@@ -509,10 +526,6 @@ function ComparisonTable({ data }) {
           </table>
         </div>
       </Card>
-      <p className="recommendation-table-note">
-        ± is the spread across the {comparison.replications} runs of each scenario (for a change, across the{' '}
-        {comparison.replications} matched pairs).
-      </p>
     </>
   )
 }

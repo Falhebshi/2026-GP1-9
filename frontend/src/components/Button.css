@@ -24,14 +24,14 @@
   font-size: var(--text-xs);
 }
 
-/* Primary: filled, for the main action on a page */
+/* Primary: filled in Jaadah indigo, for the main action on a page */
 .btn-primary {
-  background: var(--color-action);
+  background: var(--color-selected);
   color: var(--color-text-on-dark);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-action-hover);
+  background: color-mix(in srgb, var(--color-selected) 85%, black);
 }
 
 /* Danger: filled red, for an action that cannot be undone (e.g. delete) */

@@ -12,6 +12,13 @@
   color: var(--color-text-muted);
 }
 
+/* "At E or F" and its info button */
+.losd-poor-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .losd-rows {
   display: grid;
   gap: 12px;
@@ -60,7 +67,7 @@
 }
 
 /* Level of service colors from the theme; white letters on the dark ones */
-.losd-los-a { background: var(--los-a); }
+.losd-los-a { background: var(--los-a); color: var(--color-text-on-dark); }
 .losd-los-b { background: var(--los-b); }
 .losd-los-c { background: var(--los-c); }
 .losd-los-d { background: var(--los-d); }

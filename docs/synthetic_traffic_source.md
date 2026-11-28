@@ -1,10 +1,12 @@
 # Synthetic Traffic Source
 
+> **Status:** Jaadah's main traffic source is the [RCRC traffic feed](rcrc_replay_source.md) for the study intersection. The synthetic source is for development and testing: the baseline and live runners use it only with `--source synthetic`. The historical analysis (`simulation/scripts/run_history.py`) still reads it until that script gains an RCRC option.
+
 ## Overview
 
 Jaadah includes a standalone synthetic traffic-data source that emulates the external traffic observations expected from a real traffic-data provider.
 
-The purpose of this component is to let the rest of the system be developed and tested before continuous real-world traffic data is available. It produces realistic detector-level traffic volumes, stores them locally, and exposes them through an HTTP API.
+The purpose of this component is to let the rest of the system be developed and tested without the study intersection's RCRC report. It produces realistic detector-level traffic volumes, stores them locally, and exposes them through an HTTP API.
 
 The synthetic source is intentionally implemented outside the SUMO simulation package:
 

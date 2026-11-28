@@ -13,7 +13,7 @@ The moon / sun button at the end of the nav bar switches the whole app between l
 ## Rules for new code
 
 1. **Use the roles from `frontend/src/index.css`, never a hex code.** Anything built from `var(--color-...)` gets night mode for free.
-2. **Don't pair a pale fill with `--color-text`.** `--color-text` is light in night mode. For dark letters on a pale fill, use `--color-text-on-light` in `theme-dark.css` (see the LOS A–D rule there).
+2. **Don't pair a pale fill with `--color-text`.** `--color-text` is light in night mode. For dark letters on a pale fill, use `--color-text-on-light` in `theme-dark.css` (see the LOS B–D rule there).
 3. **Use `--color-selected` for fills, `--color-action` for colored text.** In light mode they look alike; in night mode the selected indigo is too dark to read as text.
 4. **JavaScript that reads theme colors once** (like the MapLibre map with `themeColor()`) should listen for the switch and read them again:
    ```js
@@ -24,7 +24,7 @@ The moon / sun button at the end of the nav bar switches the whole app between l
 
 ## Kept the same in both modes
 
-Chart series, LOS A–F, congestion levels and the heatmap scale keep their light-mode colors, so a color always means the same thing. Night mode only changes their backgrounds (grid lines, chart tracks, shaded windows) and adds a thin edge to LOS F, which is as dark as the page.
+LOS A–F, congestion levels, the heatmap scale and the second chart series keep their light-mode colors, so a color always means the same thing. Night mode only changes their backgrounds (grid lines, chart tracks, shaded windows) and adds a thin edge to LOS F, which is as dark as the page.
 
 The 3D scene keeps its colors too, with one exception: an approach without an LOS grade is highlighted in `--color-selected` (`frontend/src/simulation_3d/selection.js`), so that highlight follows night mode like every other "selected" mark in the app.
 
@@ -38,6 +38,6 @@ The 3D scene keeps its colors too, with one exception: an approach without an LO
 All text in night mode passes WCAG AA (4.5:1). Marks that are not text (dots, lines, bar fills) need 3:1 (WCAG 1.4.11):
 
 - The alert-type dots measure about 5:1 on the page and 4.6–4.7:1 where the same colors appear on a card.
-- One exception, accepted on purpose: the main chart color (`--chart-1`, blue `#2864a8`) is 2.9:1 against a dark card, just under 3:1. It is kept so charts look the same in both modes; LOS E uses the same blue and has a white letter on it.
+- The main chart color (`--chart-1`) is deep indigo `#2e2365` in light mode and a lighter purple `#8e83e0` in night mode (5.4:1 on a dark card), since the indigo would almost vanish there. The second series (`--chart-2`, soft purple `#8f84cc`) is the same in both modes: 3.3:1 on white and 5.3:1 on a dark card.
 
 When adding a color to `theme-dark.css`, check it against `--color-surface` (`#171a23`) and, for anything placed directly on the page, `--color-bg` (`#0f1117`), for example with https://webaim.org/resources/contrastchecker/.

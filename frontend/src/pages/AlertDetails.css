@@ -1,7 +1,10 @@
 /* Alert Details page. Colors and sizes come from index.css. */
 
-.alert-details-notice {
-  margin-bottom: var(--space-lg);
+/* The "Sample data" badge and its info button, in the header */
+.alert-details-sample {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
 }
 
 .alert-details-muted {
@@ -738,13 +741,6 @@
 
 .alert-details-row-label {
   white-space: nowrap;
-}
-
-.alert-details-row-hint {
-  display: block;
-  font-size: var(--text-xs);
-  font-weight: 400;
-  color: var(--color-text-muted);
 }
 
 .alert-details-table-value {

@@ -258,3 +258,7 @@
   gap: var(--space-sm);
   font-size: var(--text-sm);
 }
+/* Live and Historical are the same width, so switching between them does not move the text */
+.timeline-readout .badge {
+  min-width: 90px;
+}
