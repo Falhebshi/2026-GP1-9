@@ -37,7 +37,7 @@ shifted demand is kept in its own folder, and the run without a shift
 stays the official result.
 
 The replay source must release the requested days; start it with
-JAADAH_REPLAY_OFFSET_WEEKS=0 (docs/rcrc_replay_source.md).
+JAADAH_REPLAY_OFFSET_WEEKS=0 (docs/rcrc_traffic_feed.md).
 
 Example:
     python simulation/scripts/run_calibration.py --days 2026-08-30..2026-09-12

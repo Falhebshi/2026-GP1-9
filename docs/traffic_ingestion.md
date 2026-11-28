@@ -655,7 +655,7 @@ IngestionResult
 
 ### A Live Feed, Replayed
 
-Jaadah is a digital twin: traffic data arrives continuously and is simulated as it comes in. RCRC delivers reports as files, so the RCRC data is played back by the **RCRC replay source** (`traffic_source/rcrc_replay/`, see [RCRC replay source](rcrc_replay_source.md)), a separate service with the same kind of API as the synthetic source. It releases one 15-minute interval at a time as its clock advances. Jaadah pulls from it exactly as it would from a live RCRC feed:
+Jaadah is a digital twin: traffic data arrives continuously and is simulated as it comes in. RCRC delivers reports as files, so the RCRC data is played back by the **RCRC replay source** (`traffic_source/rcrc_replay/`, see [RCRC replay source](rcrc_traffic_feed.md)), a separate service with the same kind of API as the synthetic source. It releases one 15-minute interval at a time as its clock advances. Jaadah pulls from it exactly as it would from a live RCRC feed:
 
 ```text
 Private RCRC report (CSV)

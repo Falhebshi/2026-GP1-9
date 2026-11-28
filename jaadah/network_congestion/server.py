@@ -9,7 +9,7 @@ through the Vite proxy at /api/network (frontend/vite.config.js).
 
 The speeds come from the RCRC counts at the study intersection
 (observed.py), so the RCRC replay must be running first (port 8002,
-docs/rcrc_replay_source.md). Run it next to the website:
+docs/rcrc_traffic_feed.md). Run it next to the website:
 
     uvicorn jaadah.network_congestion.server:app --port 8001
 

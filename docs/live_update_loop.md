@@ -15,7 +15,7 @@ simulation/live/publish.py     KPIs of the last two intervals, their playback, r
 frontend/public/data/INT_001/live/    read by the Current Traffic page
 ```
 
-Commands, from the repository root, with the RCRC replay source running (see [RCRC replay source](rcrc_replay_source.md)):
+Commands, from the repository root, with the RCRC replay source running (see [RCRC replay source](rcrc_traffic_feed.md)):
 
 ```bash
 python simulation/scripts/run_live.py --source rcrc          # runs until Ctrl+C

@@ -1,6 +1,6 @@
 # Synthetic Traffic Source
 
-> **Status:** Jaadah's main traffic source is the [RCRC traffic feed](rcrc_replay_source.md) for the study intersection. The synthetic source is for development and testing: the baseline and live runners use it only with `--source synthetic`. The historical analysis (`simulation/scripts/run_history.py`) still reads it until that script gains an RCRC option.
+> **Status:** Jaadah's main traffic source is the [RCRC traffic feed](rcrc_traffic_feed.md) for the study intersection. The synthetic source is for development and testing: the baseline and live runners use it only with `--source synthetic`. The historical analysis (`simulation/scripts/run_history.py`) still reads it until that script gains an RCRC option.
 
 ## Overview
 

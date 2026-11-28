@@ -34,7 +34,7 @@ The timeline bar of each 15 minutes is the speed of the slowest 20% of the road 
 From the repo root, each in its own terminal:
 
 ```bash
-uvicorn traffic_source.rcrc_replay.server:app --port 8002  # RCRC replay, port 8002 (docs/rcrc_replay_source.md)
+uvicorn traffic_source.rcrc_replay.server:app --port 8002  # RCRC replay, port 8002 (docs/rcrc_traffic_feed.md)
 uvicorn backend.accounts.server:app --port 8003           # accounts, for logging in (docs/accounts.md)
 uvicorn jaadah.network_congestion.server:app --port 8001  # network map
 cd frontend && npm run dev                                # website, port 5173

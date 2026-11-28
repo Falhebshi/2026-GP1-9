@@ -188,7 +188,7 @@ python simulation/scripts/run_baseline.py --analysis-start 2026-08-10T08:00+03:0
 
 The RCRC report covers 13 July to 13 October 2026, and the RCRC traffic feed
 releases it on a replay clock 13 weeks behind real time
-([RCRC traffic feed](rcrc_replay_source.md#the-replay-clock)).
+([RCRC traffic feed](rcrc_traffic_feed.md#the-replay-clock)).
 For a window the clock has not reached yet, start the feed with
 `JAADAH_REPLAY_OFFSET_WEEKS=0`. For the synthetic source, start
 `uvicorn traffic_source.synthetic.server:app` instead and add `--source synthetic`.
@@ -196,7 +196,7 @@ For a window the clock has not reached yet, start the feed with
 | Parameter | Meaning |
 | --- | --- |
 | `--analysis-start`, `--analysis-end` | Required. Analysis period in Riyadh time (`+03:00`). |
-| `--source` | `rcrc` (default, the [RCRC traffic feed](rcrc_replay_source.md)) or `synthetic`. |
+| `--source` | `rcrc` (default, the [RCRC traffic feed](rcrc_traffic_feed.md)) or `synthetic`. |
 | `--source-url` | Default `http://127.0.0.1:8000` (synthetic) or `http://127.0.0.1:8002` (rcrc; 8001 is the network map server). |
 | `--history-days` | Days before the run window ingested to estimate missing counts. Default 0 (synthetic) or 35 (rcrc). |
 | `--seed`, `--step-length` | Default 42 and 0.4 s. |
@@ -250,7 +250,7 @@ Known limits:
   synthetic source fills only the 7 days before it; an older window is reported
   in step 3 as missing observations.
 - The RCRC traffic feed needs the private report loaded (see
-  `rcrc_replay_source.md`); the synthetic source needs the private profile files
+  `rcrc_traffic_feed.md`); the synthetic source needs the private profile files
   in `../jaadah-private-data/processed/rcrc_sample/` (see
   `synthetic_traffic_source.md`).
 - `raw/fcd.xml` is large: about 1.1 GB for a 5400 s run with 100 vehicles per

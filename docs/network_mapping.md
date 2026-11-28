@@ -544,5 +544,5 @@ python -m pytest tests/test_mapping_validator.py
 
 The Python suite includes static network checks and mocked runner tests.
 Live SUMO movement tests run separately; see
-[Simulation integration](simulation_integration.md#2-movement-smoke-test)
+[Simulation integration](simulation_integration.md#verification)
 for the command and output location.

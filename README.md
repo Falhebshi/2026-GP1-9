@@ -167,7 +167,7 @@ The full suite runs several SUMO simulations and takes a while; to test one area
 
 ## Documentation
 
-How each part works is documented in [`docs/`](docs/).
+How each part works is documented in [`docs/`](docs/README.md), which lists every document and where to start.
 
 ## Team
 

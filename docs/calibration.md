@@ -93,7 +93,7 @@ The model is accepted for use by Jaadah's simulation and intervention-evaluation
 | `jaadah/calibration/detectors.py` | Selects the source's detectors at a site from `network_mappings.json` and writes a SUMO additional file with one induction loop (E1) per detector, at the mapped `sumo_lane_id` and `sumo_position_m`, period 900 s. A detector without a position is an error, not a skip. |
 | `jaadah/calibration/e1_output.py` | Reads the loops' output into `DetectorInterval` records: detector, interval end in Riyadh time, vehicle count (`nVehContrib`) and occupancy (%). |
 | `jaadah/calibration/geh.py` | Sums four 15-minute counts into an hourly count, compares observed with the mean of the seeds' simulated counts, and computes GEH, the pass share and whether the target is met. |
-| `traffic_source/rcrc_replay/config.py` | `ReplayConfig.from_environment()`: the replay offset can be set with `JAADAH_REPLAY_OFFSET_WEEKS` (see `rcrc_replay_source.md`). |
+| `traffic_source/rcrc_replay/config.py` | `ReplayConfig.from_environment()`: the replay offset can be set with `JAADAH_REPLAY_OFFSET_WEEKS` (see `rcrc_traffic_feed.md`). |
 | `jaadah/calibration/peak_hours.py` | The day type of a date and its two test hours, in Riyadh time. |
 | `jaadah/calibration/vehicle_type.py` | Checks driver settings (only the attributes in `TUNABLE_VEHICLE_ATTRIBUTES`) and writes a copy of a route file with them set on its vehicle type. |
 | `simulation/scripts/run_calibration.py` | Runs every test hour of a range of days, for each seed, scores the model, and marks each detector-hour within or over its lane group's capacity using the KPI engine (`backend/analytics/kpi/capacity.py`). The capacity part lives in the script because `jaadah/` must not import from `backend/`. |
