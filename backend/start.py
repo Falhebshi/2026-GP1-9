@@ -91,6 +91,8 @@ LIVE_PACKAGES = ("sumolib", "shapely")
 ADDRESS_IN_USE = {errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", errno.EADDRINUSE)}
 
 POLL_S = 0.5
+# How often a feed the launcher did not start is checked while running
+FEED_CHECK_S = 15.0
 STOP_WAIT_S = 10.0
 LABEL_WIDTH = 8
 
@@ -202,7 +204,10 @@ def find_sumo(environ: dict[str, str] | None = None) -> str | None:
 
 
 def running_feed(url: str = f"http://127.0.0.1:{RCRC_PORT}/health") -> dict | None:
-    """The /health answer of an RCRC traffic feed already running on its port, or None."""
+    """
+    The /health answer of an RCRC traffic feed already running on its
+    port (with or without its report), or None.
+    """
 
     try:
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
@@ -212,7 +217,7 @@ def running_feed(url: str = f"http://127.0.0.1:{RCRC_PORT}/health") -> dict | No
     except (urllib.error.URLError, OSError, ValueError):
         return None
 
-    return health if health.get("source") == "rcrc" and health.get("status") == "ok" else None
+    return health if health.get("source") == "rcrc" else None
 
 
 def feed_offset_weeks(health: dict, now: datetime | None = None) -> int | None:
@@ -245,8 +250,12 @@ def check_setup(
     """Check everything the services need, and collect every problem at once."""
 
     check = SetupCheck()
+    if with_live:
+        check.sumo_bin = find_sumo() if sumo == "auto" else sumo
+    # The live loop's packages only matter when it will run (with SUMO)
+    live_runs = with_live and check.sumo_bin is not None
     if packages is None:
-        packages = missing_packages(REQUIRED_PACKAGES + (LIVE_PACKAGES if with_live else ()))
+        packages = missing_packages(REQUIRED_PACKAGES + (LIVE_PACKAGES if live_runs else ()))
     node = shutil.which("node") if node == "auto" else node
 
     if packages:
@@ -293,10 +302,11 @@ def check_setup(
         check.fixable.add("admin")
 
     environ = os.environ if environ is None else environ
-    offset = environ.get(OFFSET_WEEKS_VARIABLE)
-    if offset is not None and offset.strip():
+    offset = (environ.get(OFFSET_WEEKS_VARIABLE) or "").strip()
+    # Leaving out a value equal to the demonstration clock changes nothing, so no note
+    if offset and offset != str(DEMO_OFFSET_WEEKS):
         check.notes.append(
-            f"{OFFSET_WEEKS_VARIABLE}={offset.strip()} is set in this terminal "
+            f"{OFFSET_WEEKS_VARIABLE}={offset} is set in this terminal "
             "(it is for calibration). The launcher leaves it out, so the feed uses the "
             f"{DEMO_OFFSET_WEEKS}-week demonstration clock."
         )
@@ -307,6 +317,13 @@ def check_setup(
 
         if port == RCRC_PORT:
             health = running_feed() if feed == "auto" else feed
+            if health is not None and health.get("status") != "ok":
+                check.problems.append(
+                    f"An RCRC traffic feed is running on port {RCRC_PORT}, but has no report "
+                    "loaded. Close that feed's window and start again; the launcher loads the "
+                    "report and starts its own feed."
+                )
+                continue
             if health is not None:
                 check.reuse_feed = True
                 check.notes.append(
@@ -337,14 +354,12 @@ def check_setup(
             "(docs/kpi_engine.md, section 17.11)."
         )
 
-    if with_live:
-        check.sumo_bin = find_sumo() if sumo == "auto" else sumo
-        if check.sumo_bin is None:
-            check.notes.append(
-                "SUMO was not found (not on PATH and no SUMO_HOME), so the live update loop "
-                "will not run and Current Traffic will show no live results. "
-                "Install SUMO to include it."
-            )
+    if with_live and check.sumo_bin is None:
+        check.notes.append(
+            "SUMO was not found (not on PATH and no SUMO_HOME), so the live update loop "
+            "will not run and Current Traffic will show no live results. "
+            "Install SUMO to include it."
+        )
 
     return check
 
@@ -831,6 +846,10 @@ class Launcher:
         # Output is kept quiet while the status panel is on screen, then streamed
         self.streaming = False
         self.panel: StatusPanel | None = None
+        # A feed the launcher did not start: checked now and then while running
+        self.watch_feed = False
+        self.feed_down = False
+        self.next_feed_check = 0.0
 
     def _relay(self, service: Service, stream) -> None:
         for line in stream:
@@ -936,6 +955,26 @@ class Launcher:
             + (f" Reason: {reason}" if reason else "")
         )
 
+    def check_reused_feed(self, health: dict | None | str = "auto") -> None:
+        """
+        Say once when a reused feed stops answering, and once when it is
+        back: the launcher cannot restart a feed it did not start.
+        """
+
+        health = running_feed() if health == "auto" else health
+        answering = health is not None and health.get("status") == "ok"
+
+        if not answering and not self.feed_down:
+            self.feed_down = True
+            self.console.note(
+                f"The RCRC traffic feed on port {RCRC_PORT}, which was already running, "
+                "stopped answering. The network map and the live update loop get no new data "
+                "until it is back; restart it, or stop and start Jaadah again."
+            )
+        elif answering and self.feed_down:
+            self.feed_down = False
+            self.console.ok(f"The RCRC traffic feed on port {RCRC_PORT} is answering again.")
+
     def watch(self) -> tuple[Service, str]:
         """Block until a required service stops; return (that service, what happened)."""
 
@@ -947,6 +986,10 @@ class Launcher:
                 if service.required:
                     return service, f"{service.name} stopped unexpectedly (exit code {code})."
                 self.report_exit(service, code)
+
+            if self.watch_feed and time.monotonic() >= self.next_feed_check:
+                self.next_feed_check = time.monotonic() + FEED_CHECK_S
+                self.check_reused_feed()
 
             time.sleep(POLL_S)
 
@@ -1178,6 +1221,7 @@ def main(argv: list[str] | None = None) -> int:
 
         console.heading("Live output")
         launcher.streaming = True
+        launcher.watch_feed = check.reuse_feed
         return launcher.fail(*launcher.watch())
 
     except KeyboardInterrupt:

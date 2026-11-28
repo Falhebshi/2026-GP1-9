@@ -461,3 +461,46 @@ def test_package_check_needs_the_live_loop_packages_only_with_it(setup_paths, mo
 
     assert "traci" not in asked[0] and "sumolib" not in asked[0]
     assert {"sumolib", "shapely"} <= set(asked[1])
+
+
+def test_feed_without_its_report_is_a_problem_not_a_busy_port(setup_paths, monkeypatch):
+    monkeypatch.setattr(start, "port_in_use", lambda port: True)
+    setup_paths.update(ports=(start.RCRC_PORT,), feed={"source": "rcrc", "status": "no_report"})
+
+    check = check_setup(with_live=False, **setup_paths)
+
+    assert check.reuse_feed is False
+    assert len(check.problems) == 1
+    assert "has no report loaded" in check.problems[0]
+
+
+def test_offset_equal_to_the_demonstration_clock_needs_no_note(setup_paths):
+    setup_paths["environ"] = {"JAADAH_REPLAY_OFFSET_WEEKS": " 13 "}
+
+    assert check_setup(with_live=False, **setup_paths).notes == []
+
+
+def test_live_loop_packages_are_not_needed_without_sumo(setup_paths, monkeypatch):
+    asked = []
+    monkeypatch.setattr(start, "missing_packages", lambda packages: asked.append(packages) or [])
+    setup_paths.update(packages=None, sumo=None)
+
+    check = check_setup(with_live=True, **setup_paths)
+
+    assert check.problems == []
+    assert "sumolib" not in asked[0]
+    assert "live update loop will not run" in check.notes[0]
+
+
+def test_reused_feed_going_down_and_back_is_said_once_each():
+    stream = io.StringIO()
+    launcher = start.Launcher(Console(colour=False, stream=stream))
+
+    launcher.check_reused_feed(None)
+    launcher.check_reused_feed(None)
+    launcher.check_reused_feed({"source": "rcrc", "status": "ok"})
+    launcher.check_reused_feed({"source": "rcrc", "status": "ok"})
+
+    output = stream.getvalue()
+    assert output.count("stopped answering") == 1
+    assert output.count("answering again") == 1
