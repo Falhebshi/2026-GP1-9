@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import loginRoads from '../assets/login-roads.svg'
 import Button from '../components/Button'
+import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import { HOME_BY_ROLE, getCurrentUser, logIn } from '../services/authService'
 import './Login.css'
 
-// The Login page, at "/" (the index page): Jaadah's name on an indigo panel with the main roads around the
+// The Login page, at "/" (the index page): the Jaadah wordmark on an indigo panel with the main roads around the
 // study intersection on the left, the sign-in form on the right, and the light / night mode
 // switch in the corner.
 //
@@ -110,7 +111,9 @@ function Login() {
             (built by jaadah/network_congestion/login_roads.py) */}
         <img className="login-roads" src={loginRoads} alt="" />
         <div className="login-brand-text">
-          <p className="login-brand-name">Jaadah</p>
+          <p className="login-brand-name">
+            <Logo tone="dark" />
+          </p>
           <p className="login-brand-tagline">Traffic digital twin for Riyadh intersections</p>
         </div>
       </aside>
