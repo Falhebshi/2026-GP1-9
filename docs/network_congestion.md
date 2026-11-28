@@ -42,6 +42,8 @@ cd frontend && npm run dev                                # website, port 5173
 
 The map server needs the RCRC replay running. On its first start it fills the last 7 days; after that it adds each completed 15 minutes. `JAADAH_NETWORK_SOURCE=synthetic` uses the older synthetic speeds instead.
 
+Both sources need the private data: the RCRC source needs the replay running, and the synthetic one needs the RCRC sample in `jaadah-private-data/`. Without it the map server can't start, and the page shows the basemap without road colours.
+
 The speeds are stored in `data/network_congestion/network_speeds.db` (not in git). If the server says the database was built from other inputs, delete the file and start the server again.
 
 ## Rebuilding the data
@@ -65,7 +67,7 @@ The assignment takes several minutes per hour. Delete `network_speeds.db` afterw
 
 ## Limits
 
-- **Modelled, not measured.** Only Site 1444 is counted. The city level is calibrated to TomTom, so agreeing with TomTom proves nothing; the only independent check is the validation script above.
+- **Modelled, not measured.** Only Site 1444 is counted. The city level is scaled to TomTom, so agreeing with TomTom proves nothing; the only independent check is the validation script above.
 - **Two fixed days.** The road ranking comes from one Wednesday (16 Sep 2026) for Sunday–Thursday and one Friday (18 Sep 2026) for Friday and Saturday. Other days differ only through TomTom's day-of-week pattern and the Day Factor.
 - **Not an equilibrium assignment.** Trips are loaded in four rounds (`ASSIGNMENT_ROUNDS`), not iterated until no driver can find a faster route.
 - **The model's evening is lighter than TomTom's.** Commuting and school alone don't make the evening the busiest period; the TomTom level corrects the overall level, not each road.

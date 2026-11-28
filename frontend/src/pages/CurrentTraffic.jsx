@@ -313,20 +313,22 @@ function CurrentTraffic() {
   const kpiInterval = interval ? intervalLabel(interval) : null
   // the interval, and what the KPIs are compared with and how they were measured
   const kpiNotesText = summaryNotes(kpis, COMPARED)
+  // one info button for the card: the provisional note, then the comparison and the method
+  const kpiTip = [
+    ...(interval?.provisional ? ['The newest interval may still change at the next update.'] : []),
+    ...(!kpiProblem && !interval?.noSensorData ? kpiNotesText.map((note) => `${note}.`) : []),
+  ]
   const kpiAction = (
     <span className="current-traffic-kpi-action">
       {kpiInterval}
-      {interval?.provisional && (
-        <>
-          {' (provisional)'}
-          <InfoTip label="About provisional values" align="end">
-            The newest interval may still change at the next update.
-          </InfoTip>
-        </>
-      )}
-      {!kpiProblem && !interval?.noSensorData && kpiNotesText.length > 0 && (
+      {interval?.provisional && ' (provisional)'}
+      {kpiTip.length > 0 && (
         <InfoTip label="About these KPIs" align="end">
-          {kpiNotesText.join('. ')}.
+          {kpiTip.map((point) => (
+            <span key={point} className="info-tip-point">
+              {point}
+            </span>
+          ))}
         </InfoTip>
       )}
     </span>
@@ -626,28 +628,6 @@ function CurrentTraffic() {
           baseline simulation. The alerts are samples.
         </Notice>
       )}
-      {live && liveInfo.state === 'paused' && <Notice variant="warning">{liveInfo.message}</Notice>}
-      {live && liveInfo.state === 'waiting' && (
-        <Notice variant="warning">
-          {liveInfo.message} Showing results up to {formatTime(liveInfo.dataUntil)} (data time).
-        </Notice>
-      )}
-      {live && liveInfo.state === 'starting' && (
-        <Notice variant="info">
-          {liveInfo.message} Showing the previous run up to {formatTime(liveInfo.dataUntil)}.
-        </Notice>
-      )}
-      {live && liveInfo.state === 'stopped' && (
-        <Notice variant="warning">
-          Live updates have stopped. Showing results up to {formatTime(liveInfo.dataUntil)}.
-        </Notice>
-      )}
-      {live && liveInfo.state !== 'stopped' && liveInfo.stale && (
-        <Notice variant="warning">
-          Live updates are not arriving (last {formatTime(liveInfo.updatedAt)}). Showing results up
-          to {formatTime(liveInfo.dataUntil)} (data time).
-        </Notice>
-      )}
       {!fullScreen && timeBar}
 
       <div className="current-traffic-layout">
@@ -821,13 +801,43 @@ const LIVE_NOTE =
   'Following the live data. The traffic is shown 20 minutes after it happened, the time it ' +
   'takes for the detector data to arrive and be simulated. The time shown is the time of the traffic.'
 
-// The badge next to the time: what is on screen
+// Why the live run is not updating, shown in the info button next to its badge, or null while
+// it is updating
+function liveProblem(liveInfo) {
+  const until = formatTime(liveInfo.dataUntil)
+  if (liveInfo.state === 'paused') return liveInfo.message
+  if (liveInfo.state === 'waiting') return `${liveInfo.message} Showing results up to ${until}.`
+  if (liveInfo.state === 'starting') {
+    return `${liveInfo.message} Showing the previous run up to ${until}.`
+  }
+  if (liveInfo.state === 'stopped') {
+    return `Live updates have stopped. Showing results up to ${until}.`
+  }
+  if (liveInfo.stale) {
+    return (
+      `Live updates are not arriving (last ${formatTime(liveInfo.updatedAt)}). ` +
+      `Showing results up to ${until}.`
+    )
+  }
+  return null
+}
+
+// The badge next to the time: what is on screen. When the live run is not updating, the reason
+// is in the info button next to the badge
 function timeBadge({ live, liveInfo, following }) {
   if (!live) return <Badge variant="neutral">Simulated</Badge>
-  if (liveInfo.state === 'paused') return <Badge variant="warning">Paused</Badge>
-  if (liveInfo.state === 'starting') return <Badge variant="neutral">Starting</Badge>
-  if (liveInfo.state === 'stopped' || liveInfo.state === 'waiting' || liveInfo.stale)
-    return <Badge variant="warning">Not updating</Badge>
+  const problem = liveProblem(liveInfo)
+  if (problem) {
+    const label = { paused: 'Paused', starting: 'Starting' }[liveInfo.state] ?? 'Not updating'
+    return (
+      <>
+        <Badge variant={liveInfo.state === 'starting' ? 'neutral' : 'warning'}>{label}</Badge>
+        <InfoTip label="Why live updates are not shown" align="end">
+          {problem}
+        </InfoTip>
+      </>
+    )
+  }
   return following ? (
     <>
       <Badge variant="success">Live</Badge>

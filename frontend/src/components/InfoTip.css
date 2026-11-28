@@ -60,7 +60,19 @@
   right: -4px;
 }
 
-/* More than one paragraph inside */
-.info-tip-box p + p {
+/* Separate points inside one box, each on its own line with a bullet */
+.info-tip-point {
+  position: relative;
+  display: block;
+  padding-left: 12px;
+}
+
+.info-tip-point::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+}
+
+.info-tip-point + .info-tip-point {
   margin-top: var(--space-xs);
 }

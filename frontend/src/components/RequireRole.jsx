@@ -100,11 +100,11 @@ function RequireRole({ role }) {
   }
 
   if (!check.user) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/" replace />
   }
 
   if (check.user.role !== role) {
-    return <Navigate to={HOME_BY_ROLE[check.user.role] ?? '/login'} replace />
+    return <Navigate to={HOME_BY_ROLE[check.user.role] ?? '/'} replace />
   }
 
   return <Outlet context={{ user: check.user }} />

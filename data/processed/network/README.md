@@ -38,4 +38,6 @@ These files are derived from OpenStreetMap, so they are shared under the same li
 - university students: Riyadh city, 1438 AH / 2017 (Saudipedia, citing official statistics);
 - hospital beds: Ministry of Health, Statistical Yearbook 2022, Riyadh region.
 
+The network map's city level uses the TomTom Traffic Index for Riyadh, 2025: the average time for a 10 km drive by day of the week and hour (`TOMTOM_TRAVEL_TIME_10KM_S` in `parameters.py`), and the congestion level on the same grid (`TOMTOM_CONGESTION_LEVEL_PERCENT`), from https://www.tomtom.com/traffic-index/city/riyadh, read 10 Nov 2026 (congestion level tab, 18 Nov 2026).
+
 Trip rates are from the ITE Trip Generation Manual, 11th edition (`TRIP_RATES` in `parameters.py`). Only single figures are used, each credited; no table or text from these sources is copied.

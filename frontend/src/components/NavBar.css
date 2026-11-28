@@ -12,15 +12,12 @@
   z-index: 100;
 }
 
+/* The wordmark on the left (Logo component) */
 .nav-brand {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-selected);
+  display: flex;
+  align-items: center;
   text-decoration: none;
-}
-
-.nav-brand:hover {
-  color: var(--color-selected);
+  --logo-size: 26px;
 }
 
 .nav-links {

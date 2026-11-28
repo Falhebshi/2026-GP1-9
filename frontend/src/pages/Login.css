@@ -24,40 +24,38 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 
-.login-roads path {
-  fill: none;
-  stroke: var(--white);
-  stroke-width: 7;
-  opacity: 0.28;
-}
-
-/* Roads tinted like the map: low, moderate and high congestion */
-.login-roads .login-road-low {
-  stroke: var(--congestion-low);
-  opacity: 0.45;
-}
-
-.login-roads .login-road-moderate {
-  stroke: var(--congestion-moderate);
-  opacity: 0.5;
-}
-
-.login-roads .login-road-high {
-  stroke: var(--congestion-high);
-  opacity: 0.45;
+/* A shade at the bottom, so the name stays readable over the roads */
+.login-brand-panel::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  background: linear-gradient(to top, var(--indigo-deep), transparent);
 }
 
 .login-brand-text {
   position: relative;
+  z-index: 1;
 }
 
+/* The light / night mode switch, in the top right corner */
+.login {
+  position: relative;
+}
+
+.login-theme {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+}
+
+/* The wordmark (Logo component, dark version) */
 .login-brand-name {
-  font-size: 48px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  margin: 0;
+  --logo-size: 56px;
 }
 
 .login-brand-tagline {
@@ -213,7 +211,7 @@
   }
 
   .login-brand-name {
-    font-size: var(--text-2xl);
+    --logo-size: 40px;
   }
 
   .login-panel {

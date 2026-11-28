@@ -3,7 +3,7 @@ import AlertCard from '../components/AlertCard'
 import AlertList from '../components/AlertList'
 import ApproachPanel from '../components/ApproachPanel'
 import Badge from '../components/Badge'
-import BrandMark from '../components/BrandMark'
+import Logo from '../components/Logo'
 import Breadcrumbs from '../components/Breadcrumbs'
 import Button from '../components/Button'
 import Card from '../components/Card'
@@ -416,12 +416,11 @@ function ComponentPreview() {
       </section>
 
       <section className="preview-section">
-        <h2>BrandMark</h2>
+        <h2>Logo</h2>
         <div className="preview-row">
-          <BrandMark />
-          <BrandMark size="md" />
+          <Logo />
         </div>
-        <p className="preview-note">The logo square. Put the word "Jaadah" next to it as text.</p>
+        <p className="preview-note">The wordmark. Follows light / night mode; tone="dark" for indigo panels.</p>
       </section>
 
       <section className="preview-section">

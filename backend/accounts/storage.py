@@ -60,9 +60,10 @@ LOGIN_PAUSE = timedelta(minutes=30)
 MAX_NAME_LENGTH = 100
 MAX_EMAIL_LENGTH = 254
 
-# The same simple check as the login page (frontend/src/pages/Login.jsx):
-# something, an @, something, a dot, something; no spaces
-EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+# The same check as the login page and the create form (frontend/src/pages/Login.jsx,
+# admin/CreateEngineer.jsx): letters, digits and . _ % + - before the @, then letters,
+# digits and - in parts joined by dots, at least two parts. No spaces or commas
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
 
 
 def valid_email(email: str) -> bool:

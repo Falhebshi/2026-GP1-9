@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import loginRoads from '../assets/login-roads.svg'
 import Button from '../components/Button'
+import Logo from '../components/Logo'
+import ThemeToggle from '../components/ThemeToggle'
 import { HOME_BY_ROLE, getCurrentUser, logIn } from '../services/authService'
 import './Login.css'
 
-// The Login page, at "/login": Jaadah's name on an indigo panel with faint roads on the left,
-// the sign-in form on the right.
+// The Login page, at "/" (the index page): the Jaadah wordmark on an indigo panel with the main roads around the
+// study intersection on the left, the sign-in form on the right, and the light / night mode
+// switch in the corner.
 //
 // It logs in through logIn() in services/authService.js, which asks the
 // accounts server. After logging in, engineers go to the Network Traffic
@@ -13,7 +17,7 @@ import './Login.css'
 
 // A simple check that something looks like an email address. The backend
 // still decides whether the account exists.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
 
 function Login() {
   const navigate = useNavigate()
@@ -103,26 +107,20 @@ function Login() {
   return (
     <main className="login">
       <aside className="login-brand-panel">
-        {/* A few faint roads in the map's congestion colours: low, moderate and high */}
-        <svg
-          className="login-roads"
-          viewBox="0 0 533 750"
-          preserveAspectRatio="xMidYMid slice"
-          aria-hidden="true"
-        >
-          <path d="M322 0 L533 480" className="login-road-moderate" />
-          <path d="M0 333 L204 228" className="login-road-low" />
-          <path d="M204 228 L533 58" className="login-road-high" />
-          <path d="M105 0 L270 380" className="login-road-low" />
-          <path d="M0 520 L270 380" className="login-road-low" />
-          <path d="M270 380 L430 750" className="login-road-high" />
-          <path d="M270 380 L533 240" className="login-road-high" />
-        </svg>
+        {/* The real main roads around the study intersection, coloured like the network map
+            (built by jaadah/network_congestion/login_roads.py) */}
+        <img className="login-roads" src={loginRoads} alt="" />
         <div className="login-brand-text">
-          <p className="login-brand-name">Jaadah</p>
+          <p className="login-brand-name">
+            <Logo tone="dark" />
+          </p>
           <p className="login-brand-tagline">Traffic digital twin for Riyadh intersections</p>
         </div>
       </aside>
+
+      <div className="login-theme">
+        <ThemeToggle />
+      </div>
 
       <div className="login-panel">
         <h1 className="login-title">Sign in</h1>
