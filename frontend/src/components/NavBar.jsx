@@ -37,7 +37,7 @@ function NavBar() {
     try {
       // Ends the session on the server and removes its cookie (PBI 32)
       await logOut()
-      navigate('/login', { replace: true })
+      navigate('/', { replace: true })
     } catch (error) {
       // Still logged in: stay on the page and say so
       setLogoutError({ message: error.message, page: pathname })

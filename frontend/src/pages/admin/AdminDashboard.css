@@ -14,8 +14,37 @@
   }
 }
 
+/* The action popup: fixed over the page so nothing below it moves; no animation */
 .admin-message {
-  margin-top: var(--space-md);
+  position: fixed;
+  top: calc(var(--nav-height) + var(--space-md));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: min(480px, calc(100vw - 2 * var(--space-md)));
+  box-shadow: var(--shadow-float);
+  border-radius: var(--radius);
+}
+
+.admin-message .notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.admin-message .notice-info {
+  background: var(--color-surface);
+}
+
+.admin-message-close {
+  margin-left: auto;
+  padding: 0 var(--space-xs);
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* ---------- The list ---------- */
@@ -241,6 +270,25 @@
 .admin-confirm-text {
   margin: var(--space-md) 0 0;
   font-size: var(--text-sm);
+}
+
+/* The Delete account confirmation: red, so it stands apart from viewing an account */
+.admin-danger-box {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+}
+
+.admin-danger-title {
+  margin: 0;
+  color: var(--color-danger-text);
+  font-weight: 600;
+}
+
+.admin-danger-box .admin-confirm-text {
+  margin-top: var(--space-sm);
 }
 
 .admin-panel-error {

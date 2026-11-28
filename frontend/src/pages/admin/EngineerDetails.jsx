@@ -103,12 +103,32 @@ function EngineerDetails({ engineer, onChanged, onDeleted, onGone }) {
       <Card title={engineer.name} className="admin-panel">
         {details}
         {errorBox}
-        <p className="admin-confirm-text">
-          Delete {engineer.name}&apos;s account? This can&apos;t be undone. They won&apos;t be able
-          to log in, and the account is removed from the list.
-        </p>
+        <div className="admin-danger-box" role="group" aria-labelledby="delete-question">
+          <p id="delete-question" className="admin-danger-title">
+            Delete {engineer.name}&apos;s account?
+          </p>
+          <p className="admin-confirm-text">
+            {engineer.name} ({engineer.email}) will be removed and can&apos;t log in. This can&apos;t
+            be undone.
+          </p>
+          {engineer.status === 'active' && (
+            <p className="admin-confirm-text">
+              Only need to pause their access?{' '}
+              <button
+                type="button"
+                className="admin-link-button"
+                onClick={() => setMode('confirm-deactivate')}
+                disabled={busy}
+              >
+                Deactivate the account
+              </button>{' '}
+              instead.
+            </p>
+          )}
+        </div>
         <div className="admin-actions">
-          <Button variant="secondary" onClick={() => setMode('view')} disabled={busy}>
+          {/* Focus starts on Cancel, so pressing Enter by mistake deletes nothing */}
+          <Button variant="secondary" onClick={() => setMode('view')} disabled={busy} autoFocus>
             Cancel
           </Button>
           <Button variant="danger" onClick={remove} disabled={busy}>

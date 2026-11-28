@@ -16,9 +16,10 @@ function App() {
     <BrowserRouter>
       <Routes>
         {/* Pages WITHOUT the nav bar */}
-        {/* The site opens on Login, which sends someone already logged in to their first page */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<Login />} />
+        {/* Login is the index page; it sends someone already logged in to their first page.
+            "/login" still works for old links and bookmarks */}
+        <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
 
         {/* Traffic pages: logged-in traffic engineers only (RequireRole).
             They appear inside AppLayout, which adds the nav bar. */}
@@ -49,7 +50,7 @@ function App() {
         </Route>
 
         {/* Any other URL goes to Login */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

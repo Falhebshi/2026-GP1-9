@@ -10,6 +10,9 @@ import EngineerDetails from './admin/EngineerDetails'
 import EngineerList from './admin/EngineerList'
 import './admin/AdminDashboard.css'
 
+// How long the action popup stays up
+const MESSAGE_MS = 5000
+
 // The Admin Dashboard, at "/admin": where an administrator lands after
 // logging in (PBI 31). Only administrators can open it (RequireRole in
 // App.jsx).
@@ -24,9 +27,17 @@ function AdminDashboard() {
   const [loadError, setLoadError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [creating, setCreating] = useState(false)
-  // A line under the header after an action, e.g. "Account created for …":
-  // { text, variant } with variant "info" or "warning", or null
+  // A popup after an action, e.g. "Account created for …": { text, variant }
+  // with variant "info" or "warning", or null. It floats over the page (no
+  // animation), so the page below never moves, and closes itself after
+  // MESSAGE_MS or when its × is clicked.
   const [message, setMessage] = useState(null)
+
+  useEffect(() => {
+    if (!message) return undefined
+    const timer = setTimeout(() => setMessage(null), MESSAGE_MS)
+    return () => clearTimeout(timer)
+  }, [message])
 
   // Loads (or reloads) the list; a failed reload keeps the list on screen
   function load() {
@@ -126,9 +137,19 @@ function AdminDashboard() {
       />
 
       {message && (
-        <Notice variant={message.variant} className="admin-message">
-          {message.text}
-        </Notice>
+        <div className="admin-message">
+          <Notice variant={message.variant}>
+            <span>{message.text}</span>
+            <button
+              type="button"
+              className="admin-message-close"
+              aria-label="Close message"
+              onClick={() => setMessage(null)}
+            >
+              ×
+            </button>
+          </Notice>
+        </div>
       )}
 
       {loadError && !engineers ? (

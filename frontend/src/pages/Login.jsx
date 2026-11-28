@@ -6,7 +6,7 @@ import ThemeToggle from '../components/ThemeToggle'
 import { HOME_BY_ROLE, getCurrentUser, logIn } from '../services/authService'
 import './Login.css'
 
-// The Login page, at "/login": Jaadah's name on an indigo panel with the main roads around the
+// The Login page, at "/" (the index page): Jaadah's name on an indigo panel with the main roads around the
 // study intersection on the left, the sign-in form on the right, and the light / night mode
 // switch in the corner.
 //
