@@ -16,7 +16,13 @@ its service; request logs are hidden unless --verbose. Ctrl+C stops
 everything.
 
 If a service fails, the launcher shows its last lines and the error,
-stops the others and exits with code 1. Colours and the redrawing panel
+stops the others and exits with code 1.
+
+An RCRC traffic feed already running on port 8002 (the nightly history
+run starts one and leaves it running) is used as it is and left running
+on Ctrl+C, so a history run using it is not cut off. The calibration
+setting JAADAH_REPLAY_OFFSET_WEEKS is left out of what the launcher
+starts, so the feed always runs on the 13-week demonstration clock. Colours and the redrawing panel
 need a terminal; NO_COLOR=1 turns them off.
 
 The live update loop needs SUMO. Without it, the launcher says so and
@@ -46,20 +52,27 @@ import urllib.error
 import urllib.request
 import webbrowser
 from collections import deque
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from backend.accounts.storage import DEFAULT_DATABASE as ACCOUNTS_DATABASE
 from backend.accounts.storage import ROLE_ADMIN, STATUS_ACTIVE
 from traffic_source.rcrc_replay.config import (
+    OFFSET_WEEKS_VARIABLE,
     PRIVATE_DATA_DIR,
     RCRC_REPLAY_DATABASE_PATH,
     RCRC_REPORT_DIR,
+    ReplayConfig,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = REPO_ROOT / "frontend"
 VITE_SCRIPT = FRONTEND_DIR / "node_modules" / "vite" / "bin" / "vite.js"
+# Built per computer by the nightly history run, ignored by git (docs/kpi_engine.md, 17.10)
+TRENDS_FILES = "frontend/public/data/*/history/trends_*.json"
+# The demonstration clock (13 weeks behind) that Current Traffic is meant to show
+DEMO_OFFSET_WEEKS = ReplayConfig().offset_weeks
 
 RCRC_PORT = 8002
 NETWORK_PORT = 8001
@@ -104,6 +117,9 @@ class SetupCheck:
     # Problems the launcher can offer to fix: "npm", "admin"
     fixable: set[str] = field(default_factory=set)
     sumo_bin: str | None = None
+    # An RCRC traffic feed already answering on its port (the nightly history
+    # run starts one and leaves it running): used as it is, and left running
+    reuse_feed: bool = False
 
 
 def missing_packages(packages: tuple[str, ...] = REQUIRED_PACKAGES) -> list[str]:
@@ -180,6 +196,30 @@ def find_sumo(environ: dict[str, str] | None = None) -> str | None:
     return None
 
 
+def running_feed(url: str = f"http://127.0.0.1:{RCRC_PORT}/health") -> dict | None:
+    """The /health answer of an RCRC traffic feed already running on its port, or None."""
+
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(url, timeout=2) as response:
+            health = json.loads(response.read())
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+    return health if health.get("source") == "rcrc" and health.get("status") == "ok" else None
+
+
+def feed_offset_weeks(health: dict, now: datetime | None = None) -> int | None:
+    """How many weeks behind real time a running feed's replay clock is, from its /health."""
+
+    try:
+        replay = datetime.fromisoformat(health["replay_time"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    now = datetime.now(timezone.utc) if now is None else now
+    return round((now - replay).total_seconds() / (7 * 24 * 3600))
+
+
 def check_setup(
     with_live: bool,
     private_dir: Path = PRIVATE_DATA_DIR,
@@ -191,6 +231,9 @@ def check_setup(
     node: str | None = "auto",
     sumo: str | None = "auto",
     packages: list[str] | None = None,
+    environ: dict[str, str] | None = None,
+    feed: dict | None | str = "auto",
+    trends_files: list[Path] | None = None,
 ) -> SetupCheck:
     """Check everything the services need, and collect every problem at once."""
 
@@ -238,12 +281,48 @@ def check_setup(
         )
         check.fixable.add("admin")
 
+    environ = os.environ if environ is None else environ
+    offset = environ.get(OFFSET_WEEKS_VARIABLE)
+    if offset is not None and offset.strip():
+        check.notes.append(
+            f"{OFFSET_WEEKS_VARIABLE}={offset.strip()} is set in this terminal (it is for calibration). "
+            f"The launcher leaves it out, so the feed uses the {DEMO_OFFSET_WEEKS}-week demonstration clock."
+        )
+
     for port in ports:
-        if port_in_use(port):
-            check.problems.append(
-                f"Port {port} is already in use. Jaadah may already be running in another "
-                "terminal; otherwise close the program using it."
-            )
+        if not port_in_use(port):
+            continue
+
+        if port == RCRC_PORT:
+            health = running_feed() if feed == "auto" else feed
+            if health is not None:
+                check.reuse_feed = True
+                check.notes.append(
+                    f"An RCRC traffic feed is already running on port {RCRC_PORT} (the nightly history "
+                    "run starts one, and may be using it). The launcher uses it and leaves it running "
+                    "when you stop."
+                )
+                weeks = feed_offset_weeks(health)
+                if weeks is not None and weeks != DEMO_OFFSET_WEEKS:
+                    check.notes.append(
+                        f"That feed runs {weeks} weeks behind real time, not {DEMO_OFFSET_WEEKS}, so Current "
+                        f"Traffic will show {health['replay_time'][:10]}. To fix it, close that feed's window "
+                        f"and start again."
+                    )
+                continue
+
+        check.problems.append(
+            f"Port {port} is already in use. Jaadah may already be running in another "
+            "terminal; otherwise close the program using it."
+        )
+
+    trends_files = sorted(REPO_ROOT.glob(TRENDS_FILES)) if trends_files is None else trends_files
+    if not trends_files:
+        check.notes.append(
+            "No traffic history is built on this computer, so Traffic Patterns & Trends will say "
+            '"No traffic history has been built yet". The nightly history run builds it '
+            "(docs/kpi_engine.md, section 17.11)."
+        )
 
     if with_live:
         check.sumo_bin = find_sumo() if sumo == "auto" else sumo
@@ -257,12 +336,13 @@ def check_setup(
     return check
 
 
-def build_services(python: str, node: str, sumo_bin: str | None) -> list[list[Service]]:
+def build_services(python: str, node: str, sumo_bin: str | None, reuse_feed: bool = False) -> list[list[Service]]:
     """
     The services in start order: each group starts once the group
     before it is ready. The network map server reads the RCRC feed while
     it starts, so the feed comes first; the live loop comes last so its
-    first SUMO run does not slow the others down.
+    first SUMO run does not slow the others down. A feed already running
+    (reuse_feed) is not started.
     """
 
     def uvicorn(app: str, port: int) -> tuple[str, ...]:
@@ -310,6 +390,9 @@ def build_services(python: str, node: str, sumo_bin: str | None) -> list[list[Se
             ),
         ],
     ]
+
+    if reuse_feed:
+        groups.pop(0)
 
     if sumo_bin is not None:
         groups.append(
@@ -710,6 +793,8 @@ class Launcher:
 
     def start(self, service: Service) -> subprocess.Popen:
         environment = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
+        # Calibration's replay offset must not reach the demonstration (see check_setup)
+        environment.pop(OFFSET_WEEKS_VARIABLE, None)
         process = subprocess.Popen(
             service.command,
             cwd=service.cwd,
@@ -814,8 +899,8 @@ class Launcher:
         Stop every service, newest first. After Ctrl+C the terminal has
         already sent the interrupt to every service, so each gets a few
         seconds to stop on its own. A service still running is asked to
-        stop (SIGINT on Mac, terminate on Windows), and killed if it is
-        still running STOP_WAIT_S later.
+        stop (SIGINT on Mac; on Windows it is ended with its child
+        processes), and killed if it is still running STOP_WAIT_S later.
         """
 
         self.streaming = False
@@ -832,8 +917,14 @@ class Launcher:
 
             try:
                 if os.name == "nt":
-                    process.terminate()
+                    # With its children: terminate() would leave the live loop's SUMO run going
+                    subprocess.run(
+                        ("taskkill", "/PID", str(process.pid), "/T", "/F"),
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
                 else:
+                    # The live loop's SUMO run stops with it: subprocess.run kills its child
+                    # when interrupted
                     process.send_signal(signal.SIGINT)
             except OSError:
                 pass
@@ -907,8 +998,8 @@ def load_report(console: Console, python: str, report: Path) -> bool:
     return result.returncode == 0
 
 
-def summary_rows(services: list[Service]) -> list[tuple[str, str]]:
-    rows = []
+def summary_rows(services: list[Service], reuse_feed: bool = False) -> list[tuple[str, str]]:
+    rows = [("RCRC traffic feed", f"http://127.0.0.1:{RCRC_PORT} (already running)")] if reuse_feed else []
     for service in services:
         if service.label == "website":
             rows.insert(0, (service.name, WEBSITE_URL))
@@ -971,7 +1062,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     launcher = Launcher(console, verbose=args.verbose)
-    groups = build_services(python, shutil.which("node"), None if args.no_live else check.sumo_bin)
+    groups = build_services(
+        python, shutil.which("node"), None if args.no_live else check.sumo_bin, reuse_feed=check.reuse_feed
+    )
     services = [service for group in groups for service in group]
 
     console.heading("Starting the services")
@@ -995,7 +1088,7 @@ def main(argv: list[str] | None = None) -> int:
 
         console.box(
             f"{console.symbols['ok']} Jaadah is running",
-            summary_rows(services),
+            summary_rows(services, reuse_feed=check.reuse_feed),
             "Press Ctrl+C to stop everything.",
         )
         if not args.no_browser:

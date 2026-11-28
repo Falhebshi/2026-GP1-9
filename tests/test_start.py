@@ -1,6 +1,7 @@
 """Setup checks of the one-command launcher (backend/start.py). No servers are started."""
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import io
 import socket
 import sqlite3
@@ -62,6 +63,9 @@ def setup_paths(tmp_path):
         "node": "node",
         "sumo": "sumo",
         "packages": [],
+        "environ": {},
+        "feed": None,
+        "trends_files": [tmp_path / "trends_7d_all.json"],
     }
 
 
@@ -333,3 +337,84 @@ def test_live_loop_requests_are_hidden_too():
     assert tidy_line(request, verbose=True)[0] == request
     assert tidy_line(failed)[1] == "31"
     assert tidy_line("2026-11-28 15:15:06,760 INFO new chain RUN_LIVE_20260829T0245_R1445_S42")[0] is not None
+
+
+def test_calibration_offset_is_left_out(setup_paths, monkeypatch):
+    setup_paths["environ"] = {"JAADAH_REPLAY_OFFSET_WEEKS": "0"}
+
+    check = check_setup(with_live=False, **setup_paths)
+
+    assert check.problems == []
+    assert "JAADAH_REPLAY_OFFSET_WEEKS=0 is set" in check.notes[0]
+
+    captured = {}
+    monkeypatch.setenv("JAADAH_REPLAY_OFFSET_WEEKS", "0")
+    monkeypatch.setattr(start.subprocess, "Popen", lambda command, **kwargs: captured.update(kwargs) or _Done())
+    monkeypatch.setattr(start.threading, "Thread", lambda **kwargs: _Done())
+    start.Launcher(Console(colour=False, stream=io.StringIO())).start(
+        build_services("python", "node", None)[0][0]
+    )
+    assert "JAADAH_REPLAY_OFFSET_WEEKS" not in captured["env"]
+
+
+class _Done:
+    stdout = ()
+
+    def start(self):
+        pass
+
+
+def _feed(weeks_behind: int) -> dict:
+    replay = datetime.now(timezone.utc) - timedelta(weeks=weeks_behind)
+    return {"status": "ok", "source": "rcrc", "replay_time": replay.isoformat()}
+
+
+def test_running_feed_on_its_port_is_reused(setup_paths, monkeypatch):
+    monkeypatch.setattr(start, "port_in_use", lambda port: True)
+    setup_paths.update(ports=(start.RCRC_PORT,), feed=_feed(13))
+
+    check = check_setup(with_live=False, **setup_paths)
+
+    assert check.problems == []
+    assert check.reuse_feed is True
+    assert len(check.notes) == 1
+    assert "leaves it running" in check.notes[0]
+
+
+def test_reused_feed_on_another_clock_is_named(setup_paths, monkeypatch):
+    monkeypatch.setattr(start, "port_in_use", lambda port: True)
+    setup_paths.update(ports=(start.RCRC_PORT,), feed=_feed(0))
+
+    notes = check_setup(with_live=False, **setup_paths).notes
+
+    assert "runs 0 weeks behind real time, not 13" in notes[1]
+
+
+def test_something_else_on_the_feed_port_is_a_problem(setup_paths, monkeypatch):
+    monkeypatch.setattr(start, "port_in_use", lambda port: True)
+    setup_paths.update(ports=(start.RCRC_PORT,), feed=None)
+
+    check = check_setup(with_live=False, **setup_paths)
+
+    assert check.reuse_feed is False
+    assert "Port 8002 is already in use" in check.problems[0]
+
+
+def test_reused_feed_is_not_started_and_shows_in_the_summary():
+    groups = build_services("python", "node", None, reuse_feed=True)
+    services = [service for group in groups for service in group]
+
+    assert "rcrc" not in {service.label for service in services}
+    assert summary_rows(services, reuse_feed=True)[:2] == [
+        ("Website", "http://localhost:5173"),
+        ("RCRC traffic feed", "http://127.0.0.1:8002 (already running)"),
+    ]
+
+
+def test_missing_trends_history_is_a_note(setup_paths):
+    setup_paths["trends_files"] = []
+
+    check = check_setup(with_live=False, **setup_paths)
+
+    assert check.problems == []
+    assert "No traffic history has been built yet" in check.notes[0]
